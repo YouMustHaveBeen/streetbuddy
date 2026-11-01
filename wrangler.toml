@@ -1,0 +1,22 @@
+name = "streetbuddy"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+# Workers AI (plate recognition), no API key needed
+[ai]
+binding = "AI"
+
+# D1: drafts, caches, limit counters, report log (database_id is filled in after the database is created)
+[[d1_databases]]
+binding = "DB"
+database_name = "streetbuddy"
+database_id = ""
+
+# Daily form check: Cloudflare cron runs in UTC; the check itself runs only when it is 6:00 in Dublin
+[triggers]
+crons = ["0 5 * * *", "0 6 * * *"]
+
+# Secrets (set with `wrangler secret put`, not stored here): TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET
+[vars]
+OWNER_TELEGRAM_ID = ""
+GROUP_ID = ""

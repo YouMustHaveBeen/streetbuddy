@@ -147,3 +147,9 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Wrangler local state
+.wrangler/
+
+# macOS
+.DS_Store
