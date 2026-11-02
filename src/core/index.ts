@@ -3,6 +3,7 @@
 export { AREA_MARGIN_M, isInArea, parseArea } from "./area";
 export { district } from "./district";
 export { reverseGeocode, searchAddress } from "./geocode";
+export { PLATE_MAX_LENGTH, recognizePlates } from "./plate";
 export {
   buildDescription,
   buildLocation,
