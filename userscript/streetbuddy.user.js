@@ -330,7 +330,8 @@
     const storage = pickStorage();
     let profile = await loadProfile(storage);
     onReady(() => {
-      // After a successful send the saved link data is no longer needed.
+      // The saved link data is dropped when the form fires a submit event. This form may send
+      // itself without one, then the data stays until the tab is closed.
       document.addEventListener("submit", forgetReport, true);
       if (link.invalid) showMessage(MESSAGE_LINK_INVALID);
       const start = () => {
