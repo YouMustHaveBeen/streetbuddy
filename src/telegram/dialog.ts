@@ -19,6 +19,7 @@ import {
   cachePlates,
   createDraft,
   deleteDraft,
+  deleteFinishedDraft,
   loadDraft,
   moveStep,
   recordPhoto,
@@ -553,7 +554,7 @@ ${OPEN_EXTERNALLY}`;
       message_ids: ids.slice(i, i + DELETE_BATCH),
     });
   }
-  await deleteDraft(c.env.DB, c.userId);
+  await deleteFinishedDraft(c.env.DB, c.userId);
 }
 
 async function answerButton(c: Context, queryId: string, text?: string): Promise<void> {

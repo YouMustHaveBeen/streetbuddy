@@ -204,6 +204,11 @@ export async function deleteDraft(db: D1Database, userId: number): Promise<void>
   await db.prepare("DELETE FROM drafts WHERE user_id = ?1").bind(userId).run();
 }
 
+// A cancel during this step may already have made room for a new report, which must stay.
+export async function deleteFinishedDraft(db: D1Database, userId: number): Promise<void> {
+  await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND step = 'finishing'").bind(userId).run();
+}
+
 export async function cachedPlates(db: D1Database, fileUniqueId: string): Promise<string[] | null> {
   const row = await db
     .prepare("SELECT plates FROM plate_cache WHERE file_unique_id = ?1 AND created_at > ?2")

@@ -399,6 +399,32 @@ describe("cancel and old buttons", () => {
     expect(lastSent().text).toBe("Report cancelled");
     expect(draft()).toBeUndefined();
   });
+  it("does not delete a new report when an old one finishes after a cancel", async () => {
+    await toPhotos();
+    await photo();
+    await press("create");
+    await press("plate_ok");
+    await press("opt:0");
+    const screen = buttonId();
+    const realFetch = globalThis.fetch;
+    let release = () => {};
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/deleteMessages")) {
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      return realFetch(url, init);
+    });
+    const finishing = press("done", screen);
+    await vi.waitFor(() => expect(release).not.toBe(undefined));
+    await vi.waitFor(() => expect(draft().step).toBe("finishing"));
+    await press("cancel", screen);
+    await location();
+    await vi.waitFor(() => expect(sentTexts().at(-1)).toContain("Main Street"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    await finishing;
+    expect(draft().step).toBe("address");
+  });
   it("only stops the spinner on a button of a replaced screen", async () => {
     await location();
     const old = buttonId();
