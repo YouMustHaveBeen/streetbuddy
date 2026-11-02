@@ -219,7 +219,9 @@ async function show(
 // in the chat, any other message is removed along with the dialog.
 async function redraw(c: Context, draft: Draft, message: Message): Promise<void> {
   const cleanupIds = message.photo ? [] : [message.message_id];
-  if (draft.step === "recognizing" || draft.step === "finishing") {
+  // While the link is being given the list of messages to delete is already read, so a
+  // new screen would stay behind.
+  if (draft.step === "finishing") {
     if (cleanupIds.length > 0) await addCleanup(c.env.DB, c.userId, cleanupIds);
     return;
   }
@@ -231,7 +233,7 @@ async function handleStart(c: Context, draft: Draft | null, message: Message): P
   if (!draft) return;
   // The report is left as it was: its screen only moves below the /start text.
   const cleanupIds = [message.message_id, ...(startId === null ? [] : [startId])];
-  if (draft.step === "recognizing" || draft.step === "finishing") {
+  if (draft.step === "finishing") {
     await addCleanup(c.env.DB, c.userId, cleanupIds);
   } else {
     await show(c, draft, draft.prompt, {}, cleanupIds);

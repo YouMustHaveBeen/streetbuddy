@@ -383,6 +383,15 @@ describe("cancel and old buttons", () => {
     expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
     expect(draft()).toBeUndefined();
   });
+  it("redraws while waiting for recognition, with Cancel only", async () => {
+    await toPhotos();
+    await photo();
+    const before = buttonId();
+    sqlite.prepare("UPDATE drafts SET step = 'recognizing'").run();
+    await text("hello");
+    expect(buttonId()).not.toBe(before);
+    expect(labels()).toEqual(["Cancel"]);
+  });
   it("lets the user out of a report stuck on giving the link", async () => {
     await toPhotos();
     sqlite.prepare("UPDATE drafts SET step = 'finishing'").run();
