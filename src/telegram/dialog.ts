@@ -343,7 +343,10 @@ async function recognize(c: Context, photo: PhotoSize): Promise<void> {
       plates = cached;
     } else {
       const image = await downloadFile(c.env.TELEGRAM_BOT_TOKEN, photo.file_id);
+      const startedAt = Date.now();
       plates = await recognizePlates(c.env.AI, image);
+      // Only the duration: plates and photos never go to the logs.
+      console.log(`Plate recognition took ${Date.now() - startedAt} ms`);
       await cachePlates(c.env.DB, photo.file_unique_id, plates);
     }
   } catch {
