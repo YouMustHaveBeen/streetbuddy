@@ -339,6 +339,8 @@ function pickPhoto(sizes: PhotoSize[]): PhotoSize {
 
 // Runs next to the dialog. Any failure ends in an empty list: the bot then asks for the
 // plate by hand, which also covers the used-up daily Workers AI limit.
+// QUERY BUDGET EXCEPTION: up to three statements (cache read, cache write, result write):
+// the recognition runs next to the dialog and shares only D1 with it.
 async function recognize(c: Context, photo: PhotoSize): Promise<void> {
   let plates: string[] = [];
   try {
@@ -371,6 +373,9 @@ async function answerPhoto(c: Context, draft: Draft, message: Message, count: nu
   await show(c, { ...draft, photo_count: photoCount }, PHOTO_RECEIVED, {});
 }
 
+// QUERY BUDGET EXCEPTION: a photo costs the draft read, the photo record and the screen swap;
+// an album adds one more read so that only one reply is sent, and the first photo adds the
+// statements of the recognition (see recognize).
 async function handlePhoto(c: Context, draft: Draft, message: Message): Promise<void> {
   const photo = pickPhoto(message.photo as PhotoSize[]);
   const recorded = await recordPhoto(c.env.DB, c.userId, {
@@ -520,11 +525,14 @@ async function finish(c: Context, draft: Draft): Promise<void> {
   if (chosen === null) return;
   if (chosen === 0) {
     // The last option was switched off after the draft was loaded; a report needs one.
-    await moveStep(c.env.DB, c.userId, "finishing", "parking");
+    // Done has already been answered, so a pop-up is out of reach: the screen is drawn again.
+    if (await moveStep(c.env.DB, c.userId, "finishing", "parking")) {
+      await show(c, { ...draft, step: "parking", parking: 0 }, CHOOSE_PARKING, {});
+    }
     return;
   }
 
-  const parking = PARKING_OPTIONS.filter((_, i) => chosen & (1 << i));
+  const parking =PARKING_OPTIONS.filter((_, i) => chosen & (1 << i));
   const moment = dublinDateTime(draft.first_photo_at as number);
   const time = draft.time ?? moment.time;
   const address = draft.address as string;

@@ -384,13 +384,21 @@ describe("parking and the final message", () => {
     await press("done");
     expect(lastSent().text).toContain("on a cycle track and on a grass margin");
   });
-  it("does not give a link when the last option was switched off at the moment of Done", async () => {
+  it("draws the options again when the last one was switched off at the moment of Done", async () => {
     await toParking();
     await press("opt:0");
     onAnswer = () => sqlite.prepare("UPDATE drafts SET parking = 0 WHERE user_id = ?").run(USER);
+    const screen = buttonId();
+    const sentBefore = called("sendMessage").length;
     await press("done");
     expect(draft().step).toBe("parking");
-    expect(sentTexts().filter((value) => String(value).includes("Description"))).toEqual([]);
+    expect(called("sendMessage").length).toBe(sentBefore + 1);
+    expect(buttonId()).not.toBe(screen);
+    expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
+    expect(lastSent().text).toBe("Choose one or more options, then press Done.");
+    expect(labels().some((label: string) => label.startsWith("✅"))).toBe(false);
+    expect(called("sendMessage").filter((call) => JSON.stringify(call.body).includes("Open form"))).toEqual([]);
+    expect(called("deleteMessages")).toEqual([]);
   });
 });
 
