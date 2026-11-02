@@ -70,6 +70,7 @@ function distanceToSegment(ax: number, ay: number, bx: number, by: number): numb
 }
 
 // True if the point is inside the polygon or within AREA_MARGIN_M of its border.
+// Arguments: latitude first, then longitude (GeoJSON itself stores longitude first).
 export function isInArea(area: Area, lat: number, lon: number): boolean {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
   const ring = area.ring;
