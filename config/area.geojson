@@ -4,7 +4,8 @@
     {
       "type": "Feature",
       "properties": {
-        "county": "Dublin"
+        "county": "Dublin",
+        "postal_district": "D13"
       },
       "geometry": {
         "type": "Polygon",
