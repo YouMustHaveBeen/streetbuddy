@@ -41,8 +41,8 @@
     "Pedestrian",
   ];
 
-  // Longest accepted values. The description limit comes from the text of the form itself.
-  const LIMITS = { location: 400, county: 50, description: 300, name: 100, phone: 30, email: 254, address: 300 };
+  // The form states this limit for the description in its own text; it has no other limits.
+  const DESCRIPTION_LIMIT = 300;
 
   // ---------------------------------------------------------------- link data
 
@@ -69,8 +69,8 @@
     return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
   }
 
-  function isText(value, maxLength) {
-    return typeof value === "string" && value.trim() !== "" && value.length <= maxLength;
+  function isText(value) {
+    return typeof value === "string" && value.trim() !== "";
   }
 
   // Returns the four known fields, or null when anything is missing, unknown or out of range.
@@ -78,8 +78,8 @@
     if (!data || typeof data !== "object" || Array.isArray(data)) return null;
     const keys = Object.keys(data).sort().join(",");
     if (keys !== "c,d,l,t") return null;
-    if (!isText(data.l, LIMITS.location) || !isText(data.c, LIMITS.county)) return null;
-    if (!isText(data.d, LIMITS.description) || !isRealDate(data.t)) return null;
+    if (!isText(data.l) || !isText(data.c) || !isText(data.d) || !isRealDate(data.t)) return null;
+    if (data.d.length > DESCRIPTION_LIMIT) return null;
     return { l: data.l, c: data.c, d: data.d, t: data.t };
   }
 
@@ -133,9 +133,8 @@
   // Returns the cleaned personal data, or null when anything is missing or not allowed.
   function validateProfile(data) {
     if (!data || typeof data !== "object") return null;
-    if (!isText(data.name, LIMITS.name) || !isText(data.phone, LIMITS.phone)) return null;
-    if (!isText(data.email, LIMITS.email) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) return null;
-    if (!isText(data.address, LIMITS.address)) return null;
+    if (!isText(data.name) || !isText(data.phone) || !isText(data.address)) return null;
+    if (!isText(data.email) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) return null;
     if (!CONTACT_METHODS.includes(data.contact) || !ROAD_USER_TYPES.includes(data.roadUser)) return null;
     return {
       name: data.name.trim(),
@@ -176,11 +175,10 @@
     return label;
   }
 
-  function textInput(type, maxLength) {
+  function textInput(type) {
     const input = document.createElement("input");
     input.type = type;
     input.required = true;
-    input.maxLength = maxLength;
     input.style.cssText = "width:100%;box-sizing:border-box;font-size:16px";
     return input;
   }
@@ -198,10 +196,10 @@
   function showProfilePanel(onSave) {
     const panel = document.createElement("form");
     panel.style.cssText = "padding:12px;margin:8px;border:2px solid #444;background:#fff;color:#000;font:16px sans-serif";
-    const name = textInput("text", LIMITS.name);
-    const phone = textInput("tel", LIMITS.phone);
-    const email = textInput("email", LIMITS.email);
-    const address = textInput("text", LIMITS.address);
+    const name = textInput("text");
+    const phone = textInput("tel");
+    const email = textInput("email");
+    const address = textInput("text");
     const contact = selectInput(CONTACT_METHODS);
     const roadUser = selectInput(ROAD_USER_TYPES);
     const save = document.createElement("button");
