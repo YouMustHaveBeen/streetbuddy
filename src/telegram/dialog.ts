@@ -409,7 +409,7 @@ async function handlePlateInput(
   text: string,
 ): Promise<void> {
   const cleanupIds = [message.message_id];
-  const plate = text.trim();
+  const plate = text.trim().replace(/\s+/g, " ").toUpperCase();
   if (plate === "") {
     await show(c, draft, WRITE_PLATE, {}, cleanupIds);
     return;
@@ -582,7 +582,7 @@ export async function handleButton(
 
   const [action, argument] = data.split(":");
   const step = draft.step;
-  if (action === "cancel" && step !== "finishing") {
+  if (action === "cancel") {
     await cancel(c, draft);
   } else if (action === "address_ok" && step === "address") {
     await show(c, draft, SEND_PHOTOS, { step: "photos" });

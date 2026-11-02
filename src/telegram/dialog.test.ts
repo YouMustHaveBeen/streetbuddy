@@ -269,6 +269,12 @@ describe("plate and time", () => {
     await text("123456789012345");
     expect(lastSent().text).toContain("Plate: 123456789012345");
   });
+  it("writes a typed plate in capitals with single spaces", async () => {
+    await toPlateTime();
+    await press("plate_edit");
+    await text(" 12-d   3456 ");
+    expect(lastSent().text).toContain("Plate: 12-D 3456");
+  });
   it("asks again for a plate that is only blank characters", async () => {
     await toPlateTime();
     await press("plate_edit");
@@ -375,6 +381,13 @@ describe("cancel and old buttons", () => {
     await press("cancel");
     expect(lastSent()).toEqual({ chat_id: USER, text: "Report cancelled" });
     expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
+    expect(draft()).toBeUndefined();
+  });
+  it("lets the user out of a report stuck on giving the link", async () => {
+    await toPhotos();
+    sqlite.prepare("UPDATE drafts SET step = 'finishing'").run();
+    await press("cancel");
+    expect(lastSent().text).toBe("Report cancelled");
     expect(draft()).toBeUndefined();
   });
   it("only stops the spinner on a button of a replaced screen", async () => {
