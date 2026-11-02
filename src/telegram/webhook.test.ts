@@ -84,6 +84,11 @@ describe("secret and body", () => {
   it("rejects a body that is not JSON", async () => {
     expect((await send(null, SECRET, "not json")).status).toBe(400);
   });
+  it.each([["null"], ["42"], ['"text"'], ["[]"]])("rejects JSON that is not an object: %s", async (raw) => {
+    const mock = telegram(memberOf("member"));
+    expect((await send(null, SECRET, raw)).status).toBe(400);
+    expect(mock).not.toHaveBeenCalled();
+  });
 });
 
 describe("what is ignored", () => {
@@ -98,6 +103,22 @@ describe("what is ignored", () => {
     await send({ update_id: 1, edited_message: { chat: { id: 42, type: "private" }, from: { id: 42 } } });
     expect(mock).not.toHaveBeenCalled();
     expect(rows()).toBe(0);
+  });
+});
+
+describe("failures in the background", () => {
+  it("logs the update_id and the step instead of throwing", async () => {
+    const mock = telegram(memberOf("member"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    env.DB = {
+      prepare: () => {
+        throw new Error("D1 is down");
+      },
+    } as unknown as D1Database;
+    expect((await send(privateMessage(9))).status).toBe(200);
+    expect(log).toHaveBeenCalledWith("Update 9 failed at repeat filter: D1 is down");
+    expect(mock).not.toHaveBeenCalled();
+    log.mockRestore();
   });
 });
 

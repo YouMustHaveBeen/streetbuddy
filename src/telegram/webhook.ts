@@ -70,32 +70,43 @@ async function isGroupMember(env: WebhookEnv, userId: number): Promise<boolean |
   return MEMBER_STATUSES.includes(member.status) || (member.status === "restricted" && member.is_member === true);
 }
 
+// Runs after the response has gone out, so nobody is waiting for it: a failure is only
+// logged, with the update_id and the step, instead of surfacing as a bare runtime error.
 async function processUpdate(env: WebhookEnv, update: Update): Promise<void> {
-  const incoming = parseUpdate(update);
-  if (!incoming) return;
+  let step = "parse";
+  try {
+    const incoming = parseUpdate(update);
+    if (!incoming) return;
 
-  // A repeat is recognized by the row already being there.
-  const stored = await env.DB.prepare(
-    "INSERT OR IGNORE INTO processed_updates (update_id, created_at) VALUES (?1, ?2)",
-  )
-    .bind(incoming.updateId, Date.now())
-    .run();
-  if (stored.meta.changes === 0) return;
+    // A repeat is recognized by the row already being there.
+    step = "repeat filter";
+    const stored = await env.DB.prepare(
+      "INSERT OR IGNORE INTO processed_updates (update_id, created_at) VALUES (?1, ?2)",
+    )
+      .bind(incoming.updateId, Date.now())
+      .run();
+    if (stored.meta.changes === 0) return;
 
-  const member = await isGroupMember(env, incoming.userId);
-  if (member === null) return; // No answer from Telegram: not let in, and nothing is said.
-  if (member) return; // The dialog continues here.
+    step = "membership check";
+    const member = await isGroupMember(env, incoming.userId);
+    if (member === null) return; // No answer from Telegram: not let in, and nothing is said.
+    if (member) return; // The dialog continues here.
 
-  if (incoming.callbackQueryId) {
-    await callTelegram(env.TELEGRAM_BOT_TOKEN, "answerCallbackQuery", {
-      callback_query_id: incoming.callbackQueryId,
-      text: NOT_MEMBER_TEXT,
-    });
-  } else {
-    await callTelegram(env.TELEGRAM_BOT_TOKEN, "sendMessage", {
-      chat_id: incoming.chatId,
-      text: NOT_MEMBER_TEXT,
-    });
+    step = "not-member reply";
+    if (incoming.callbackQueryId) {
+      await callTelegram(env.TELEGRAM_BOT_TOKEN, "answerCallbackQuery", {
+        callback_query_id: incoming.callbackQueryId,
+        text: NOT_MEMBER_TEXT,
+      });
+    } else {
+      await callTelegram(env.TELEGRAM_BOT_TOKEN, "sendMessage", {
+        chat_id: incoming.chatId,
+        text: NOT_MEMBER_TEXT,
+      });
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown error";
+    console.error(`Update ${update.update_id} failed at ${step}: ${reason}`);
   }
 }
 
@@ -111,7 +122,12 @@ export async function handleWebhook(
   }
   let update: Update;
   try {
-    update = (await request.json()) as Update;
+    const body: unknown = await request.json();
+    // Valid JSON is not always an object (null, a number, a list).
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return new Response("Bad Request", { status: 400 });
+    }
+    update = body as Update;
   } catch {
     return new Response("Bad Request", { status: 400 });
   }
