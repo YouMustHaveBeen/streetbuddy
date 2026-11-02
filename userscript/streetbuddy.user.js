@@ -22,6 +22,7 @@
 
   const LINK_PREFIX = "#sb=";
   const REPORT_KEY = "streetbuddy-report";
+  const PANEL_ID = "streetbuddy-profile";
   const PROFILE_KEY = "profile";
   // How long to wait for the fields to appear after the person pressed "Click Here to Start".
   const FIELDS_TIMEOUT_MS = 10000;
@@ -106,7 +107,9 @@
     }
   }
 
-  function forgetReport() {
+  // The panel for personal data is a form too; saving it must not drop the link data.
+  function forgetReport(event) {
+    if (event.target && event.target.id === PANEL_ID) return;
     try {
       sessionStorage.removeItem(REPORT_KEY);
     } catch {
@@ -195,6 +198,7 @@
   // Asks for the personal data once; the form checks use the browser's own validation.
   function showProfilePanel(onSave) {
     const panel = document.createElement("form");
+    panel.id = PANEL_ID;
     panel.style.cssText = "padding:12px;margin:8px;border:2px solid #444;background:#fff;color:#000;font:16px sans-serif";
     const name = textInput("text");
     const phone = textInput("tel");
@@ -290,26 +294,30 @@
   // Start", so the page is watched until the first field is visible, then all fields are
   // given a limited time to show up.
   function waitAndFill(report, profile) {
-    let startedAt = null;
+    let started = false;
     let finished = false;
+    let timer = null;
     const observer = new MutationObserver(check);
 
     function finish(filled) {
       finished = true;
       observer.disconnect();
+      clearTimeout(timer);
       if (!filled) showMessage(MESSAGE_FORM_CHANGED);
     }
 
     function check() {
       if (finished) return;
-      const first = document.getElementById("Location");
-      if (startedAt === null) {
+      if (!started) {
+        const first = document.getElementById("Location");
         if (!first || !isVisible(first)) return;
-        startedAt = Date.now();
-        setTimeout(check, FIELDS_TIMEOUT_MS);
+        started = true;
+        // A timer of its own, so the message appears even when the page stops changing.
+        timer = setTimeout(() => {
+          if (!finished) finish(fillForm(report, profile));
+        }, FIELDS_TIMEOUT_MS);
       }
       if (fillForm(report, profile)) finish(true);
-      else if (Date.now() - startedAt >= FIELDS_TIMEOUT_MS) finish(false);
     }
 
     observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
