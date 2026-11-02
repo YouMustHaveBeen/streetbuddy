@@ -19,6 +19,7 @@ let nextId: number;
 let nextMessage: number;
 let nominatim: () => Response;
 let failSend: boolean;
+let onAnswer: (() => void) | null;
 
 const called = (method: string) => calls.filter((call) => call.method === method);
 const sentTexts = () => called("sendMessage").map((call) => call.body.text);
@@ -64,6 +65,7 @@ beforeEach(() => {
   nextId = 1000;
   nextMessage = 0;
   failSend = false;
+  onAnswer = null;
   nominatim = () =>
     new Response(JSON.stringify({ lat: "53.4", lon: "-6.1", address: { house_number: "12", road: "Main Street", suburb: "Clongriffin" } }));
   vi.stubGlobal(
@@ -75,6 +77,7 @@ beforeEach(() => {
       const method = address.split("/").pop() as string;
       const body = init?.body ? JSON.parse(String(init.body)) : {};
       calls.push({ method, body });
+      if (method === "answerCallbackQuery") onAnswer?.();
       if (method === "sendMessage" && failSend) return new Response(JSON.stringify({ ok: false, error_code: 500 }));
       if (method === "getFile") return new Response(JSON.stringify({ ok: true, result: { file_path: "p.jpg" } }));
       nextId += 1;
@@ -342,7 +345,9 @@ describe("parking and the final message", () => {
     await press("done");
 
     const final = lastSent();
-    expect(final.text).toContain("Plate: 12-D-3456\nLocation: 12 Main Street, Clongriffin, D13\nDate and time: ");
+    expect(final.text).toContain(
+      "Plate: 12-D-3456\nLocation: 12 Main Street, Clongriffin, D13\nDate and time: 26/10/2026 07:33\nDescription: ",
+    );
     expect(final.text).toContain("parked on a footpath and blocking a private driveway at");
     expect(final.text).toContain("Open the link in an external browser.");
     expect(final.reply_parameters.message_id).toBe(lastPhoto);
@@ -368,9 +373,24 @@ describe("parking and the final message", () => {
     await toParking();
     await press("opt:0");
     const screen = buttonId();
-    await press("done", screen);
-    await press("done", screen);
+    await Promise.all([press("done", screen), press("done", screen)]);
     expect(sentTexts().filter((value) => String(value).startsWith("Plate:") && String(value).includes("Description"))).toHaveLength(1);
+  });
+  it("uses the options chosen up to the moment of Done", async () => {
+    await toParking();
+    await press("opt:0");
+    // A tap on another option lands after Done has loaded the draft.
+    onAnswer = () => sqlite.prepare("UPDATE drafts SET parking = parking | 4 WHERE user_id = ?").run(USER);
+    await press("done");
+    expect(lastSent().text).toContain("on a cycle track and on a grass margin");
+  });
+  it("does not give a link when the last option was switched off at the moment of Done", async () => {
+    await toParking();
+    await press("opt:0");
+    onAnswer = () => sqlite.prepare("UPDATE drafts SET parking = 0 WHERE user_id = ?").run(USER);
+    await press("done");
+    expect(draft().step).toBe("parking");
+    expect(sentTexts().filter((value) => String(value).includes("Description"))).toEqual([]);
   });
 });
 

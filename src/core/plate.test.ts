@@ -35,7 +35,15 @@ describe("recognizePlates", () => {
   });
   it("encodes a photo larger than one chunk", async () => {
     const run = vi.fn(async () => ({ response: "[]" }));
-    await expect(recognizePlates({ run } as unknown as Ai, new Uint8Array(200000))).resolves.toEqual([]);
+    const image = Uint8Array.from({ length: 200000 }, (_, i) => i % 251);
+    await expect(recognizePlates({ run } as unknown as Ai, image)).resolves.toEqual([]);
+    const inputs = (run.mock.calls[0] as unknown[])[1] as {
+      messages: { content: { image_url?: { url: string } }[] }[];
+    };
+    const url = inputs.messages[0].content[1].image_url?.url ?? "";
+    expect(url.startsWith("data:image/jpeg;base64,")).toBe(true);
+    const decoded = Uint8Array.from(atob(url.split(",")[1]), (char) => char.charCodeAt(0));
+    expect(decoded).toEqual(image);
   });
   it("passes a model failure to the caller", async () => {
     const run = vi.fn(async () => {

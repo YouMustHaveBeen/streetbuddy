@@ -24,6 +24,7 @@ import {
   moveStep,
   recordPhoto,
   setPlates,
+  startFinishing,
   swapScreen,
   toggleParking,
 } from "./draft";
@@ -515,9 +516,15 @@ async function createReport(c: Context, draft: Draft): Promise<void> {
 // QUERY BUDGET EXCEPTION: the step is moved first so that a second tap on Done cannot give
 // a second link, and is moved back if Telegram fails, so the report is not lost.
 async function finish(c: Context, draft: Draft): Promise<void> {
-  if (!(await moveStep(c.env.DB, c.userId, "parking", "finishing"))) return;
+  const chosen = await startFinishing(c.env.DB, c.userId);
+  if (chosen === null) return;
+  if (chosen === 0) {
+    // The last option was switched off after the draft was loaded; a report needs one.
+    await moveStep(c.env.DB, c.userId, "finishing", "parking");
+    return;
+  }
 
-  const parking = PARKING_OPTIONS.filter((_, i) => draft.parking & (1 << i));
+  const parking = PARKING_OPTIONS.filter((_, i) => chosen & (1 << i));
   const moment = dublinDateTime(draft.first_photo_at as number);
   const time = draft.time ?? moment.time;
   const address = draft.address as string;

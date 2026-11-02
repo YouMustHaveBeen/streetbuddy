@@ -184,6 +184,19 @@ export async function moveStep(
   return result.meta.changes > 0;
 }
 
+// Takes the report for giving the link and returns the parking options as they are at that
+// moment: a tap on an option can land after the draft was loaded. Null means someone else
+// got there first.
+export async function startFinishing(db: D1Database, userId: number): Promise<number | null> {
+  const row = await db
+    .prepare(
+      "UPDATE drafts SET step = 'finishing' WHERE user_id = ?1 AND step = 'parking' RETURNING parking",
+    )
+    .bind(userId)
+    .first<{ parking: number }>();
+  return row?.parking ?? null;
+}
+
 // Flips one bit in a single statement: quick taps must not overwrite each other.
 export async function toggleParking(
   db: D1Database,
