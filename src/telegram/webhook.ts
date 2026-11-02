@@ -1,7 +1,10 @@
 // Bot entry point: webhook secret check, repeat filter, group membership check.
 import { callTelegram } from "./api";
+import { handleButton, handleMessage } from "./dialog";
+import type { Message } from "./dialog";
 
 export interface WebhookEnv {
+  AI: Ai;
   DB: D1Database;
   TELEGRAM_BOT_TOKEN: string;
   WEBHOOK_SECRET: string;
@@ -19,8 +22,13 @@ interface Chat {
 
 interface Update {
   update_id?: number;
-  message?: { chat?: Chat; from?: { id?: number } };
-  callback_query?: { id?: string; from?: { id?: number }; message?: { chat?: Chat } };
+  message?: Partial<Message> & { chat?: Chat; from?: { id?: number } };
+  callback_query?: {
+    id?: string;
+    data?: string;
+    from?: { id?: number };
+    message?: { message_id?: number; chat?: Chat };
+  };
 }
 
 interface ChatMember {
@@ -90,7 +98,19 @@ async function processUpdate(env: WebhookEnv, update: Update): Promise<void> {
     step = "membership check";
     const member = await isGroupMember(env, incoming.userId);
     if (member === null) return; // No answer from Telegram: not let in, and nothing is said.
-    if (member) return; // The dialog continues here.
+    if (member) {
+      step = "dialog";
+      if (incoming.callbackQueryId) {
+        await handleButton(env, incoming.userId, incoming.chatId, {
+          id: incoming.callbackQueryId,
+          data: update.callback_query?.data,
+          messageId: update.callback_query?.message?.message_id,
+        });
+      } else {
+        await handleMessage(env, incoming.userId, incoming.chatId, update.message as Message);
+      }
+      return;
+    }
 
     step = "not-member reply";
     if (incoming.callbackQueryId) {

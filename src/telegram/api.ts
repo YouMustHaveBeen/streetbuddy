@@ -7,6 +7,17 @@ interface TelegramResponse<T> {
   error_code?: number;
 }
 
+// Downloads a file by the Telegram file_id; throws when it cannot be fetched.
+export async function downloadFile(token: string, fileId: string): Promise<Uint8Array> {
+  const file = await callTelegram<{ file_path?: string }>(token, "getFile", { file_id: fileId });
+  if (!file?.file_path) throw new Error("Telegram getFile failed");
+  const response = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`Telegram file download responded ${response.status}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 // Returns the method result, or null when the call fails for any reason.
 export async function callTelegram<T>(
   token: string,

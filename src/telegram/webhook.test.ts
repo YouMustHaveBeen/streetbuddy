@@ -1,20 +1,12 @@
-import { readFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeD1 } from "../../test/fakeD1";
 import { handleWebhook } from "./webhook";
 import type { WebhookEnv } from "./webhook";
 
-// Minimal D1 on top of SQLite, running the real migration.
-function fakeD1() {
-  const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(readFileSync("migrations/0002_processed_updates.sql", "utf8"));
-  const prepare = (sql: string) => ({
-    bind: (...args: unknown[]) => ({
-      run: async () => ({ meta: { changes: Number(sqlite.prepare(sql).run(...(args as never[])).changes) } }),
-    }),
-  });
+function testD1() {
+  const { db, sqlite } = fakeD1();
   const count = () => (sqlite.prepare("SELECT COUNT(*) AS n FROM processed_updates").get() as { n: number }).n;
-  return { db: { prepare } as unknown as D1Database, count };
+  return { db, count };
 }
 
 const SECRET = "s3cret";
@@ -59,10 +51,10 @@ const privateButton = (updateId = 1, userId = 42) => ({
 });
 
 beforeEach(() => {
-  const fake = fakeD1();
+  const fake = testD1();
   rows = fake.count;
   pending = [];
-  env = { DB: fake.db, TELEGRAM_BOT_TOKEN: "token", WEBHOOK_SECRET: SECRET, GROUP_ID: "-100123" };
+  env = { AI: {} as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", WEBHOOK_SECRET: SECRET, GROUP_ID: "-100123" };
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -169,6 +161,11 @@ describe("membership", () => {
       callback_query_id: "cb1",
       text: "This bot is only for members of the group.",
     });
+  });
+  it("passes a member's button press to the dialog", async () => {
+    const mock = telegram(memberOf("member"));
+    await send(privateButton());
+    expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery"]);
   });
   it("lets nobody in and says nothing when Telegram fails the check", async () => {
     const mock = telegram({ ok: false, error_code: 400 });
