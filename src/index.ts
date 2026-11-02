@@ -1,4 +1,5 @@
-// StreetBuddy Worker entry point. Skeleton only: no bot logic yet.
+// StreetBuddy Worker entry point.
+import { handleWebhook } from "./telegram";
 
 export interface Env {
   AI: Ai;
@@ -10,8 +11,12 @@ export interface Env {
 }
 
 export default {
-  async fetch(_request: Request, _env: Env, _ctx: ExecutionContext): Promise<Response> {
-    return new Response("OK");
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/webhook") {
+      return handleWebhook(request, env, ctx);
+    }
+    return new Response("Not Found", { status: 404 });
   },
 
   async scheduled(_event: ScheduledController, _env: Env, _ctx: ExecutionContext): Promise<void> {
