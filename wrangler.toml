@@ -20,3 +20,9 @@ crons = ["0 5 * * *", "0 6 * * *"]
 [vars]
 OWNER_TELEGRAM_ID = ""
 GROUP_ID = ""
+
+# Lets src/core import config/area.geojson as text
+[[rules]]
+type = "Text"
+globs = ["**/*.geojson"]
+fallthrough = true
