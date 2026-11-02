@@ -7,7 +7,7 @@ const geojson = {
   features: [
     {
       type: "Feature",
-      properties: { county: "Dublin" },
+      properties: { county: "Dublin", postal_district: "D13" },
       geometry: {
         type: "Polygon",
         coordinates: [
@@ -84,7 +84,13 @@ describe("parseArea", () => {
 
   it("rejects a missing county", () => {
     const broken = structuredClone(geojson);
-    broken.features[0].properties = {} as { county: string };
+    broken.features[0].properties = { postal_district: "D13" } as (typeof geojson)["features"][0]["properties"];
+    expect(() => parseArea(broken)).toThrow();
+  });
+
+  it("rejects a missing postal district", () => {
+    const broken = structuredClone(geojson);
+    broken.features[0].properties = { county: "Dublin" } as (typeof geojson)["features"][0]["properties"];
     expect(() => parseArea(broken)).toThrow();
   });
 

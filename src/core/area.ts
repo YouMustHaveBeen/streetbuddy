@@ -8,24 +8,29 @@ const M_PER_DEG = (Math.PI / 180) * EARTH_RADIUS_M;
 
 export interface Area {
   county: string;
+  postalDistrict: string;
   // Polygon ring as [longitude, latitude] pairs.
   ring: [number, number][];
 }
 
 // Reads the district from the parsed contents of config/area.geojson:
-// a FeatureCollection with one Polygon feature and properties.county.
+// a FeatureCollection with one Polygon feature and properties.county, .postal_district.
 export function parseArea(geojson: unknown): Area {
   const features = (geojson as { features?: unknown })?.features;
   if (!Array.isArray(features) || features.length !== 1) {
     throw new Error("area.geojson must contain exactly one feature");
   }
   const feature = features[0] as {
-    properties?: { county?: unknown };
+    properties?: { county?: unknown; postal_district?: unknown };
     geometry?: { type?: unknown; coordinates?: unknown };
   };
   const county = feature.properties?.county;
   if (typeof county !== "string" || county === "") {
     throw new Error("area.geojson: properties.county is missing");
+  }
+  const postalDistrict = feature.properties?.postal_district;
+  if (typeof postalDistrict !== "string" || postalDistrict === "") {
+    throw new Error("area.geojson: properties.postal_district is missing");
   }
   if (feature.geometry?.type !== "Polygon") {
     throw new Error("area.geojson: geometry must be a Polygon");
@@ -56,7 +61,23 @@ export function parseArea(geojson: unknown): Area {
   if (ring.length < 3) {
     throw new Error("area.geojson: polygon needs at least 3 points");
   }
-  return { county, ring };
+  return { county, postalDistrict, ring };
+}
+
+// Rectangle around the polygon, widened by the margin.
+export function areaBounds(area: Area): { west: number; south: number; east: number; north: number } {
+  const lons = area.ring.map(([lon]) => lon);
+  const lats = area.ring.map(([, lat]) => lat);
+  const south = Math.min(...lats);
+  const north = Math.max(...lats);
+  const marginLat = AREA_MARGIN_M / M_PER_DEG;
+  const marginLon = marginLat / Math.cos((((south + north) / 2) * Math.PI) / 180);
+  return {
+    west: Math.min(...lons) - marginLon,
+    south: south - marginLat,
+    east: Math.max(...lons) + marginLon,
+    north: north + marginLat,
+  };
 }
 
 // Distance in metres from the origin (0, 0) to the segment (ax, ay)-(bx, by).
