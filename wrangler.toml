@@ -6,20 +6,18 @@ compatibility_date = "2026-11-01"
 [ai]
 binding = "AI"
 
-# D1: drafts, caches, limit counters, report log (database_id is filled in after the database is created)
+# D1: drafts, caches, limit counters, report log
 [[d1_databases]]
 binding = "DB"
 database_name = "streetbuddy"
-database_id = ""
+database_id = "77d5ecdb-e082-43e1-b4b7-de039a510f2f"
 
 # Daily form check: Cloudflare cron runs in UTC; the check itself runs only when it is 6:00 in Dublin
 [triggers]
 crons = ["0 5 * * *", "0 6 * * *"]
 
-# Secrets (set with `wrangler secret put`, not stored here): TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET
-[vars]
-OWNER_TELEGRAM_ID = ""
-GROUP_ID = ""
+# Secrets (set with `wrangler secret put`, not stored here): TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET,
+# OWNER_TELEGRAM_ID, GROUP_ID
 
 # Lets src/core import config/area.geojson as text
 [[rules]]

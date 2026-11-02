@@ -147,7 +147,7 @@ StreetBuddy — Telegram-бот, который превращает фото н
 51. Модуль core не знает о Telegram: распознавание номера, геокодирование, проверка района, шаблоны описаний, сборка ссылки. Его же потом использует WhatsApp.
 52. Модуль telegram — диалог, кнопки, шаг текущей жалобы.
 53. D1 хранит черновики жалоб (24 часа), кеш распознавания и адресов, счетчики лимитов, ID обработанных обновлений Telegram. KV не используется: на бесплатном тарифе всего 1000 записей в сутки и задержка синхронизации.
-54. Секреты Worker: TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET; Workers AI подключается привязкой AI, без ключа. Переменные Worker: Telegram ID владельца бота и ID закрытой Telegram-группы.
+54. Секреты Worker: TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET, OWNER_TELEGRAM_ID (Telegram ID владельца бота), GROUP_ID (ID закрытой Telegram-группы); Workers AI подключается привязкой AI, без ключа.
 55. Запросы к Nominatim — с User-Agent `StreetBuddy (t.me/streetbuddy_bot)`, не чаще 1 в секунду (очередь хранится в D1), с кешем результатов.
 56. Скрипт — отдельный файл в репозитории; закладка собирается из него автоматически; файл скрипта, закладку и страницу инструкции отдает тот же Worker.
 57. Репозиторий StreetBuddy (приватный): `src/core`, `src/telegram`, `userscript/`, `config/area.geojson`, `docs/architecture.md`.
