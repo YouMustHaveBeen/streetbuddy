@@ -249,6 +249,11 @@
     const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), "value").set;
     setter.call(element, value);
     element.dispatchEvent(new Event("input", { bubbles: true }));
+    // The date picker of the form takes the date from the field only on a key press; without
+    // it the picker empties the field as soon as it closes.
+    if (!(element instanceof HTMLSelectElement)) {
+      element.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
+    }
     element.dispatchEvent(new Event("change", { bubbles: true }));
     element.blur();
   }
