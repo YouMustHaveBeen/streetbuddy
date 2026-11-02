@@ -202,6 +202,29 @@ describe("photos", () => {
     await message({});
     expect(JSON.parse(draft().cleanup)).toHaveLength(3);
   });
+  it("takes the earliest album photo as the first, whatever reaches D1 first", async () => {
+    await toPhotos();
+    const size = (id: string) => [{ file_id: id, file_unique_id: `u-${id}`, width: 1280, height: 960 }];
+    await handleMessage(env, USER, USER, { message_id: 501, date: 1793000100, photo: size("later") });
+    await handleMessage(env, USER, USER, { message_id: 500, date: 1793000000, photo: size("earlier") });
+    expect(draft().first_file_id).toBe("earlier");
+    expect(draft().first_photo_at).toBe(1793000000000);
+    expect(draft().last_photo_id).toBe(501);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+  it("does not write an old recognition into a new report", async () => {
+    await toPhotos();
+    let finishModel = (_: unknown) => {};
+    run.mockImplementationOnce(() => new Promise((resolve) => (finishModel = resolve)));
+    const pending = photo("a");
+    await vi.waitFor(() => expect(run).toHaveBeenCalled());
+    await press("cancel");
+    await toPhotos();
+    await photo("b");
+    finishModel({ response: '["OLD-1"]' });
+    await pending;
+    expect(JSON.parse(draft().plates)).toEqual(["12-D-3456"]);
+  });
   it("does not recognize the same photo twice", async () => {
     await toPhotos();
     await photo("a");
@@ -245,6 +268,13 @@ describe("plate and time", () => {
     expect(lastSent().text).toBe("The plate number is too long. Please write it again.");
     await text("123456789012345");
     expect(lastSent().text).toContain("Plate: 123456789012345");
+  });
+  it("asks again for a plate that is only blank characters", async () => {
+    await toPlateTime();
+    await press("plate_edit");
+    await text("\u00a0");
+    expect(lastSent().text).toBe("Write the plate number.");
+    expect(draft().step).toBe("plate_input");
   });
   it("changes only the time and rejects a wrong or future one", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1793000000000 + 3600000);

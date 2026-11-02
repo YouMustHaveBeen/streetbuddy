@@ -6,12 +6,13 @@ import type { WebhookEnv } from "./webhook";
 function testD1() {
   const { db, sqlite } = fakeD1();
   const count = () => (sqlite.prepare("SELECT COUNT(*) AS n FROM processed_updates").get() as { n: number }).n;
-  return { db, count };
+  return { db, sqlite, count };
 }
 
 const SECRET = "s3cret";
 let env: WebhookEnv;
 let rows: () => number;
+let sqlite: ReturnType<typeof fakeD1>["sqlite"];
 let pending: Promise<unknown>[];
 const ctx = { waitUntil: (promise: Promise<unknown>) => void pending.push(promise) } as unknown as ExecutionContext;
 
@@ -53,6 +54,7 @@ const privateButton = (updateId = 1, userId = 42) => ({
 beforeEach(() => {
   const fake = testD1();
   rows = fake.count;
+  sqlite = fake.sqlite;
   pending = [];
   env = { AI: {} as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", WEBHOOK_SECRET: SECRET, GROUP_ID: "-100123" };
 });
@@ -164,8 +166,16 @@ describe("membership", () => {
   });
   it("passes a member's button press to the dialog", async () => {
     const mock = telegram(memberOf("member"));
-    await send(privateButton());
-    expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery"]);
+    sqlite
+      .prepare(
+        "INSERT INTO drafts (user_id, step, prompt, buttons_message_id, created_at) VALUES (42, 'address', 'x', 5, ?)",
+      )
+      .run(Date.now());
+    const press = privateButton() as any;
+    press.callback_query.data = "address_ok";
+    press.callback_query.message.message_id = 5;
+    await send(press);
+    expect(bodyOf(mock, "sendMessage").text).toBe("Now send photos, the first one with the number plate.");
   });
   it("lets nobody in and says nothing when Telegram fails the check", async () => {
     const mock = telegram({ ok: false, error_code: 400 });

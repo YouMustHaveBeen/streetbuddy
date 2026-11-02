@@ -24,14 +24,10 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-// The model may wrap the array in prose or a code block, so only the array itself is read.
-export function parsePlates(reply: unknown): string[] {
-  if (typeof reply !== "string") return [];
-  const found = /\[[\s\S]*\]/.exec(reply);
-  if (!found) return [];
+function platesFromArray(text: string): string[] {
   let list: unknown;
   try {
-    list = JSON.parse(found[0]);
+    list = JSON.parse(text);
   } catch {
     return [];
   }
@@ -41,6 +37,17 @@ export function parsePlates(reply: unknown): string[] {
     .map((item) => item.trim().toUpperCase())
     .filter((item) => item !== "" && item.length <= PLATE_MAX_LENGTH);
   return [...new Set(plates)];
+}
+
+// The model may wrap the array in prose or a code block, and the prose may hold other
+// brackets, so each bracketed part is tried on its own.
+export function parsePlates(reply: unknown): string[] {
+  if (typeof reply !== "string") return [];
+  for (const [part] of reply.matchAll(/\[[^[\]]*\]/g)) {
+    const plates = platesFromArray(part);
+    if (plates.length > 0) return plates;
+  }
+  return [];
 }
 
 // Throws when the model fails, including when the daily Workers AI limit is used up.

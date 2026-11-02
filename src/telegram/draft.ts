@@ -13,6 +13,7 @@ export interface Draft {
   address: string | null;
   lat: number | null;
   lon: number | null;
+  first_message_id: number | null;
   first_file_id: string | null;
   first_file_unique_id: string | null;
   first_photo_at: number | null;
@@ -132,27 +133,40 @@ export async function recordPhoto(
   db: D1Database,
   userId: number,
   photo: { fileId: string; fileUniqueId: string; sentAt: number; messageId: number },
-): Promise<number | null> {
+): Promise<{ photoCount: number; isFirst: boolean } | null> {
+  // Album photos can reach the database in any order, so the first photo is the one with
+  // the lowest message ID. When it changes, the plates of the previous one no longer count.
+  const earlier = "first_message_id IS NULL OR ?5 < first_message_id";
   const row = await db
     .prepare(
       `UPDATE drafts SET
-         first_file_id = COALESCE(first_file_id, ?2),
-         first_file_unique_id = COALESCE(first_file_unique_id, ?3),
-         first_photo_at = COALESCE(first_photo_at, ?4),
+         first_file_id = CASE WHEN ${earlier} THEN ?2 ELSE first_file_id END,
+         first_file_unique_id = CASE WHEN ${earlier} THEN ?3 ELSE first_file_unique_id END,
+         first_photo_at = CASE WHEN ${earlier} THEN ?4 ELSE first_photo_at END,
+         plates = CASE WHEN ${earlier} THEN NULL ELSE plates END,
+         first_message_id = CASE WHEN ${earlier} THEN ?5 ELSE first_message_id END,
          last_photo_id = MAX(COALESCE(last_photo_id, 0), ?5),
          photo_count = photo_count + 1
        WHERE user_id = ?1 AND step = 'photos'
-       RETURNING photo_count`,
+       RETURNING photo_count, first_message_id`,
     )
     .bind(userId, photo.fileId, photo.fileUniqueId, photo.sentAt, photo.messageId)
-    .first<{ photo_count: number }>();
-  return row?.photo_count ?? null;
+    .first<{ photo_count: number; first_message_id: number }>();
+  if (!row) return null;
+  return { photoCount: row.photo_count, isFirst: row.first_message_id === photo.messageId };
 }
 
-export async function setPlates(db: D1Database, userId: number, plates: string[]): Promise<void> {
+// The result counts only for the photo the draft is waiting for: recognition can finish
+// after a cancel, or after an earlier album photo has taken over as the first one.
+export async function setPlates(
+  db: D1Database,
+  userId: number,
+  fileUniqueId: string,
+  plates: string[],
+): Promise<void> {
   await db
-    .prepare("UPDATE drafts SET plates = ?2 WHERE user_id = ?1")
-    .bind(userId, JSON.stringify(plates))
+    .prepare("UPDATE drafts SET plates = ?3 WHERE user_id = ?1 AND first_file_unique_id = ?2")
+    .bind(userId, fileUniqueId, JSON.stringify(plates))
     .run();
 }
 

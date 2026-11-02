@@ -13,6 +13,7 @@ CREATE TABLE drafts (
   address TEXT,
   lat REAL,
   lon REAL,
+  first_message_id INTEGER,
   first_file_id TEXT,
   first_file_unique_id TEXT,
   first_photo_at INTEGER,

@@ -8,6 +8,9 @@ describe("parsePlates", () => {
   it("reads an array inside prose and a code block", () => {
     expect(parsePlates('Here you go:\n```json\n["12-d-3456"]\n```')).toEqual(["12-D-3456"]);
   });
+  it("reads the array among other brackets", () => {
+    expect(parsePlates('No plate: []; found ["12-D-3456"]')).toEqual(["12-D-3456"]);
+  });
   it("drops repeats, empty and overlong entries", () => {
     expect(parsePlates('["12-D-1", "12-d-1", " ", "1234567890123456", 5]')).toEqual(["12-D-1"]);
   });

@@ -352,7 +352,7 @@ async function recognize(c: Context, photo: PhotoSize): Promise<void> {
   } catch {
     console.error("Plate recognition failed");
   }
-  await setPlates(c.env.DB, c.userId, plates);
+  await setPlates(c.env.DB, c.userId, photo.file_unique_id, plates);
 }
 
 async function answerPhoto(c: Context, draft: Draft, message: Message, count: number): Promise<void> {
@@ -369,16 +369,16 @@ async function answerPhoto(c: Context, draft: Draft, message: Message, count: nu
 
 async function handlePhoto(c: Context, draft: Draft, message: Message): Promise<void> {
   const photo = pickPhoto(message.photo as PhotoSize[]);
-  const count = await recordPhoto(c.env.DB, c.userId, {
+  const recorded = await recordPhoto(c.env.DB, c.userId, {
     fileId: photo.file_id,
     fileUniqueId: photo.file_unique_id,
     sentAt: message.date * 1000,
     messageId: message.message_id,
   });
-  if (count === null) return;
+  if (recorded === null) return;
   await Promise.all([
-    answerPhoto(c, draft, message, count),
-    count === 1 ? recognize(c, photo) : Promise.resolve(),
+    answerPhoto(c, draft, message, recorded.photoCount),
+    recorded.isFirst ? recognize(c, photo) : Promise.resolve(),
   ]);
 }
 
@@ -410,6 +410,10 @@ async function handlePlateInput(
 ): Promise<void> {
   const cleanupIds = [message.message_id];
   const plate = text.trim();
+  if (plate === "") {
+    await show(c, draft, WRITE_PLATE, {}, cleanupIds);
+    return;
+  }
   if (plate.length > PLATE_MAX_LENGTH) {
     await show(c, draft, PLATE_TOO_LONG, {}, cleanupIds);
     return;
