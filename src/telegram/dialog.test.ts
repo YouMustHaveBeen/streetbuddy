@@ -19,6 +19,7 @@ let nextId: number;
 let nextMessage: number;
 let nominatim: () => Response;
 let failSend: boolean;
+let failEdit: boolean;
 let onAnswer: (() => void) | null;
 
 const called = (method: string) => calls.filter((call) => call.method === method);
@@ -65,6 +66,7 @@ beforeEach(() => {
   nextId = 1000;
   nextMessage = 0;
   failSend = false;
+  failEdit = false;
   onAnswer = null;
   nominatim = () =>
     new Response(JSON.stringify({ lat: "53.4", lon: "-6.1", address: { house_number: "12", road: "Main Street", suburb: "Clongriffin" } }));
@@ -79,6 +81,7 @@ beforeEach(() => {
       calls.push({ method, body });
       if (method === "answerCallbackQuery") onAnswer?.();
       if (method === "sendMessage" && failSend) return new Response(JSON.stringify({ ok: false, error_code: 500 }));
+      if (method === "editMessageText" && failEdit) return new Response(JSON.stringify({ ok: false, error_code: 500 }));
       if (method === "getFile") return new Response(JSON.stringify({ ok: true, result: { file_path: "p.jpg" } }));
       nextId += 1;
       return new Response(JSON.stringify({ ok: true, result: { message_id: nextId } }));
@@ -446,6 +449,17 @@ describe("final message buttons", () => {
       reply_markup: { inline_keyboard: [] },
     });
     expect(called("deleteMessage").filter((call) => call.body.message_id === row.message_id)).toEqual([]);
+    expect(finalRow()).toBeUndefined();
+  });
+
+  it("keeps the text when the edit fails, so that Done can be pressed again", async () => {
+    const row = await toFinal();
+    failEdit = true;
+    await press("final_done", row.message_id);
+    expect(finalRow()?.text).toBe(row.text);
+    failEdit = false;
+    await press("final_done", row.message_id);
+    expect(called("editMessageText").at(-1)?.body.text).toMatch(/^.*Report sent \d\d\/\d\d\/\d{4} \d\d:\d\d$/s);
     expect(finalRow()).toBeUndefined();
   });
 

@@ -3,7 +3,7 @@
 import { disableBot, dublinDateTime, enableBot, getSwitchStatus } from "../core";
 import type { FormCheckOutcome } from "../core";
 import { callTelegram } from "./api";
-import { deleteDraft, loadDraft } from "./draft";
+import { deleteDraftWithButtons } from "./draft";
 
 export interface AdminEnv {
   DB: D1Database;
@@ -48,12 +48,11 @@ async function sendScreen(env: AdminEnv, chatId: number): Promise<number | null>
 // so that no report buttons stay in the middle of the conversation. While the link is being
 // given the report is left alone: that step has no buttons and finishes by itself.
 export async function handleAdminCommand(env: AdminEnv, userId: number, chatId: number): Promise<void> {
-  const draft = await loadDraft(env.DB, userId);
-  if (draft && draft.step !== "finishing") {
-    await deleteDraft(env.DB, userId);
+  const buttonsMessageId = await deleteDraftWithButtons(env.DB, userId);
+  if (buttonsMessageId !== null) {
     await callTelegram(env.TELEGRAM_BOT_TOKEN, "deleteMessage", {
       chat_id: chatId,
-      message_id: draft.buttons_message_id,
+      message_id: buttonsMessageId,
     });
   }
   await sendScreen(env, chatId);

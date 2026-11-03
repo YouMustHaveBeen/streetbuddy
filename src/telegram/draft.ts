@@ -222,6 +222,16 @@ export async function deleteDraft(db: D1Database, userId: number): Promise<void>
   await db.prepare("DELETE FROM drafts WHERE user_id = ?1").bind(userId).run();
 }
 
+// Stops a report that has buttons on screen and returns the message with them. One statement, so
+// a report that has just reached the link step is left alone and is not lost in between.
+export async function deleteDraftWithButtons(db: D1Database, userId: number): Promise<number | null> {
+  const row = await db
+    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND step != 'finishing' RETURNING buttons_message_id")
+    .bind(userId)
+    .first<{ buttons_message_id: number }>();
+  return row?.buttons_message_id ?? null;
+}
+
 // A cancel during this step may already have made room for a new report, which must stay.
 export async function deleteFinishedDraft(db: D1Database, userId: number): Promise<void> {
   await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND step = 'finishing'").bind(userId).run();
@@ -241,18 +251,23 @@ export async function saveFinalMessage(
 
 // Removes the row and returns its text. Null means there is none: it has expired, or the
 // message was already taken by a press of Done or Cancel.
-export async function takeFinalMessage(
+export async function readFinalMessage(
   db: D1Database,
   chatId: number,
   messageId: number,
 ): Promise<string | null> {
   const row = await db
-    .prepare(
-      "DELETE FROM final_messages WHERE chat_id = ?1 AND message_id = ?2 AND created_at > ?3 RETURNING text",
-    )
+    .prepare("SELECT text FROM final_messages WHERE chat_id = ?1 AND message_id = ?2 AND created_at > ?3")
     .bind(chatId, messageId, Date.now() - FINAL_MESSAGE_TTL_MS)
     .first<{ text: string }>();
   return row?.text ?? null;
+}
+
+export async function deleteFinalMessage(db: D1Database, chatId: number, messageId: number): Promise<void> {
+  await db
+    .prepare("DELETE FROM final_messages WHERE chat_id = ?1 AND message_id = ?2")
+    .bind(chatId, messageId)
+    .run();
 }
 
 export async function cachedPlates(db: D1Database, fileUniqueId: string): Promise<string[] | null> {

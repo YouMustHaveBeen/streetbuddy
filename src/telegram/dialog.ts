@@ -28,7 +28,8 @@ import {
   setPlates,
   startFinishing,
   swapScreen,
-  takeFinalMessage,
+  deleteFinalMessage,
+  readFinalMessage,
   toggleParking,
 } from "./draft";
 import type { Draft, DraftChanges, Step } from "./draft";
@@ -612,11 +613,12 @@ async function answerButton(c: Context, queryId: string, text?: string): Promise
 // The buttons of a final message work with no draft: the report is finished and its draft is
 // gone, and a new report may already be under way, which these buttons must not touch.
 async function handleFinalButton(c: Context, done: boolean, messageId: number): Promise<void> {
-  const body = await takeFinalMessage(c.env.DB, c.chatId, messageId);
   if (!done) {
+    await deleteFinalMessage(c.env.DB, c.chatId, messageId);
     await deleteMessage(c, messageId);
     return;
   }
+  const body = await readFinalMessage(c.env.DB, c.chatId, messageId);
   const noButtons = { inline_keyboard: [] };
   if (body === null) {
     // The text is no longer stored, so it cannot be rewritten: only the buttons go.
@@ -628,12 +630,14 @@ async function handleFinalButton(c: Context, done: boolean, messageId: number): 
     return;
   }
   const moment = dublinDateTime(Date.now());
-  await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "editMessageText", {
+  const edited = await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "editMessageText", {
     chat_id: c.chatId,
     message_id: messageId,
     text: `${body}\n\n${REPORT_SENT} ${moment.date} ${moment.time}`,
     reply_markup: noButtons,
   });
+  // The text stays until the message is really changed, so that a failed edit can be repeated.
+  if (edited !== null) await deleteFinalMessage(c.env.DB, c.chatId, messageId);
 }
 
 export async function handleButton(
