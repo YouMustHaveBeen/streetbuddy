@@ -25,8 +25,8 @@ export default {
     // that other scheduled work (the form check, later) is not blocked by it.
     try {
       await cleanupExpired(env.DB);
-    } catch {
-      console.error("scheduled: cleanup failed");
+    } catch (error) {
+      console.error("scheduled: cleanup failed", error);
     }
     // Daily form check will go here.
   },

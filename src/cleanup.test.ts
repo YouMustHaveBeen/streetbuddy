@@ -82,7 +82,7 @@ describe("scheduled", () => {
     await expect(
       worker.scheduled({} as ScheduledController, { DB: db } as Env, {} as ExecutionContext),
     ).resolves.toBeUndefined();
-    expect(log).toHaveBeenCalledWith("scheduled: cleanup failed");
+    expect(log).toHaveBeenCalledWith("scheduled: cleanup failed", expect.any(Error));
     log.mockRestore();
   });
 });
