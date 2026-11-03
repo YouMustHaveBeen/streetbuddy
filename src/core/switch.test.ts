@@ -14,6 +14,10 @@ describe("bot switch", () => {
     expect(await disableBot(db)).toBe(false);
     expect(await isBotEnabled(db)).toBe(false);
   });
+  it("holds only the values 0 and 1", () => {
+    const { sqlite } = fakeD1();
+    expect(() => sqlite.prepare("UPDATE bot_switch SET enabled = 2 WHERE id = 1").run()).toThrow();
+  });
   it("is on again after the owner sets it", async () => {
     const { db, sqlite } = fakeD1();
     await disableBot(db);

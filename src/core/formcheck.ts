@@ -25,10 +25,11 @@ async function fetchText(url: string): Promise<string> {
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // An id attribute with this exact value: the attribute name in any case, the value in double
-// quotes, single quotes or none, as HTML allows.
+// quotes, single quotes or none, as HTML allows. The name must stand alone: `data-id` and
+// `aria-id` are other attributes.
 function idAttribute(id: string): string {
   const value = escapeRegExp(id);
-  return `\\b[iI][dD]\\s*=\\s*(?:"${value}"|'${value}'|${value}(?=[\\s>]|/>))`;
+  return `(?<![\\w-])[iI][dD]\\s*=\\s*(?:"${value}"|'${value}'|${value}(?=[\\s>]|/>))`;
 }
 
 function hasId(html: string, id: string): boolean {

@@ -11,15 +11,17 @@ interface NotifyEnv {
   GROUP_ID: string;
 }
 
-// The same message goes to the owner and to the closed group.
+// The same message goes to the closed group once and to the owner twice: the bot is already
+// off and no later check repeats the alert, so a single failed request must not leave the
+// owner without it.
 export async function notifyFormChanged(env: NotifyEnv): Promise<void> {
   const results = await Promise.all(
-    [env.OWNER_TELEGRAM_ID, env.GROUP_ID].map((chatId) =>
+    [env.OWNER_TELEGRAM_ID, env.OWNER_TELEGRAM_ID, env.GROUP_ID].map((chatId) =>
       callTelegram(env.TELEGRAM_BOT_TOKEN, "sendMessage", { chat_id: chatId, text: FORM_CHANGED_TEXT }),
     ),
   );
   // The bot is already off and later checks stay silent, so an undelivered alert has to show in the log.
   // Only the count is logged: the chat ids are Telegram ids.
   const failed = results.filter((result) => result === null).length;
-  if (failed > 0) console.error(`Form change alert not delivered to ${failed} of ${results.length} chats`);
+  if (failed > 0) console.error(`Form change alert: ${failed} of ${results.length} messages not delivered`);
 }

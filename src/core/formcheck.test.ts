@@ -65,8 +65,7 @@ describe("checkForm", () => {
 
   it("reports a list that is no longer a select", async () => {
     serve({ [PAGE_URL]: FORM.replace(/<select name="ContactMethod"/, '<div name="ContactMethod"').replace(/(<div name="ContactMethod"[\s\S]*?)<\/select>/, "$1</div>") });
-    const result = await checkForm();
-    expect(result.ok).toBe(false);
+    expect(await checkForm()).toEqual({ ok: false, reason: "options of ContactMethod changed" });
   });
 
   it("does not mind the order of options or the way characters are written", async () => {
@@ -137,6 +136,11 @@ describe("checkForm", () => {
     expect(FORM).toContain(from);
     serve({ [PAGE_URL]: FORM.replace(from, to) });
     expect(await checkForm()).toEqual({ ok: true });
+  });
+
+  it.each(["data-id", "aria-id"])("does not take %s for the id of a field", async (name) => {
+    serve({ [PAGE_URL]: FORM.replace('id="Location"', `${name}="Location"`) });
+    expect(await checkForm()).toEqual({ ok: false, reason: "field Location is missing" });
   });
 
   it("repeats a failed request of the page once", async () => {

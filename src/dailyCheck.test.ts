@@ -62,11 +62,12 @@ describe("runFormCheck", () => {
     expect(sent).toEqual([]);
   });
 
-  it("turns the bot off and tells the owner and the group", async () => {
+  it("turns the bot off and tells the owner twice and the group once", async () => {
     page = () => new Response(FORM.replace('id="Location"', 'id="Place"'));
     await runFormCheck(env);
     expect(enabled()).toBe(0);
     expect(sent).toEqual([
+      { chat_id: "111", text: TEXT },
       { chat_id: "111", text: TEXT },
       { chat_id: "-100222", text: TEXT },
     ]);
@@ -77,7 +78,7 @@ describe("runFormCheck", () => {
     await runFormCheck(env);
     expect(enabled()).toBe(0);
     expect(pageRequests).toBe(2);
-    expect(sent).toHaveLength(2);
+    expect(sent).toHaveLength(3);
   });
 
   it("says nothing more while the bot stays off", async () => {
@@ -85,7 +86,7 @@ describe("runFormCheck", () => {
     await runFormCheck(env);
     await runFormCheck(env);
     expect(enabled()).toBe(0);
-    expect(sent).toHaveLength(2);
+    expect(sent).toHaveLength(3);
   });
 
   it("does not turn the bot on again when the form is fine", async () => {
@@ -95,12 +96,12 @@ describe("runFormCheck", () => {
     expect(sent).toEqual([]);
   });
 
-  it("logs how many chats the alert did not reach", async () => {
+  it("logs how many messages of the alert did not arrive", async () => {
     sendFails = true;
     page = () => new Response(FORM.replace('id="Location"', 'id="Place"'));
     await runFormCheck(env);
     expect(enabled()).toBe(0);
-    expect(console.error).toHaveBeenCalledWith("Form change alert not delivered to 2 of 2 chats");
+    expect(console.error).toHaveBeenCalledWith("Form change alert: 3 of 3 messages not delivered");
   });
 
   it("tells again after the owner has turned the bot on and the form is still wrong", async () => {
@@ -108,7 +109,7 @@ describe("runFormCheck", () => {
     await runFormCheck(env);
     sqlite.prepare("UPDATE bot_switch SET enabled = 1").run();
     await runFormCheck(env);
-    expect(sent).toHaveLength(4);
+    expect(sent).toHaveLength(6);
   });
 });
 

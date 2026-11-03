@@ -498,6 +498,7 @@ describe("bot switched off", () => {
     await photo();
     expect(sentTexts()).toHaveLength(1);
     expect(lastSent().text).toContain("To start a report, send your location.");
+    expect(draft()).toBeUndefined();
   });
   it("carries on a report that was already begun", async () => {
     await location();
