@@ -316,10 +316,17 @@ describe("form-filling script on a copy of the report form", () => {
   it(
     "waits for the fields up to 10 seconds after the first visible field",
     async () => {
+      // A replacement that finds nothing would leave the form fast and the test checking nothing.
+      const replaceOnce = (html: string, pattern: RegExp, text: string): string => {
+        if (!pattern.test(html)) throw new Error(`The copy of the form has no match for ${pattern}`);
+        return html.replace(pattern, () => text);
+      };
       const slowForm = (html: string) =>
-        html
-          .replace(/\$\("#startBtn"\)\.hide\(\);\s*openForm\(\);/, () => '$("#startBtn").hide(); setTimeout(openForm, 7000);')
-          .replace(/focus\(\);\s*addDate\(\);/, () => "focus(); setTimeout(addDate, 5000);");
+        replaceOnce(
+          replaceOnce(html, /\$\("#startBtn"\)\.hide\(\);\s*openForm\(\);/, '$("#startBtn").hide(); setTimeout(openForm, 7000);'),
+          /focus\(\);\s*addDate\(\);/,
+          "focus(); setTimeout(addDate, 5000);",
+        );
       const context = await newContext(slowForm);
       const page = await context.newPage();
       const report = ordinaryReport();
