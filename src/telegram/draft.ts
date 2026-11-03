@@ -249,8 +249,9 @@ export async function saveFinalMessage(
     .run();
 }
 
-// Removes the row and returns its text. Null means there is none: it has expired, or the
-// message was already taken by a press of Done or Cancel.
+// Returns the text of a final message without removing it; deleteFinalMessage removes it once
+// Done has really changed the message. Null means there is none: it has expired, or the
+// message was already finished by Done or Cancel.
 export async function readFinalMessage(
   db: D1Database,
   chatId: number,
