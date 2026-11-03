@@ -1,4 +1,5 @@
 // StreetBuddy Worker entry point.
+import { cleanupExpired } from "./cleanup";
 import { handleWebhook } from "./telegram";
 
 export interface Env {
@@ -19,7 +20,14 @@ export default {
     return new Response("Not Found", { status: 404 });
   },
 
-  async scheduled(_event: ScheduledController, _env: Env, _ctx: ExecutionContext): Promise<void> {
+  async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    // Runs on both cron triggers; repeating it is harmless. A failure is only logged, so
+    // that other scheduled work (the form check, later) is not blocked by it.
+    try {
+      await cleanupExpired(env.DB);
+    } catch {
+      console.error("scheduled: cleanup failed");
+    }
     // Daily form check will go here.
   },
 } satisfies ExportedHandler<Env>;
