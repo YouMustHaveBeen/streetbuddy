@@ -151,7 +151,7 @@ describe("checkForm", () => {
 
   it("counts a page that cannot be loaded twice as a changed form", async () => {
     serve({ [PAGE_URL]: [down, down] });
-    expect(await checkForm()).toEqual({ ok: false, reason: "the form page could not be loaded" });
+    expect(await checkForm()).toEqual({ ok: false, reason: "the form page could not be loaded", unloaded: true });
     expect(fetched).toEqual([PAGE_URL, PAGE_URL]);
   });
 
@@ -163,6 +163,6 @@ describe("checkForm", () => {
 
   it("reports a site script that cannot be loaded", async () => {
     serve({ [PAGE_URL]: withoutDatePrefix(FORM) });
-    expect(await checkForm()).toEqual({ ok: false, reason: "a site script could not be loaded" });
+    expect(await checkForm()).toEqual({ ok: false, reason: "a site script could not be loaded", unloaded: true });
   });
 });

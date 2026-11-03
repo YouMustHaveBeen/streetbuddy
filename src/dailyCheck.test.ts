@@ -113,6 +113,42 @@ describe("runFormCheck", () => {
   });
 });
 
+describe("recorded result", () => {
+  const recorded = () =>
+    sqlite.prepare("SELECT checked_at, result FROM form_check").all() as { checked_at: number; result: string }[];
+
+  it("records an unchanged form as ok, with the time of the check", async () => {
+    const before = Date.now();
+    await runFormCheck(env);
+    const [row, ...others] = recorded();
+    expect(others).toEqual([]);
+    expect(row.result).toBe("ok");
+    expect(row.checked_at).toBeGreaterThanOrEqual(before);
+    expect(row.checked_at).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("records a changed form as changed", async () => {
+    page = () => new Response(FORM.replace('id="Location"', 'id="Place"'));
+    await runFormCheck(env);
+    expect(recorded().map((row) => row.result)).toEqual(["changed"]);
+  });
+
+  it("records a page that cannot be loaded as unloaded", async () => {
+    page = () => new Response("", { status: 503 });
+    await runFormCheck(env);
+    expect(recorded().map((row) => row.result)).toEqual(["unloaded"]);
+  });
+
+  it("records every check in the same row, also while the bot stays off", async () => {
+    page = () => new Response("", { status: 503 });
+    await runFormCheck(env);
+    page = () => new Response(FORM);
+    await runFormCheck(env);
+    expect(recorded().map((row) => row.result)).toEqual(["ok"]);
+    expect(enabled()).toBe(0);
+  });
+});
+
 describe("scheduled form check", () => {
   const run = (scheduledTime: number) =>
     worker.scheduled({ scheduledTime } as ScheduledController, env, {} as ExecutionContext);

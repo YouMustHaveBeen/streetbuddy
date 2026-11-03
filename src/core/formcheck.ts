@@ -3,7 +3,9 @@
 // script that creates the date field after "Click Here to Start".
 import reference from "../../config/form.json";
 
-export type FormCheck = { ok: true } | { ok: false; reason: string };
+// "unloaded" marks a failure that is a page or script that could not be fetched, as opposed to
+// a form that has really changed; the /admin screen tells the two apart.
+export type FormCheck = { ok: true } | { ok: false; reason: string; unloaded?: true };
 
 const REQUEST_TIMEOUT_MS = 10000;
 
@@ -83,7 +85,7 @@ export async function checkForm(): Promise<FormCheck> {
   try {
     html = await fetchText(reference.url);
   } catch {
-    return { ok: false, reason: "the form page could not be loaded" };
+    return { ok: false, reason: "the form page could not be loaded", unloaded: true };
   }
 
   for (const id of reference.fields) {
@@ -106,6 +108,6 @@ export async function checkForm(): Promise<FormCheck> {
       unloaded = true;
     }
   }
-  if (unloaded) return { ok: false, reason: "a site script could not be loaded" };
+  if (unloaded) return { ok: false, reason: "a site script could not be loaded", unloaded: true };
   return { ok: false, reason: `the script no longer creates ${reference.datePrefix}` };
 }
