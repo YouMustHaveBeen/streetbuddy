@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Traffic Watch Online Reporting</title>
+<!-- Test copy of the report form: same markup, ids and page script as the real page.
+     Left out on purpose: the page header and logo, hidden server state, the captcha widget, the submit handler,
+     analytics and the style sheets (only the rules that decide what is visible are kept). -->
+<style>
+    #MainForm { display: none; }
+    #MainForm.show { display: block; }
+    .show-hide { display: none; }
+    .show-hide-checkbox-wrapper.checked .show-hide { display: block; }
+</style>
+<script>
+    // Stands in for the captcha script of the real page.
+    window.grecaptcha = { ready: function (callback) { callback(); }, getResponse: function () { return ""; } };
+</script>
+</head>
+<body>
+<form method="post" action="/en/trafficwatchreport/" id="MainFormTmp">
+            <div class="main-content">
+                <div class="container">
+                    <div class="row" id="formHeader">
+                        <div class="col-lg-9">
+                            <div class=" text-danger">
+                                <strong>This form should not be used in emergencies.</strong><br>
+                                <br>
+
+                                This form should be used for incidents that do not require an immediate police or Emergency Services response, such as:
+
+                                <ul>
+                                    <li>A danger to life</li>
+                                    <li>Use, or immediate threat of use, or risk, of violence</li>
+                                    <li>Serious injury to a person and/or serious damage to property</li>
+                                    <li>Crime in progress or about to happen</li>
+                                    <li>An offender still at the scene or has just left the scene</li>
+                                    <li>Serious public disorder occurring or about to occur</li>
+                                    <li>A fatal traffic collision or serious injury collision</li>
+                                </ul>
+
+                                <strong>Always call 999/112 in an emergency.</strong>
+                            </div>
+
+                            <br>
+
+                            <div class="custom-checkbox mt-3">
+                                <input type="checkbox" id="NotAnEmergencyCheckbox">
+                                <label for="NotAnEmergencyCheckbox" class="text-danger">
+                                    <b>
+                                        I confirm that this is not an emergency
+                                    </b>
+                                </label>
+                            </div>
+
+                            <h3 class="mt-5"><b>
+                                Important
+                            </b></h3>
+                            <p>
+                                Video/photographic evidence cannot be uploaded to this page.  When asked, you can hand over any video evidence you may have to a member of the police.  You will be required to make a statement and may be required to attend Court to give evidence.
+You will receive an email containing a reference number for your records.
+                            </p>
+                            <p class="h4 mb-3">
+                                <b>
+                                    This is not a 24 hour service.
+                                </b>
+                            </p>
+                            <div class="custom-checkbox mt-5">
+                                <input type="checkbox" id="AttendCourtCheckbox">
+                                <label for="AttendCourtCheckbox" class="text-danger">
+                                    <b>
+                                        I confirm that I am willing to make a statement and attend Court if required to do so
+                                    </b>
+                                </label>
+                            </div>
+
+                            <div class="mt-5">
+                                <div class="mb-3 alert alert-danger" id="err_notEmergency_container" style="display: none">
+                                    <i class="icon icon-alert-solid">!</i>Please confirm this is not an emergency and that you are willing to make a statement and attend court if required.
+                                </div>
+                                <button type="button" class="btn btn-primary btn-lg" onclick="onStartBtnClicked()" id="startBtn">Click Here to Start</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="MainForm">
+                        <div class="form-wrapper has-recaptcha">
+                            <div class="row">
+                                <div class="col-lg-8">
+                                    <div class="form-inner">
+                                        <div id="shape1"></div>
+                                        <div id="shape2"></div>
+                                        <div id="shape3"></div>
+                                        <h2 class="h1">
+                                            <b>
+                                                Details of Incident
+                                            </b>
+                                        </h2>
+
+                                        <p><em>Mandatory fields marked with *</em></p>
+
+                                        <h3><b>
+                                            Location
+                                        </b></h3>
+                                        <div class="mb-3">
+                                            <label>
+                                                Address or general location *
+                                            </label>
+
+                                            <textarea name="Location" rows="2" cols="20" id="Location" class="form-control" onblur="validateLocation()" placeholder="Please provide as much information as possible – Road Name, Road Number, GPS Co-Ordinates"></textarea>
+                                            <div class="mt-3 alert alert-danger" id="err_location_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>Please select a location
+                                            </div>
+
+
+                                        </div>
+
+                                        <h3 class="mt-5">
+                                            <b>
+                                                County
+                                            </b>
+                                        </h3>
+
+                                        <div class="mb-3">
+                                            <label>
+                                                Please select county *
+                                            </label>
+                                            <select name="County" id="County" class="form-control" onblur="validateCounty()">
+	<option value="" id="CountySelectFirstItem">Select</option>
+	<option value="Carlow">Carlow</option>
+	<option value="Cavan">Cavan</option>
+	<option value="Clare">Clare</option>
+	<option value="Cork">Cork</option>
+	<option value="Donegal">Donegal</option>
+	<option value="Dublin">Dublin</option>
+	<option value="Galway">Galway</option>
+	<option value="Kerry">Kerry</option>
+	<option value="Kildare">Kildare</option>
+	<option value="Kilkenny">Kilkenny</option>
+	<option value="Laois">Laois</option>
+	<option value="Leitrim">Leitrim</option>
+	<option value="Limerick">Limerick</option>
+	<option value="Longford">Longford</option>
+	<option value="Louth">Louth</option>
+	<option value="Mayo">Mayo</option>
+	<option value="Meath">Meath</option>
+	<option value="Monaghan">Monaghan</option>
+	<option value="Offaly">Offaly</option>
+	<option value="Roscommon">Roscommon</option>
+	<option value="Sligo">Sligo</option>
+	<option value="Tipperary">Tipperary</option>
+	<option value="Waterford">Waterford</option>
+	<option value="Westmeath">Westmeath</option>
+	<option value="Wexford">Wexford</option>
+	<option value="Wicklow">Wicklow</option>
+
+</select>
+                                            <div class="mt-3 alert alert-danger" id="err_county_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>This field is mandatory
+                                            </div>
+
+                                        </div>
+
+                                        <h3 class="mt-5">
+                                            <b>
+                                                Alleged Crime/Incident
+                                            </b>
+                                        </h3>
+
+
+                                        <div class="mb-3">
+                                            <label>
+                                                <span>Type of crime/incident *</span>
+                                            </label>
+
+                                            <select name="Crime" id="Crime" class="form-control" onblur="validateCrime()">
+	<option value="" id="CrimeSelectFirstItem">Select</option>
+	<option value="Other" id="OtherItem">Other</option>
+	<option value="Careless Driving (driving without due care and attention)">Careless Driving (driving without due care and attention)</option>
+	<option value="Dangerous Driving (Driving a vehicle in a manner dangerous to the public or likely to be dangerous to the public)">Dangerous Driving (Driving a vehicle in a manner dangerous to the public or likely to be dangerous to the public)</option>
+	<option value="Dangerous Overtaking">Dangerous Overtaking</option>
+	<option value="Driving under the influence of alcohol or drugs (including prescription drugs)">Driving under the influence of alcohol or drugs (including prescription drugs)</option>
+	<option value="Ignoring Traffic Lights or Signs">Ignoring Traffic Lights or Signs</option>
+	<option value="Insurance NCT Tax – Driving without">Insurance NCT Tax – Driving without</option>
+	<option value="Learner Driver Unaccompanied">Learner Driver Unaccompanied</option>
+	<option value="Mobile Phone Use">Mobile Phone Use</option>
+	<option value="Parking Offences">Parking Offences</option>
+	<option value="Speeding">Speeding</option>
+	<option value="Vehicle has unsafe load, dangerous fault">Vehicle has unsafe load, dangerous fault</option>
+
+</select>
+
+                                            <div class="mt-3 alert alert-danger" id="err_crime_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>   Please select a crime
+                                            </div>
+
+
+                                        </div>
+                                        <div class="mb-3">
+                                            <label>
+                                                <span>Were you a: * </span>
+                                            </label>
+                                            <select name="RoadUserType" id="RoadUserType" class="form-control" onblur="validateRoadUserType()">
+	<option value="" id="UserSelectFirstItem">Select</option>
+	<option value="Cyclist">Cyclist</option>
+	<option value="Driver">Driver</option>
+	<option value="E-Scooter User, E-Moped User, E-Cyclist">E-Scooter User, E-Moped User, E-Cyclist</option>
+	<option value="Motorcyclist">Motorcyclist</option>
+	<option value="Passenger">Passenger</option>
+	<option value="Pedestrian">Pedestrian</option>
+
+</select>
+                                            <div class="mt-3 alert alert-danger" id="err_roadusertype_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>This field is mandatory
+                                            </div>
+
+                                        </div>
+
+                                        <div class="mb-3">
+                                            <h3>
+                                                <b>
+                                                    Description of crime / incident
+                                                </b>
+                                            </h3>
+
+                                            <div class="mb-2">
+
+                                                Please provide as much information as possible, including the registration number of the offending vehicle – limit to 300 characters. *
+
+
+                                                <textarea name="CrimeDescription" rows="2" cols="20" id="CrimeDescription" class="form-control" onblur="validateCrimeDescription()"></textarea>
+                                                <div class="mt-3 alert alert-danger" id="err_crimedesc_container" style="display: none">
+                                                    <i class="icon icon-alert-solid">!</i>This field is mandatory
+                                                </div>
+                                            </div>
+
+                                        </div>
+
+
+                                        <div class="mb-3">
+                                            <label>
+                                                Date *<br><strong>Please note that reports should be made within 6 months of occurrence.</strong>
+                                            </label>
+
+                                            <div id="dateContainer" onblur="validateDate()">
+                                            </div>
+
+                                            <div class="mt-3 alert alert-danger" id="err_date_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>This field is mandatory
+                                            </div>
+
+
+                                        </div>
+
+                                        <h2 class="h1 mt-5">
+                                            <b>
+                                                Personal Details
+                                            </b>
+                                        </h2>
+
+                                        <h3>
+                                            <b>
+                                                Name
+                                            </b>
+                                        </h3>
+                                        First Name and Last Name *
+
+                                        <div class="mb-3">
+
+                                            <input name="UserName" type="text" id="UserName" class="form-control" onblur="validateUserName()">
+
+                                            <div class="mt-3 alert alert-danger" id="err_username_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>This field is mandatory
+                                            </div>
+
+                                        </div>
+
+
+                                        <h3 class="mt-5">
+                                            <b>
+                                                Contact Details
+                                            </b>
+
+                                        </h3>
+
+                                        <div class="mb-3">
+                                            <label>
+                                                Please note that you may be contacted by an unknown/withheld number should you chose to be contacted by phone.
+
+
+                                            </label>
+
+                                        </div>
+
+                                        <div class="mt-3">
+                                            <label>
+                                                Phone *
+                                            </label>
+                                            <input name="Phone" type="tel" id="Phone" class="form-control" onblur="validatePhone()">
+                                            <div class="mt-3 alert alert-danger" id="err_phone_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>This field is mandatory
+                                            </div>
+                                        </div>
+
+                                        <div class="mt-3">
+                                            <label>
+                                                Email *
+                                            </label>
+                                            <input name="Email" type="email" id="Email" class="form-control" onblur="validateEmailField()">
+                                            <div class="mt-3 alert alert-danger" id="err_email_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>Please enter valid e-mail address
+                                            </div>
+
+                                            <div class="mt-3 alert alert-danger" id="err_emptyemail_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>This field is mandatory
+                                            </div>
+
+
+                                        </div>
+
+                                        <div class="mb-3 mt-4">
+                                            <label>
+                                                Address *
+                                            </label>
+
+                                            <textarea name="UserAddress" rows="2" cols="20" id="UserAddress" class="form-control" onblur="validateUserAddress()"></textarea>
+                                            <div class="mt-3 alert alert-danger" id="err_useraddress_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>This field is mandatory
+                                            </div>
+
+
+
+                                        </div>
+
+
+                                        <div class="mb-3">
+                                            <label>
+                                                <span>Please indicate how you wish to be contacted: *</span>
+                                            </label>
+                                            <select name="ContactMethod" id="ContactMethod" class="form-control" onblur="validateContactMethod()">
+	<option value="" id="ContactSelectFirstItem">Select</option>
+	<option value="Email">Email</option>
+	<option value="Phone Call">Phone Call</option>
+	<option value="Text Message">Text Message</option>
+
+</select>
+                                            <div class="mt-3 alert alert-danger" id="err_contactmethod_container" style="display: none">
+                                                <i class="icon icon-alert-solid">!</i>Please Select a contact method
+                                            </div>
+                                        </div>
+
+
+                                        <h2 class="h1 mt-5">
+                                            <b>
+                                                Confirmation
+                                            </b>
+                                        </h2>
+
+                                        <div class="mb-3">
+                                            <label>
+                                                Confirmation of receipt of this report can only be sent if email address is provided.
+                                            </label>
+
+                                        </div>
+
+
+                                            <div class="mb-3">
+                                                <div class="g-recaptcha"></div>
+                                            </div>
+
+                                        <div class="mb-3 alert alert-danger" id="err_recaptcha_container" style="display: none">
+                                            <i class="icon icon-alert-solid">!</i>You have to click the "I'm not a robot"
+                                        </div>
+
+                                        <div class="mb-3 alert alert-danger" id="err_empty_container" style="display: none">
+                                            <i class="icon icon-alert-solid">!</i>Please correct the indicated validation errors above
+                                        </div>
+
+
+                                        <div class="text-right">
+                                            <button class="btn btn-primary" id="submitReport" type="button" causesvalidation="true">Submit Report</button>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class=" content" id="SuccessPlaceHolder" style="display: none">
+                        Message submitted. A member of the police will be in touch with you as soon as possible.
+                    </div>
+
+                </div>
+            </div>
+
+</form>
+<script src="/vendor/jquery.min.js"></script>
+<script src="/vendor/bootstrap-datepicker.min.js"></script>
+<script src="/vendor/bootstrap-datepicker.en-IE.min.js"></script>
+<script>
+        var lang = "en"
+
+
+        function validateLocation() {
+            var location = $("#Location").val().trim();
+            if (location == "") {
+                $("#err_location_container").show();
+            } else {
+                $("#err_location_container").hide();
+            }
+        }
+
+        function validatePhone() {
+            var phone = $("#Phone").val().trim();
+            if (phone == "") {
+                $("#err_phone_container").show();
+            } else {
+                $("#err_phone_container").hide();
+            }
+        }
+
+        function validateEmailField() {
+            var email = $("#Email").val().trim();
+            if (email == "") {
+                $("#err_emptyemail_container").show();
+                $("#err_email_container").hide();
+            } else if (!validateEmail(email)) {
+                $("#err_email_container").show();
+                $("#err_emptyemail_container").hide();
+            } else {
+                $("#err_email_container").hide();
+                $("#err_emptyemail_container").hide();
+            }
+        }
+
+        function validateCrime() {
+            var crimeSelectedValue = $("#Crime").val();
+            if (crimeSelectedValue == "") {
+                $("#err_crime_container").show();
+                $("#err_empty_container").show();
+            } else {
+                $("#err_crime_container").hide();
+                $("#err_empty_container").hide();
+            }
+        }
+
+        function validateCounty() {
+            var countySelectedValue = $("#County").val();
+            if (countySelectedValue == "") {
+                $("#err_county_container").show();
+                $("#err_empty_container").show();
+            } else {
+                $("#err_county_container").hide();
+                $("#err_empty_container").hide();
+            }
+        }
+
+        function validateRoadUserType() {
+            var roadUserTypeSelectedValue = $("#RoadUserType").val();
+            if (roadUserTypeSelectedValue == "") {
+                $("#err_roadusertype_container").show();
+                $("#err_empty_container").show();
+            } else {
+                $("#err_roadusertype_container").hide();
+                $("#err_empty_container").hide();
+            }
+        }
+
+        function validateCrimeDescription() {
+            var crimeDesc = $("#CrimeDescription").val().trim();
+            if (crimeDesc == "") {
+                $("#err_crimedesc_container").show();
+                $("#err_empty_container").show();
+            } else {
+                $("#err_crimedesc_container").hide();
+                $("#err_empty_container").hide();
+            }
+        }
+
+        function validateUserName() {
+            var username = $("#UserName").val().trim();
+            if (username == "") {
+                $("#err_username_container").show();
+                $("#err_empty_container").show();
+            } else {
+                $("#err_username_container").hide();
+                $("#err_empty_container").hide();
+            }
+        }
+
+        function validateUserAddress() {
+            var useraddress = $("#UserAddress").val().trim();
+            if (useraddress == "") {
+                $("#err_useraddress_container").show();
+                $("#err_empty_container").show();
+            } else {
+                $("#err_useraddress_container").hide();
+                $("#err_empty_container").hide();
+            }
+        }
+
+        function validateContactMethod() {
+            var contactmethod = $("#ContactMethod").val();
+            if (contactmethod == "") {
+                $("#err_contactmethod_container").show();
+                $("#err_empty_container").show();
+            } else {
+                $("#err_contactmethod_container").hide();
+                $("#err_empty_container").hide();
+            }
+        }
+
+        function validateReCaptcha() {
+            if (grecaptcha.getResponse() == "") {
+                $("#err_recaptcha_container").show();
+            } else {
+                $("#err_recaptcha_container").hide();
+            }
+        }
+
+
+        $("#dateContainer .datepicker").on("blur", validateDate);
+
+        function validateDate() {
+            var isValid = true;
+            $("#dateContainer .datepicker").each(function () {
+                if ($(this).val().trim() == "") {
+                    $("#err_date_container").show();
+                    $("#err_empty_container").show();
+                    isValid = false;
+                    return false;
+                }
+            });
+            if (isValid) {
+                $("#err_date_container").hide();
+                $("#err_empty_container").hide();
+            }
+        }
+
+
+        function validateAllFields() {
+            validatePhone();
+            validateEmailField();
+            validateCrime();
+            validateCounty();
+            validateLocation();
+            validateRoadUserType();
+            validateCrimeDescription();
+            validateDate();
+            validateUserName();
+            validateUserAddress();
+            validateContactMethod();
+            validateReCaptcha();
+        }
+
+        $(document).ready(function () {
+            $("#Phone").on("blur", validatePhone);
+            $("#Email").on("blur", validateEmail);
+            $("#Crime").on("blur", validateCrime);
+            $("#County").on("blur", validateCounty);
+            $("#Location").on("blur", validateLocation);
+            $("#RoadUserType").on("blur", validateRoadUserType);
+            $("#CrimeDescription").on("blur", validateCrimeDescription);
+            $("#dateContainer .datepicker").on("blur", validateDate);
+            $("#UserName").on("blur", validateUserName);
+            $("#UserAddress").on("blur", validateUserAddress);
+            $("#ContactMethod").on("blur", validateContactMethod);
+            grecaptcha.ready(validateReCaptcha);
+        });
+
+        function IsFormValid() {
+            var isValid = true;
+
+            validateAllFields();
+
+            $("#err_phone_container:visible").length > 0 && (isValid = false);
+            $("#err_email_container:visible").length > 0 && (isValid = false);
+            $("#err_emptyemail_container:visible").length > 0 && (isValid = false);
+            $("#err_crime_container:visible").length > 0 && (isValid = false);
+            $("#err_county_container:visible").length > 0 && (isValid = false);
+            $("#err_location_container:visible").length > 0 && (isValid = false);
+            $("#err_roadusertype_container:visible").length > 0 && (isValid = false);
+            $("#err_crimedesc_container:visible").length > 0 && (isValid = false);
+            $("#err_date_container:visible").length > 0 && (isValid = false);
+            $("#err_username_container:visible").length > 0 && (isValid = false);
+            $("#err_useraddress_container:visible").length > 0 && (isValid = false);
+            $("#err_contactmethod_container:visible").length > 0 && (isValid = false);
+            $("#err_recaptcha_container:visible").length > 0 && (isValid = false);
+
+            return isValid;
+        }
+
+
+        function validateEmail(email) {
+            const re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+            return re.test(String(email).toLowerCase());
+        }
+
+
+        function onStartBtnClicked() {
+            $("#err_notEmergency_container").hide();
+            $("#err_attendCourt_container").hide();
+
+            let notEmergencyChecked = $("#NotAnEmergencyCheckbox").is(":checked");
+            let attendCourtChecked = $("#AttendCourtCheckbox").is(":checked");
+
+            if (!notEmergencyChecked) {
+                $("#err_notEmergency_container").show();
+            }
+
+            if (!attendCourtChecked) {
+                $("#err_attendCourt_container").show();
+            }
+
+            if (notEmergencyChecked && attendCourtChecked) {
+                $("#NotAnEmergencyCheckbox").prop("disabled", true);
+                $("#AttendCourtCheckbox").prop("disabled", true);
+                $("#startBtn").hide();
+                openForm();
+            }
+        }
+
+
+
+        function openForm() {
+            $("#MainForm").addClass("show");
+
+            $('html, body').animate({
+                scrollTop: $('#MainForm').offset().top
+            }, 500);
+
+            $(".form-inner .form-control:eq(0)").focus();
+
+            addDate();
+        }
+
+
+        var dateIndex = 0;
+
+        function addDate() {
+            dateIndex++;
+            var html = getDateHtml(dateIndex)
+
+            $(html).appendTo($("#dateContainer"));
+
+            initDatepickers()
+        }
+
+
+        function initDatepickers() {
+            let endDate = new Date();
+            let startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - 6);
+
+            $('.datepicker').datepicker({
+                autoclose: true,
+                format: 'dd/mm/yyyy',
+                startDate: startDate,
+                endDate: endDate
+            });
+        }
+
+        function getDateHtml(index) {
+            var html = '<div class="date-picker-wrapper' + ((index > 1) ? ' mt-3' : '') + ' ">';
+            html += '<div class="date-picker">';
+            html += ' <input class="datepicker form-control" id="crimeDate_' + index + '" name="crimeDate_' + index + '">'
+            html += ' <span class="lnr lnr-calendar-full"></span>'
+            html += '</div>'
+            if (index > 1) {
+                html += '<div class="btn-remove-wrapper ml-10"><button id="removebtn_' + index + '" class="btn-remove" type="button" onclick="removeDate(' + index + ')"><i class="lnr lnr-trash"></i></button></div>'
+            }
+            html += '</div>'
+            return html;
+        }
+
+        function removeDate(index) {
+            $("#removebtn_" + index).parents(".date-picker-wrapper").remove()
+            //$("#removebtn_" + index).remove()
+        }
+
+        $(".show-hide-checkbox-wrapper input[type='checkbox']").change(function () {
+            if ($(this).is(":checked")) {
+                $(this).parents(".show-hide-checkbox-wrapper").addClass("checked");
+                $(this).parents(".show-hide-checkbox-wrapper").find(".form-control").focus()
+            }
+            else {
+                $(this).parents(".show-hide-checkbox-wrapper").removeClass("checked");
+
+            }
+        });
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreetBuddy
 // @namespace    streetbuddy
-// @version      1.0.0
+// @version      1.0.1
 // @description  Fills in the Garda Traffic Watch form from a StreetBuddy link
 // @match        https://www.garda.ie/en/trafficwatchreport*
 // @match        https://garda.ie/en/trafficwatchreport*
@@ -269,8 +269,9 @@
     return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
   }
 
-  function fillForm(report, profile) {
-    const values = [
+  // Every form field with the value that goes into it.
+  function formValues(report, profile) {
+    return [
       ["Location", report.l],
       ["County", report.c],
       ["Crime", CRIME_TYPE],
@@ -283,6 +284,10 @@
       ["UserAddress", profile.address],
       ["ContactMethod", profile.contact],
     ];
+  }
+
+  function fillForm(report, profile) {
+    const values = formValues(report, profile);
     // Nothing is written until every field and option is there, so the form is never left
     // half filled while the message says to fill it in by hand.
     const ready = values.every(([id, value]) => canSet(document.getElementById(id), value));
@@ -296,10 +301,12 @@
   }
 
   // The fields appear only after the person ticked the boxes and pressed "Click Here to
-  // Start", so the page is watched until the first field is visible, then all fields are
-  // given a limited time to show up.
+  // Start", so the page is watched until a field is visible, then all fields are
+  // given a limited time to show up. When the start button goes out of view but no field
+  // shows up at all, the same time counts from the button, so the message still appears.
   function waitAndFill(report, profile) {
-    let started = false;
+    let fieldSeen = false;
+    let startSeen = false;
     let finished = false;
     let timer = null;
     const observer = new MutationObserver(check);
@@ -311,17 +318,33 @@
       if (!filled) showMessage(MESSAGE_FORM_CHANGED);
     }
 
+    // A timer of its own, so the message appears even when the page stops changing.
+    function armTimer() {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!finished) finish(fillForm(report, profile));
+      }, FIELDS_TIMEOUT_MS);
+    }
+
     function check() {
       if (finished) return;
-      if (!started) {
-        const first = document.getElementById("Location");
-        if (!first || !isVisible(first)) return;
-        started = true;
-        // A timer of its own, so the message appears even when the page stops changing.
-        timer = setTimeout(() => {
-          if (!finished) finish(fillForm(report, profile));
-        }, FIELDS_TIMEOUT_MS);
+      if (!fieldSeen) {
+        // Any visible field counts, not one particular field: looking only at one field would
+        // leave the person without a message when exactly that field is gone from the form.
+        const anyField = formValues(report, profile).some(([id]) => {
+          const element = document.getElementById(id);
+          return element && isVisible(element);
+        });
+        const startButton = document.getElementById("startBtn");
+        if (anyField) {
+          fieldSeen = true;
+          armTimer();
+        } else if (!startSeen && startButton && !isVisible(startButton)) {
+          startSeen = true;
+          armTimer();
+        }
       }
+      if (!fieldSeen && !startSeen) return;
       if (fillForm(report, profile)) finish(true);
     }
 
