@@ -19,6 +19,7 @@ let nextId: number;
 let nextMessage: number;
 let nominatim: () => Response;
 let failSend: boolean;
+let failEdit: boolean;
 let onAnswer: (() => void) | null;
 
 const called = (method: string) => calls.filter((call) => call.method === method);
@@ -65,6 +66,7 @@ beforeEach(() => {
   nextId = 1000;
   nextMessage = 0;
   failSend = false;
+  failEdit = false;
   onAnswer = null;
   nominatim = () =>
     new Response(JSON.stringify({ lat: "53.4", lon: "-6.1", address: { house_number: "12", road: "Main Street", suburb: "Clongriffin" } }));
@@ -79,6 +81,7 @@ beforeEach(() => {
       calls.push({ method, body });
       if (method === "answerCallbackQuery") onAnswer?.();
       if (method === "sendMessage" && failSend) return new Response(JSON.stringify({ ok: false, error_code: 500 }));
+      if (method === "editMessageText" && failEdit) return new Response(JSON.stringify({ ok: false, error_code: 500 }));
       if (method === "getFile") return new Response(JSON.stringify({ ok: true, result: { file_path: "p.jpg" } }));
       nextId += 1;
       return new Response(JSON.stringify({ ok: true, result: { message_id: nextId } }));
@@ -399,6 +402,123 @@ describe("parking and the final message", () => {
     expect(labels().some((label: string) => label.startsWith("✅"))).toBe(false);
     expect(called("sendMessage").filter((call) => JSON.stringify(call.body).includes("Open form"))).toEqual([]);
     expect(called("deleteMessages")).toEqual([]);
+  });
+});
+
+describe("final message buttons", () => {
+  const BODY_END = "\n\nOpen the link in an external browser.";
+  async function toParking() {
+    await toPlateTime();
+    await press("plate_ok");
+  }
+  const finalRow = () =>
+    sqlite.prepare("SELECT chat_id, message_id, text FROM final_messages").get() as
+      | { chat_id: number; message_id: number; text: string }
+      | undefined;
+  async function toFinal() {
+    await toParking();
+    await press("opt:0");
+    await press("done");
+    return finalRow() as { chat_id: number; message_id: number; text: string };
+  }
+
+  it("has Open form, then Cancel and Done, and keeps the report text without the last line", async () => {
+    const row = await toFinal();
+    expect(lastSent().reply_markup.inline_keyboard.map((line: { text: string }[]) => line.map((b) => b.text))).toEqual([
+      ["Open form"],
+      ["Cancel", "Done"],
+    ]);
+    expect(lastSent().text.endsWith(BODY_END)).toBe(true);
+    expect(row.text).toBe(lastSent().text.slice(0, -BODY_END.length));
+    expect(row.chat_id).toBe(USER);
+  });
+
+  it("Done removes all the buttons and puts the time of the press in place of the last line", async () => {
+    const row = await toFinal();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.UTC(2026, 10, 3, 10, 35));
+      await press("final_done", row.message_id);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(called("editMessageText").at(-1)?.body).toEqual({
+      chat_id: USER,
+      message_id: row.message_id,
+      text: `${row.text}\n\nReport sent 03/11/2026 10:35`,
+      reply_markup: { inline_keyboard: [] },
+    });
+    expect(called("deleteMessage").filter((call) => call.body.message_id === row.message_id)).toEqual([]);
+    expect(finalRow()).toBeUndefined();
+  });
+
+  it("keeps the text when the edit fails, so that Done can be pressed again", async () => {
+    const row = await toFinal();
+    failEdit = true;
+    await press("final_done", row.message_id);
+    expect(finalRow()?.text).toBe(row.text);
+    failEdit = false;
+    await press("final_done", row.message_id);
+    expect(called("editMessageText").at(-1)?.body.text).toMatch(/^.*Report sent \d\d\/\d\d\/\d{4} \d\d:\d\d$/s);
+    expect(finalRow()).toBeUndefined();
+  });
+
+  it("Cancel deletes the message and its stored text", async () => {
+    const row = await toFinal();
+    await press("final_cancel", row.message_id);
+    expect(called("deleteMessage").at(-1)?.body).toEqual({ chat_id: USER, message_id: row.message_id });
+    expect(called("editMessageText")).toEqual([]);
+    expect(finalRow()).toBeUndefined();
+  });
+
+  it("Done only removes the buttons when the text is no longer stored", async () => {
+    const row = await toFinal();
+    sqlite.prepare("DELETE FROM final_messages").run();
+    await press("final_done", row.message_id);
+    expect(called("editMessageText")).toEqual([]);
+    expect(called("editMessageReplyMarkup").at(-1)?.body).toEqual({
+      chat_id: USER,
+      message_id: row.message_id,
+      reply_markup: { inline_keyboard: [] },
+    });
+  });
+
+  it("treats a text older than 48 hours as gone", async () => {
+    const row = await toFinal();
+    sqlite.prepare("UPDATE final_messages SET created_at = ?").run(Date.now() - 48 * 60 * 60 * 1000 - 1);
+    await press("final_done", row.message_id);
+    expect(called("editMessageText")).toEqual([]);
+    expect(called("editMessageReplyMarkup").at(-1)?.body).toEqual({
+      chat_id: USER,
+      message_id: row.message_id,
+      reply_markup: { inline_keyboard: [] },
+    });
+  });
+
+  it("Cancel still deletes the message when the text is gone", async () => {
+    const row = await toFinal();
+    sqlite.prepare("DELETE FROM final_messages").run();
+    await press("final_cancel", row.message_id);
+    expect(called("deleteMessage").at(-1)?.body.message_id).toBe(row.message_id);
+  });
+
+  it("does not touch a new report under way", async () => {
+    const row = await toFinal();
+    await location();
+    const screen = buttonId();
+    await press("final_cancel", row.message_id);
+    expect(draft().step).toBe("address");
+    expect(buttonId()).toBe(screen);
+  });
+
+  it("still gives the link and clears the report when the text cannot be saved", async () => {
+    await toParking();
+    await press("opt:0");
+    sqlite.exec("DROP TABLE final_messages");
+    await press("done");
+    expect(lastSent().text).toContain("Open the link in an external browser.");
+    expect(draft()).toBeUndefined();
+    expect(console.error).toHaveBeenCalledWith("Saving the final message failed");
   });
 });
 

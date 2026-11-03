@@ -24,9 +24,12 @@ import {
   loadDraft,
   moveStep,
   recordPhoto,
+  saveFinalMessage,
   setPlates,
   startFinishing,
   swapScreen,
+  deleteFinalMessage,
+  readFinalMessage,
   toggleParking,
 } from "./draft";
 import type { Draft, DraftChanges, Step } from "./draft";
@@ -94,6 +97,11 @@ const CHOOSE_PARKING = "Choose one or more options, then press Done.";
 const CHOOSE_ONE = "Choose at least one option.";
 const CANCELLED = "Report cancelled";
 const OPEN_EXTERNALLY = "Open the link in an external browser.";
+const REPORT_SENT = "Report sent";
+
+// The buttons of the final message live on after the draft is gone, so they have their own names.
+const FINAL_CANCEL = "final_cancel";
+const FINAL_DONE = "final_done";
 
 const ADDRESS_MAX_LENGTH = 100;
 // A plate must stay readable, but a smaller download uses less CPU time on the free plan.
@@ -527,7 +535,8 @@ async function createReport(c: Context, draft: Draft): Promise<void> {
 }
 
 // QUERY BUDGET EXCEPTION: the step is moved first so that a second tap on Done cannot give
-// a second link, and is moved back if Telegram fails, so the report is not lost.
+// a second link, and is moved back if Telegram fails, so the report is not lost; the text of
+// the final message is saved once the link is out.
 async function finish(c: Context, draft: Draft): Promise<void> {
   const chosen = await startFinishing(c.env.DB, c.userId);
   if (chosen === null) return;
@@ -552,22 +561,36 @@ async function finish(c: Context, draft: Draft): Promise<void> {
     description,
     date: moment.date,
   });
-  const text = `Plate: ${plate}
+  // The report text without its last line: Done puts "Report sent ..." in place of that line.
+  const body = `Plate: ${plate}
 Location: ${address}
 Date and time: ${moment.date} ${time}
-Description: ${description}
+Description: ${description}`;
 
-${OPEN_EXTERNALLY}`;
-
-  const sent = await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "sendMessage", {
+  const sent = await callTelegram<{ message_id: number }>(c.env.TELEGRAM_BOT_TOKEN, "sendMessage", {
     chat_id: c.chatId,
-    text,
+    text: `${body}\n\n${OPEN_EXTERNALLY}`,
     reply_parameters: { message_id: draft.last_photo_id, allow_sending_without_reply: true },
-    reply_markup: { inline_keyboard: [[{ text: "Open form", url: link }]] },
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Open form", url: link }],
+        [
+          { text: "Cancel", callback_data: FINAL_CANCEL },
+          { text: "Done", callback_data: FINAL_DONE },
+        ],
+      ],
+    },
   });
   if (!sent) {
     await moveStep(c.env.DB, c.userId, "finishing", "parking");
     return;
+  }
+  // The link is already out, so a failure to keep the text must not leave the report in
+  // "finishing": Done then only removes the buttons.
+  try {
+    await saveFinalMessage(c.env.DB, c.chatId, sent.message_id, body);
+  } catch {
+    console.error("Saving the final message failed");
   }
 
   const ids = [...(JSON.parse(draft.cleanup) as number[]), draft.buttons_message_id];
@@ -587,6 +610,36 @@ async function answerButton(c: Context, queryId: string, text?: string): Promise
   });
 }
 
+// The buttons of a final message work with no draft: the report is finished and its draft is
+// gone, and a new report may already be under way, which these buttons must not touch.
+async function handleFinalButton(c: Context, done: boolean, messageId: number): Promise<void> {
+  if (!done) {
+    await deleteFinalMessage(c.env.DB, c.chatId, messageId);
+    await deleteMessage(c, messageId);
+    return;
+  }
+  const body = await readFinalMessage(c.env.DB, c.chatId, messageId);
+  const noButtons = { inline_keyboard: [] };
+  if (body === null) {
+    // The text is no longer stored, so it cannot be rewritten: only the buttons go.
+    await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "editMessageReplyMarkup", {
+      chat_id: c.chatId,
+      message_id: messageId,
+      reply_markup: noButtons,
+    });
+    return;
+  }
+  const moment = dublinDateTime(Date.now());
+  const edited = await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "editMessageText", {
+    chat_id: c.chatId,
+    message_id: messageId,
+    text: `${body}\n\n${REPORT_SENT} ${moment.date} ${moment.time}`,
+    reply_markup: noButtons,
+  });
+  // The text stays until the message is really changed, so that a failed edit can be repeated.
+  if (edited !== null) await deleteFinalMessage(c.env.DB, c.chatId, messageId);
+}
+
 export async function handleButton(
   env: DialogEnv,
   userId: number,
@@ -598,6 +651,11 @@ export async function handleButton(
   // Done may need a pop-up, which goes in this same answer; everything else is answered
   // first, so the button does not keep spinning.
   if (data !== "done") await answerButton(c, query.id);
+
+  if (data === FINAL_CANCEL || data === FINAL_DONE) {
+    if (query.messageId !== undefined) await handleFinalButton(c, data === FINAL_DONE, query.messageId);
+    return;
+  }
 
   const draft = await loadDraft(env.DB, userId);
   // A button of a finished report or of a replaced screen does nothing.

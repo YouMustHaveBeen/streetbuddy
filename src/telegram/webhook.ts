@@ -1,4 +1,5 @@
 // Bot entry point: webhook secret check, repeat filter, group membership check.
+import { handleAdminButton, handleAdminCommand, isAdminButton, isAdminCommand } from "./admin";
 import { callTelegram } from "./api";
 import { handleButton, handleMessage } from "./dialog";
 import type { Message } from "./dialog";
@@ -14,6 +15,7 @@ export interface WebhookEnv {
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 const NOT_MEMBER_TEXT = "This bot is only for members of the group.";
 const MEMBER_STATUSES = ["creator", "administrator", "member"];
+const ADMIN_STATUSES = ["creator", "administrator"];
 
 interface Chat {
   id?: number;
@@ -34,6 +36,11 @@ interface Update {
 interface ChatMember {
   status: string;
   is_member?: boolean;
+}
+
+interface GroupAccess {
+  member: boolean;
+  admin: boolean;
 }
 
 interface Incoming {
@@ -67,15 +74,19 @@ function parseUpdate(update: Update): Incoming | null {
   return { updateId, userId, chatId: chat.id, callbackQueryId: query?.id };
 }
 
-// "restricted" is still a member of the group unless the user has left it.
+// "restricted" is still a member of the group unless the user has left it. The same answer
+// tells whether the user is an administrator, so /admin needs no second request.
 // Returns null when Telegram does not answer, so a failed check is not taken for "not a member".
-async function isGroupMember(env: WebhookEnv, userId: number): Promise<boolean | null> {
+async function groupAccess(env: WebhookEnv, userId: number): Promise<GroupAccess | null> {
   const member = await callTelegram<ChatMember>(env.TELEGRAM_BOT_TOKEN, "getChatMember", {
     chat_id: env.GROUP_ID,
     user_id: userId,
   });
   if (!member) return null;
-  return MEMBER_STATUSES.includes(member.status) || (member.status === "restricted" && member.is_member === true);
+  return {
+    member: MEMBER_STATUSES.includes(member.status) || (member.status === "restricted" && member.is_member === true),
+    admin: ADMIN_STATUSES.includes(member.status),
+  };
 }
 
 // Runs after the response has gone out, so nobody is waiting for it: a failure is only
@@ -96,15 +107,30 @@ async function processUpdate(env: WebhookEnv, update: Update): Promise<void> {
     if (stored.meta.changes === 0) return;
 
     step = "membership check";
-    const member = await isGroupMember(env, incoming.userId);
-    if (member === null) return; // No answer from Telegram: not let in, and nothing is said.
-    if (member) {
+    const access = await groupAccess(env, incoming.userId);
+    if (access === null) return; // No answer from Telegram: not let in, and nothing is said.
+    const data = update.callback_query?.data;
+    const messageId = update.callback_query?.message?.message_id;
+    // /admin and its button belong to the administrators only: anyone else, in the group or
+    // not, gets no answer at all (not even the members-only text), and the command never
+    // reaches the report dialog. An administrator is always a member, so this comes first.
+    if (isAdminCommand(update.message?.text) || isAdminButton(data)) {
+      step = "admin";
+      if (!access.admin) return;
+      if (incoming.callbackQueryId) {
+        await handleAdminButton(env, incoming.chatId, { id: incoming.callbackQueryId, data, messageId });
+      } else {
+        await handleAdminCommand(env, incoming.userId, incoming.chatId);
+      }
+      return;
+    }
+    if (access.member) {
       step = "dialog";
       if (incoming.callbackQueryId) {
         await handleButton(env, incoming.userId, incoming.chatId, {
           id: incoming.callbackQueryId,
-          data: update.callback_query?.data,
-          messageId: update.callback_query?.message?.message_id,
+          data,
+          messageId,
         });
       } else {
         await handleMessage(env, incoming.userId, incoming.chatId, update.message as Message);
