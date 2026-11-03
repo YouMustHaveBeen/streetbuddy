@@ -1,5 +1,7 @@
 // StreetBuddy Worker entry point.
 import { cleanupExpired } from "./cleanup";
+import { dublinDateTime } from "./core";
+import { runFormCheck } from "./dailyCheck";
 import { handleWebhook } from "./telegram";
 
 export interface Env {
@@ -20,14 +22,22 @@ export default {
     return new Response("Not Found", { status: 404 });
   },
 
-  async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+  async scheduled(event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     // Runs on both cron triggers; repeating it is harmless. A failure is only logged, so
-    // that other scheduled work (the form check, later) is not blocked by it.
+    // that the form check below is not blocked by it.
     try {
       await cleanupExpired(env.DB);
     } catch (error) {
       console.error("scheduled: cleanup failed", error);
     }
-    // Daily form check will go here.
+    // The cron runs at 5:00 and 6:00 UTC (Cloudflare cron is UTC only); the form check
+    // runs in the one of them that is 6:00 in Dublin, whatever the season.
+    if (dublinDateTime(event.scheduledTime).time.startsWith("06:")) {
+      try {
+        await runFormCheck(env);
+      } catch (error) {
+        console.error("scheduled: form check failed", error);
+      }
+    }
   },
 } satisfies ExportedHandler<Env>;

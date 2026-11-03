@@ -5,6 +5,7 @@ import {
   buildReportLink,
   district,
   dublinDateTime,
+  isBotEnabled,
   isInArea,
   PARKING_OPTIONS,
   PLATE_MAX_LENGTH,
@@ -29,6 +30,7 @@ import {
   toggleParking,
 } from "./draft";
 import type { Draft, DraftChanges, Step } from "./draft";
+import { FORM_CHANGED_TEXT } from "./notify";
 
 export interface DialogEnv {
   AI: Ai;
@@ -460,6 +462,12 @@ export async function handleMessage(env: DialogEnv, userId: number, chatId: numb
   }
 
   if (!draft || draft.step === "location") {
+    // A report is started only while the bot is on; one already begun is carried on, and the
+    // script on the form page tells the user if the form really has changed.
+    if (!draft && (message.location || text !== undefined) && !(await isBotEnabled(env.DB))) {
+      await send(c, FORM_CHANGED_TEXT);
+      return;
+    }
     if (message.location) {
       await handleLocation(c, draft, message, message.location.latitude, message.location.longitude);
     } else if (text !== undefined) {

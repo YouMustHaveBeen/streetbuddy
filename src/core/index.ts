@@ -14,3 +14,6 @@ export {
 export type { Area } from "./area";
 export type { Place } from "./geocode";
 export type { ParkingOption } from "./report";
+export { checkForm } from "./formcheck";
+export { disableBot, isBotEnabled } from "./switch";
+export type { FormCheck } from "./formcheck";

@@ -474,3 +474,45 @@ describe("cancel and old buttons", () => {
     expect(draft().photo_count).toBe(0);
   });
 });
+
+describe("bot switched off", () => {
+  const FORM_CHANGED =
+    "The Traffic Watch report form has changed, so the bot is temporarily not working. The developer has been notified.";
+  const switchOff = () => sqlite.prepare("UPDATE bot_switch SET enabled = 0").run();
+
+  it("answers a location with the form-changed message and starts no report", async () => {
+    switchOff();
+    await location();
+    expect(sentTexts()).toEqual([FORM_CHANGED]);
+    expect(draft()).toBeUndefined();
+  });
+  it("answers a typed address the same way", async () => {
+    switchOff();
+    await text("12 Main Street");
+    expect(sentTexts()).toEqual([FORM_CHANGED]);
+    expect(draft()).toBeUndefined();
+  });
+  it("still shows /start and ignores a photo sent without a report", async () => {
+    switchOff();
+    await text("/start");
+    await photo();
+    expect(sentTexts()).toHaveLength(1);
+    expect(lastSent().text).toContain("To start a report, send your location.");
+    expect(draft()).toBeUndefined();
+  });
+  it("carries on a report that was already begun", async () => {
+    await location();
+    switchOff();
+    await text("hello");
+    expect(sentTexts().at(-1)).toBe("12 Main Street, Clongriffin, D13");
+    await press("address_ok");
+    expect(sentTexts().at(-1)).toBe("Now send photos, the first one with the number plate.");
+    expect(sentTexts()).not.toContain(FORM_CHANGED);
+  });
+  it("starts reports again when the bot is switched on", async () => {
+    switchOff();
+    sqlite.prepare("UPDATE bot_switch SET enabled = 1").run();
+    await location();
+    expect(draft().step).toBe("address");
+  });
+});

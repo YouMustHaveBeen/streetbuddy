@@ -7,6 +7,8 @@ import type { Env } from "./index";
 const NOW = 10_000_000_000_000;
 const DAY = 24 * 60 * 60 * 1000;
 const GEOCODE_TTL = 60 * DAY;
+// Noon in Dublin, so the daily form check does not run in these tests.
+const SCHEDULED = { scheduledTime: Date.UTC(2026, 11, 15, 12, 0) } as ScheduledController;
 
 // Ages (ms before NOW) of the rows to insert: older than the term, exactly at it, newer than it.
 function seed(sqlite: ReturnType<typeof fakeD1>["sqlite"], ttl: number) {
@@ -67,7 +69,7 @@ describe("scheduled", () => {
   it("runs the cleanup", async () => {
     const { db, sqlite } = fakeD1();
     sqlite.prepare("INSERT INTO processed_updates (update_id, created_at) VALUES (1, 0)").run();
-    await worker.scheduled({} as ScheduledController, { DB: db } as Env, {} as ExecutionContext);
+    await worker.scheduled(SCHEDULED, { DB: db } as Env, {} as ExecutionContext);
     expect(rows(sqlite, "SELECT update_id FROM processed_updates")).toEqual([]);
   });
 
@@ -80,7 +82,7 @@ describe("scheduled", () => {
     } as unknown as D1Database;
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(
-      worker.scheduled({} as ScheduledController, { DB: db } as Env, {} as ExecutionContext),
+      worker.scheduled(SCHEDULED, { DB: db } as Env, {} as ExecutionContext),
     ).resolves.toBeUndefined();
     expect(log).toHaveBeenCalledWith("scheduled: cleanup failed", expect.any(Error));
     log.mockRestore();

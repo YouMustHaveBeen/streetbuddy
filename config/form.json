@@ -1,0 +1,81 @@
+{
+  "url": "https://www.garda.ie/en/trafficwatchreport/",
+  "fields": [
+    "NotAnEmergencyCheckbox",
+    "AttendCourtCheckbox",
+    "startBtn",
+    "Location",
+    "County",
+    "Crime",
+    "RoadUserType",
+    "CrimeDescription",
+    "UserName",
+    "Phone",
+    "Email",
+    "UserAddress",
+    "ContactMethod",
+    "submitReport"
+  ],
+  "datePrefix": "crimeDate_",
+  "lists": {
+    "County": [
+      "Select",
+      "Carlow",
+      "Cavan",
+      "Clare",
+      "Cork",
+      "Donegal",
+      "Dublin",
+      "Galway",
+      "Kerry",
+      "Kildare",
+      "Kilkenny",
+      "Laois",
+      "Leitrim",
+      "Limerick",
+      "Longford",
+      "Louth",
+      "Mayo",
+      "Meath",
+      "Monaghan",
+      "Offaly",
+      "Roscommon",
+      "Sligo",
+      "Tipperary",
+      "Waterford",
+      "Westmeath",
+      "Wexford",
+      "Wicklow"
+    ],
+    "Crime": [
+      "Select",
+      "Other",
+      "Careless Driving (driving without due care and attention)",
+      "Dangerous Driving (Driving a vehicle in a manner dangerous to the public or likely to be dangerous to the public)",
+      "Dangerous Overtaking",
+      "Driving under the influence of alcohol or drugs (including prescription drugs)",
+      "Ignoring Traffic Lights or Signs",
+      "Insurance NCT Tax – Driving without",
+      "Learner Driver Unaccompanied",
+      "Mobile Phone Use",
+      "Parking Offences",
+      "Speeding",
+      "Vehicle has unsafe load, dangerous fault"
+    ],
+    "RoadUserType": [
+      "Select",
+      "Cyclist",
+      "Driver",
+      "E-Scooter User, E-Moped User, E-Cyclist",
+      "Motorcyclist",
+      "Passenger",
+      "Pedestrian"
+    ],
+    "ContactMethod": [
+      "Select",
+      "Email",
+      "Phone Call",
+      "Text Message"
+    ]
+  }
+}
