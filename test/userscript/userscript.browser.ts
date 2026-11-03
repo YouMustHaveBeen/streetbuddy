@@ -159,6 +159,10 @@ async function expectNothingWritten(page: Page): Promise<void> {
 describe("form-filling script on a copy of the report form", () => {
   it("fills every field only after the person ticked the boxes and pressed Start", async () => {
     const context = await newContext();
+    const sent: string[] = [];
+    context.on("request", (request) => {
+      if (request.method() === "POST") sent.push(request.url());
+    });
     const page = await context.newPage();
     const report = ordinaryReport();
     await page.goto(linkTo(report));
@@ -185,6 +189,7 @@ describe("form-filling script on a copy of the report form", () => {
     // Nothing is sent and the captcha is not touched.
     expect(await page.isVisible("#SuccessPlaceHolder")).toBe(false);
     expect(await page.locator("[role=alert]").count()).toBe(0);
+    expect(sent).toEqual([]);
     await context.close();
   });
 
@@ -314,6 +319,14 @@ describe("form-filling script on a copy of the report form", () => {
     ["the Parking Offences option is missing", (html) => html.replace('<option value="Parking Offences">Parking Offences</option>', "")],
     ["the Dublin option is missing", (html) => html.replace('<option value="Dublin">Dublin</option>', "")],
     ["the Pedestrian option is missing", (html) => html.replace('<option value="Pedestrian">Pedestrian</option>', "")],
+    [
+      "every field is missing",
+      (html) =>
+        FIELD_IDS.reduce(
+          (changed, id) => changed.replaceAll(`id="${id}"`, `id="${id}_gone"`),
+          html.replace("id=\"crimeDate_'", "id=\"crimeDate_gone_'"),
+        ),
+    ],
   ];
   it.concurrent.each(changedForms)(
     "tells the person to fill the form by hand when %s",

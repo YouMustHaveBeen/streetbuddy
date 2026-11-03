@@ -171,7 +171,7 @@ Installation guide: <link>
 54. [сделано] Секреты Worker: TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET, OWNER_TELEGRAM_ID (Telegram ID владельца бота), GROUP_ID (ID закрытой Telegram-группы); Workers AI подключается привязкой AI, без ключа.
 55. [сделано] Запросы к Nominatim — с User-Agent `StreetBuddy (t.me/streetbuddy_bot)`, не чаще 1 в секунду (очередь хранится в D1), с кешем результатов.
 56. [частично: сборки закладки и отдачи файлов Worker-ом нет] Скрипт — отдельный файл в репозитории; закладка собирается из него автоматически; файл скрипта, закладку и страницу инструкции отдает тот же Worker.
-57. [сделано] Репозиторий StreetBuddy (публичный): `src/core`, `src/telegram`, `userscript/`, `test/userscript/` (браузерный тест скрипта на копии формы, запуск `npm run test:userscript`), `config/area.geojson`, `docs/architecture.md`.
+57. [сделано] Репозиторий StreetBuddy (публичный): `src/core`, `src/telegram`, `userscript/`, `test/userscript/` (браузерный тест скрипта на копии формы, запуск `npm run test:userscript`, на новой машине перед первым запуском один раз `npx playwright install chromium`), `config/area.geojson`, `docs/architecture.md`.
 
 ## Приватность и безопасность
 

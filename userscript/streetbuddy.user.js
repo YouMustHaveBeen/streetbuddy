@@ -319,12 +319,16 @@
     function check() {
       if (finished) return;
       if (!started) {
-        // Any visible field means the form was opened; looking only at one field would leave
-        // the person without a message when exactly that field is gone from the form.
-        const opened = formValues(report, profile).some(([id]) => {
-          const element = document.getElementById(id);
-          return element && isVisible(element);
-        });
+        // Any visible field, or the start button gone from view, means the form was opened;
+        // looking only at one field would leave the person without a message when exactly that
+        // field is gone, and looking only at the fields when all of them are gone.
+        const startButton = document.getElementById("startBtn");
+        const opened =
+          (startButton && !isVisible(startButton)) ||
+          formValues(report, profile).some(([id]) => {
+            const element = document.getElementById(id);
+            return element && isVisible(element);
+          });
         if (!opened) return;
         started = true;
         // A timer of its own, so the message appears even when the page stops changing.
