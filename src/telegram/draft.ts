@@ -1,7 +1,9 @@
 // The report draft in D1. An album arrives as separate updates handled at the same time,
 // so everything that can change concurrently is written by single atomic statements.
 
-const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+// Lifetime of drafts and of the recognition cache. The scheduled cleanup also removes processed
+// update IDs at this age, although the webhook does not check their age when it filters repeats.
+export const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface Draft {
   user_id: number;

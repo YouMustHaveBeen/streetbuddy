@@ -7,6 +7,9 @@ const USER_AGENT = "StreetBuddy (t.me/streetbuddy_bot)";
 const MIN_INTERVAL_MS = 1000;
 const REQUEST_TIMEOUT_MS = 10000;
 
+// How long a cached address is kept; older rows are removed by the scheduled cleanup.
+export const GEOCODE_CACHE_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+
 const EIRCODE = /^([AC-FHKNPRTV-Y]\d{2}|D6W)\s?([0-9AC-FHKNPRTV-Y]{4})$/i;
 
 export interface Place {
