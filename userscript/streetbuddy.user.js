@@ -269,8 +269,9 @@
     return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
   }
 
-  function fillForm(report, profile) {
-    const values = [
+  // Every form field with the value that goes into it.
+  function formValues(report, profile) {
+    return [
       ["Location", report.l],
       ["County", report.c],
       ["Crime", CRIME_TYPE],
@@ -283,6 +284,10 @@
       ["UserAddress", profile.address],
       ["ContactMethod", profile.contact],
     ];
+  }
+
+  function fillForm(report, profile) {
+    const values = formValues(report, profile);
     // Nothing is written until every field and option is there, so the form is never left
     // half filled while the message says to fill it in by hand.
     const ready = values.every(([id, value]) => canSet(document.getElementById(id), value));
@@ -296,7 +301,7 @@
   }
 
   // The fields appear only after the person ticked the boxes and pressed "Click Here to
-  // Start", so the page is watched until the first field is visible, then all fields are
+  // Start", so the page is watched until a field is visible, then all fields are
   // given a limited time to show up.
   function waitAndFill(report, profile) {
     let started = false;
@@ -314,8 +319,13 @@
     function check() {
       if (finished) return;
       if (!started) {
-        const first = document.getElementById("Location");
-        if (!first || !isVisible(first)) return;
+        // Any visible field means the form was opened; looking only at one field would leave
+        // the person without a message when exactly that field is gone from the form.
+        const opened = formValues(report, profile).some(([id]) => {
+          const element = document.getElementById(id);
+          return element && isVisible(element);
+        });
+        if (!opened) return;
         started = true;
         // A timer of its own, so the message appears even when the page stops changing.
         timer = setTimeout(() => {
