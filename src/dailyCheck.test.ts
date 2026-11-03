@@ -15,6 +15,7 @@ let sent: { chat_id: string; text: string }[];
 let sqlite: ReturnType<typeof fakeD1>["sqlite"];
 let env: Env;
 let pageRequests: number;
+let sendFails: boolean;
 
 const enabled = () => (sqlite.prepare("SELECT enabled FROM bot_switch").get() as { enabled: number }).enabled;
 
@@ -29,6 +30,7 @@ beforeEach(() => {
   } as Env;
   sent = [];
   pageRequests = 0;
+  sendFails = false;
   page = () => new Response(FORM);
   vi.stubGlobal(
     "fetch",
@@ -40,6 +42,7 @@ beforeEach(() => {
       }
       if (address.endsWith("/sendMessage")) {
         sent.push(JSON.parse(String(init?.body)));
+        if (sendFails) return new Response(JSON.stringify({ ok: false, error_code: 400 }));
         return new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }));
       }
       return new Response("", { status: 404 });
@@ -90,6 +93,14 @@ describe("runFormCheck", () => {
     await runFormCheck(env);
     expect(enabled()).toBe(0);
     expect(sent).toEqual([]);
+  });
+
+  it("logs how many chats the alert did not reach", async () => {
+    sendFails = true;
+    page = () => new Response(FORM.replace('id="Location"', 'id="Place"'));
+    await runFormCheck(env);
+    expect(enabled()).toBe(0);
+    expect(console.error).toHaveBeenCalledWith("Form change alert not delivered to 2 of 2 chats");
   });
 
   it("tells again after the owner has turned the bot on and the form is still wrong", async () => {

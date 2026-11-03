@@ -24,8 +24,15 @@ async function fetchText(url: string): Promise<string> {
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// An id attribute with this exact value: the attribute name in any case, the value in double
+// quotes, single quotes or none, as HTML allows.
+function idAttribute(id: string): string {
+  const value = escapeRegExp(id);
+  return `\\b[iI][dD]\\s*=\\s*(?:"${value}"|'${value}'|${value}(?=[\\s>]|/>))`;
+}
+
 function hasId(html: string, id: string): boolean {
-  return new RegExp(`\\bid\\s*=\\s*["']${escapeRegExp(id)}["']`).test(html);
+  return new RegExp(idAttribute(id)).test(html);
 }
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
@@ -37,7 +44,8 @@ function optionText(markup: string): string {
     .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (match, code: string) => {
       if (code[0] === "#") {
         const value = code[1].toLowerCase() === "x" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
-        return Number.isFinite(value) ? String.fromCodePoint(value) : match;
+        // String.fromCodePoint throws above the last Unicode code point; such a reference is left as is.
+        return Number.isFinite(value) && value <= 0x10ffff ? String.fromCodePoint(value) : match;
       }
       return ENTITIES[code.toLowerCase()] ?? match;
     })
@@ -47,10 +55,7 @@ function optionText(markup: string): string {
 
 // Option texts of the select with this id, or null when there is no such select.
 function selectOptions(html: string, id: string): string[] | null {
-  const select = new RegExp(
-    `<select\\b[^>]*\\bid\\s*=\\s*["']${escapeRegExp(id)}["'][^>]*>([\\s\\S]*?)</select>`,
-    "i",
-  ).exec(html);
+  const select = new RegExp(`<select\\b[^>]*${idAttribute(id)}[^>]*>([\\s\\S]*?)</select>`, "i").exec(html);
   if (!select) return null;
   return [...select[1].matchAll(/<option\b[^>]*>([\s\S]*?)<\/option>/gi)].map((option) => optionText(option[1]));
 }
@@ -91,12 +96,15 @@ export async function checkForm(): Promise<FormCheck> {
   // The date id is built by the page script from a prefix and a number, so the prefix is
   // what is looked for: in the page itself and in the site's script files.
   if (html.includes(reference.datePrefix)) return { ok: true };
+  // A script that cannot be loaded does not end the search: the prefix may be in a later one.
+  let unloaded = false;
   for (const url of sameHostScripts(html, reference.url)) {
     try {
       if ((await fetchText(url)).includes(reference.datePrefix)) return { ok: true };
     } catch {
-      return { ok: false, reason: "a site script could not be loaded" };
+      unloaded = true;
     }
   }
+  if (unloaded) return { ok: false, reason: "a site script could not be loaded" };
   return { ok: false, reason: `the script no longer creates ${reference.datePrefix}` };
 }

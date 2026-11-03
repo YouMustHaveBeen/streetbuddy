@@ -113,6 +113,32 @@ describe("checkForm", () => {
     expect(fetched).not.toContain("https://cdn.example.com/x.js");
   });
 
+  it("keeps looking in the other scripts when one cannot be loaded", async () => {
+    serve({
+      [PAGE_URL]: withoutDatePrefix(FORM),
+      "https://www.garda.ie/vendor/bootstrap-datepicker.min.js": "var id = 'crimeDate_' + index;",
+    });
+    expect(await checkForm()).toEqual({ ok: true });
+  });
+
+  it("does not fail on a character reference beyond Unicode", async () => {
+    const text = ">Insurance NCT Tax – Driving without</option>";
+    expect(FORM).toContain(text);
+    serve({ [PAGE_URL]: FORM.replace(text, ">Insurance NCT Tax &#1114112; Driving without</option>") });
+    expect(await checkForm()).toEqual({ ok: false, reason: "options of Crime changed" });
+  });
+
+  it.each([
+    ["the attribute name in capitals", 'id="Location"', 'ID="Location"'],
+    ["a value in single quotes", 'id="Location"', "id='Location'"],
+    ["a value without quotes", 'id="Location"', "id=Location"],
+    ["a list with a value without quotes", 'id="ContactMethod"', "id=ContactMethod"],
+  ])("accepts %s", async (_name, from, to) => {
+    expect(FORM).toContain(from);
+    serve({ [PAGE_URL]: FORM.replace(from, to) });
+    expect(await checkForm()).toEqual({ ok: true });
+  });
+
   it("repeats a failed request of the page once", async () => {
     serve({ [PAGE_URL]: [down, FORM] });
     expect(await checkForm()).toEqual({ ok: true });
