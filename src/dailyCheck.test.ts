@@ -127,6 +127,13 @@ describe("recorded result", () => {
     expect(row.checked_at).toBeLessThanOrEqual(Date.now());
   });
 
+  it("records the result also when the alert did not arrive", async () => {
+    sendFails = true;
+    page = () => new Response(FORM.replace('id="Location"', 'id="Place"'));
+    await runFormCheck(env);
+    expect(recorded().map((row) => row.result)).toEqual(["changed"]);
+  });
+
   it("records a changed form as changed", async () => {
     page = () => new Response(FORM.replace('id="Location"', 'id="Place"'));
     await runFormCheck(env);
