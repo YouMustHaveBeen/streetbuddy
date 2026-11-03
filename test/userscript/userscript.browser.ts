@@ -77,10 +77,9 @@ afterAll(async () => {
 // `changeForm` edits the page text before the browser gets it (to take a field or option away).
 async function newContext(changeForm?: (html: string) => string): Promise<BrowserContext> {
   const context = await browser.newContext();
-  await context.addInitScript(
-    `globalThis.GM = { getValue: async (key) => (key === "profile" ? ${JSON.stringify(JSON.stringify(PROFILE))} : undefined), setValue: async () => {} };`,
-  );
-  await context.addInitScript(SCRIPT);
+  // One init script: the order of several scripts is not guaranteed, and the script reads GM at once.
+  const gmMock = `globalThis.GM = { getValue: async (key) => (key === "profile" ? ${JSON.stringify(JSON.stringify(PROFILE))} : undefined), setValue: async () => {} };`;
+  await context.addInitScript(`${gmMock}\n${SCRIPT}`);
   if (changeForm) {
     await context.route(`**${FORM_PATH}`, (route) =>
       route.fulfill({ contentType: "text/html; charset=utf-8", body: changeForm(FORM_HTML) }),
@@ -310,6 +309,29 @@ describe("form-filling script on a copy of the report form", () => {
     await expectNothingWritten(page);
     await context.close();
   });
+
+  // The time to wait counts from the first visible field, not from the press of Start: the form
+  // opens 7 seconds after Start and the date field is added 5 seconds after that, which is later
+  // than 10 seconds after Start but within 10 seconds of the first visible field.
+  it(
+    "waits for the fields up to 10 seconds after the first visible field",
+    async () => {
+      const slowForm = (html: string) =>
+        html
+          .replace(/\$\("#startBtn"\)\.hide\(\);\s*openForm\(\);/, () => '$("#startBtn").hide(); setTimeout(openForm, 7000);')
+          .replace(/focus\(\);\s*addDate\(\);/, () => "focus(); setTimeout(addDate, 5000);");
+      const context = await newContext(slowForm);
+      const page = await context.newPage();
+      const report = ordinaryReport();
+      await page.goto(linkTo(report));
+      await tickAndStart(page);
+      await waitUntilFilled(page);
+      expect(await fieldValues(page)).toEqual(expectedValues(report));
+      expect(await page.locator("[role=alert]").count()).toBe(0);
+      await context.close();
+    },
+    FIELDS_TIMEOUT_MS + 30000,
+  );
 
   // A field or an option that is gone from the form: nothing is written, the person is told.
   const changedForms: [string, (html: string) => string][] = [

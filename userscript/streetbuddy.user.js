@@ -302,9 +302,11 @@
 
   // The fields appear only after the person ticked the boxes and pressed "Click Here to
   // Start", so the page is watched until a field is visible, then all fields are
-  // given a limited time to show up.
+  // given a limited time to show up. When the start button goes out of view but no field
+  // shows up at all, the same time counts from the button, so the message still appears.
   function waitAndFill(report, profile) {
-    let started = false;
+    let fieldSeen = false;
+    let startSeen = false;
     let finished = false;
     let timer = null;
     const observer = new MutationObserver(check);
@@ -316,26 +318,33 @@
       if (!filled) showMessage(MESSAGE_FORM_CHANGED);
     }
 
+    // A timer of its own, so the message appears even when the page stops changing.
+    function armTimer() {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!finished) finish(fillForm(report, profile));
+      }, FIELDS_TIMEOUT_MS);
+    }
+
     function check() {
       if (finished) return;
-      if (!started) {
-        // Any visible field, or the start button gone from view, means the form was opened;
-        // looking only at one field would leave the person without a message when exactly that
-        // field is gone, and looking only at the fields when all of them are gone.
+      if (!fieldSeen) {
+        // Any visible field counts, not one particular field: looking only at one field would
+        // leave the person without a message when exactly that field is gone from the form.
+        const anyField = formValues(report, profile).some(([id]) => {
+          const element = document.getElementById(id);
+          return element && isVisible(element);
+        });
         const startButton = document.getElementById("startBtn");
-        const opened =
-          (startButton && !isVisible(startButton)) ||
-          formValues(report, profile).some(([id]) => {
-            const element = document.getElementById(id);
-            return element && isVisible(element);
-          });
-        if (!opened) return;
-        started = true;
-        // A timer of its own, so the message appears even when the page stops changing.
-        timer = setTimeout(() => {
-          if (!finished) finish(fillForm(report, profile));
-        }, FIELDS_TIMEOUT_MS);
+        if (anyField) {
+          fieldSeen = true;
+          armTimer();
+        } else if (!startSeen && startButton && !isVisible(startButton)) {
+          startSeen = true;
+          armTimer();
+        }
       }
+      if (!fieldSeen && !startSeen) return;
       if (fillForm(report, profile)) finish(true);
     }
 
