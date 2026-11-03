@@ -27,6 +27,9 @@ function seed(sqlite: ReturnType<typeof fakeD1>["sqlite"], ttl: number) {
     sqlite
       .prepare("INSERT INTO geocode_cache (key, address, lat, lon, created_at) VALUES (?, 'a', 1, 2, ?)")
       .run(`k${i}`, createdAt);
+    sqlite
+      .prepare("INSERT INTO final_messages (chat_id, message_id, text, created_at) VALUES (1, ?, 'x', ?)")
+      .run(i, createdAt);
   });
 }
 
@@ -41,6 +44,15 @@ describe("cleanupExpired", () => {
     expect(rows(sqlite, "SELECT user_id FROM drafts")).toEqual([2]);
     expect(rows(sqlite, "SELECT file_unique_id FROM plate_cache")).toEqual(["f2"]);
     expect(rows(sqlite, "SELECT update_id FROM processed_updates")).toEqual([2]);
+    // Texts of final messages live for 48 hours, so none of these is past its term yet.
+    expect(rows(sqlite, "SELECT message_id FROM final_messages ORDER BY message_id")).toEqual([0, 1, 2]);
+  });
+
+  it("removes texts of final messages older than 48 hours and keeps the rest", async () => {
+    const { db, sqlite } = fakeD1();
+    seed(sqlite, 2 * DAY);
+    await cleanupExpired(db, NOW);
+    expect(rows(sqlite, "SELECT message_id FROM final_messages")).toEqual([2]);
   });
 
   it("removes cached addresses older than 60 days and keeps the rest", async () => {

@@ -109,21 +109,22 @@ async function processUpdate(env: WebhookEnv, update: Update): Promise<void> {
     step = "membership check";
     const access = await groupAccess(env, incoming.userId);
     if (access === null) return; // No answer from Telegram: not let in, and nothing is said.
-    if (access.member) {
-      const data = update.callback_query?.data;
-      const messageId = update.callback_query?.message?.message_id;
-      // /admin and its button belong to the administrators only: anyone else gets no answer
-      // at all, and the command never reaches the report dialog.
-      if (isAdminCommand(update.message?.text) || isAdminButton(data)) {
-        step = "admin";
-        if (!access.admin) return;
-        if (incoming.callbackQueryId) {
-          await handleAdminButton(env, incoming.chatId, { id: incoming.callbackQueryId, data, messageId });
-        } else {
-          await handleAdminCommand(env, incoming.chatId);
-        }
-        return;
+    const data = update.callback_query?.data;
+    const messageId = update.callback_query?.message?.message_id;
+    // /admin and its button belong to the administrators only: anyone else, in the group or
+    // not, gets no answer at all (not even the members-only text), and the command never
+    // reaches the report dialog. An administrator is always a member, so this comes first.
+    if (isAdminCommand(update.message?.text) || isAdminButton(data)) {
+      step = "admin";
+      if (!access.admin) return;
+      if (incoming.callbackQueryId) {
+        await handleAdminButton(env, incoming.chatId, { id: incoming.callbackQueryId, data, messageId });
+      } else {
+        await handleAdminCommand(env, incoming.userId, incoming.chatId);
       }
+      return;
+    }
+    if (access.member) {
       step = "dialog";
       if (incoming.callbackQueryId) {
         await handleButton(env, incoming.userId, incoming.chatId, {

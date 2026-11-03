@@ -5,6 +5,9 @@
 // update IDs at this age, although the webhook does not check their age when it filters repeats.
 export const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
+// Lifetime of the stored text of a final message, which Done needs to rewrite the message.
+export const FINAL_MESSAGE_TTL_MS = 48 * 60 * 60 * 1000;
+
 export interface Draft {
   user_id: number;
   step: Step;
@@ -222,6 +225,34 @@ export async function deleteDraft(db: D1Database, userId: number): Promise<void>
 // A cancel during this step may already have made room for a new report, which must stay.
 export async function deleteFinishedDraft(db: D1Database, userId: number): Promise<void> {
   await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND step = 'finishing'").bind(userId).run();
+}
+
+export async function saveFinalMessage(
+  db: D1Database,
+  chatId: number,
+  messageId: number,
+  text: string,
+): Promise<void> {
+  await db
+    .prepare("INSERT OR REPLACE INTO final_messages (chat_id, message_id, text, created_at) VALUES (?1, ?2, ?3, ?4)")
+    .bind(chatId, messageId, text, Date.now())
+    .run();
+}
+
+// Removes the row and returns its text. Null means there is none: it has expired, or the
+// message was already taken by a press of Done or Cancel.
+export async function takeFinalMessage(
+  db: D1Database,
+  chatId: number,
+  messageId: number,
+): Promise<string | null> {
+  const row = await db
+    .prepare(
+      "DELETE FROM final_messages WHERE chat_id = ?1 AND message_id = ?2 AND created_at > ?3 RETURNING text",
+    )
+    .bind(chatId, messageId, Date.now() - FINAL_MESSAGE_TTL_MS)
+    .first<{ text: string }>();
+  return row?.text ?? null;
 }
 
 export async function cachedPlates(db: D1Database, fileUniqueId: string): Promise<string[] | null> {

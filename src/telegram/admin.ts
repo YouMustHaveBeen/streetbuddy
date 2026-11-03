@@ -3,6 +3,7 @@
 import { disableBot, dublinDateTime, enableBot, getSwitchStatus } from "../core";
 import type { FormCheckOutcome } from "../core";
 import { callTelegram } from "./api";
+import { deleteDraft, loadDraft } from "./draft";
 
 export interface AdminEnv {
   DB: D1Database;
@@ -43,7 +44,18 @@ async function sendScreen(env: AdminEnv, chatId: number): Promise<number | null>
 }
 
 // The caller has already checked that the sender is an administrator of the group.
-export async function handleAdminCommand(env: AdminEnv, chatId: number): Promise<void> {
+// A report in progress is stopped without a word, as by Cancel but with no "Report cancelled",
+// so that no report buttons stay in the middle of the conversation. While the link is being
+// given the report is left alone: that step has no buttons and finishes by itself.
+export async function handleAdminCommand(env: AdminEnv, userId: number, chatId: number): Promise<void> {
+  const draft = await loadDraft(env.DB, userId);
+  if (draft && draft.step !== "finishing") {
+    await deleteDraft(env.DB, userId);
+    await callTelegram(env.TELEGRAM_BOT_TOKEN, "deleteMessage", {
+      chat_id: chatId,
+      message_id: draft.buttons_message_id,
+    });
+  }
   await sendScreen(env, chatId);
 }
 

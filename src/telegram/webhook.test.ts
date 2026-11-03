@@ -267,13 +267,18 @@ describe("/admin", () => {
     await send(textMessage("/admin"));
     expect(methods(mock)).toEqual(["getChatMember"]);
   });
-  it("tells someone who is not in the group that the bot is for members only", async () => {
-    const mock = adminTelegram("left");
+  it.each([["left"], ["kicked"]])("gives someone who is not in the group (%s) no answer to /admin either", async (status) => {
+    const mock = adminTelegram(status);
     await send(textMessage("/admin"));
-    expect(methods(mock)).toEqual(["getChatMember", "sendMessage"]);
-    expect(bodyOf(mock, "sendMessage").text).toBe("This bot is only for members of the group.");
+    expect(methods(mock)).toEqual(["getChatMember"]);
   });
-  it("leaves a report in progress as it is", async () => {
+  it("gives someone who is not in the group no answer to the admin button", async () => {
+    const mock = adminTelegram("left");
+    await send(adminButton("admin_off"));
+    expect(methods(mock)).toEqual(["getChatMember"]);
+    expect(enabled()).toBe(1);
+  });
+  it("stops a report in progress without a word and shows the screen", async () => {
     const mock = adminTelegram("administrator");
     sqlite
       .prepare(
@@ -281,10 +286,32 @@ describe("/admin", () => {
       )
       .run(Date.now());
     await send(textMessage("/admin"));
+    expect(methods(mock)).toEqual(["getChatMember", "deleteMessage", "sendMessage"]);
+    expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: 5 });
+    expect(bodyOf(mock, "sendMessage").text).toBe("Bot: on\nLast form check: none yet");
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
+  });
+  it("leaves a report alone while the link is being given", async () => {
+    const mock = adminTelegram("administrator");
+    sqlite
+      .prepare(
+        "INSERT INTO drafts (user_id, step, prompt, buttons_message_id, created_at) VALUES (42, 'finishing', 'x', 5, ?)",
+      )
+      .run(Date.now());
+    await send(textMessage("/admin"));
     expect(methods(mock)).toEqual(["getChatMember", "sendMessage"]);
-    expect(sqlite.prepare("SELECT step, buttons_message_id FROM drafts").all()).toEqual([
-      { step: "address", buttons_message_id: 5 },
-    ]);
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "finishing" }]);
+  });
+  it("leaves a report of another user alone", async () => {
+    const mock = adminTelegram("administrator");
+    sqlite
+      .prepare(
+        "INSERT INTO drafts (user_id, step, prompt, buttons_message_id, created_at) VALUES (77, 'address', 'x', 5, ?)",
+      )
+      .run(Date.now());
+    await send(textMessage("/admin"));
+    expect(methods(mock)).toEqual(["getChatMember", "sendMessage"]);
+    expect(sqlite.prepare("SELECT user_id FROM drafts").all()).toEqual([{ user_id: 77 }]);
   });
   it("switches the bot off, shows the new screen and removes the old one", async () => {
     const mock = adminTelegram("administrator");

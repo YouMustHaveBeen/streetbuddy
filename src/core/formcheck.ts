@@ -9,7 +9,8 @@ export type FormCheck = { ok: true } | { ok: false; reason: string; unloaded?: t
 
 const REQUEST_TIMEOUT_MS = 10000;
 
-// A failed request is repeated once; a page that cannot be loaded counts as a changed form.
+// A failed request is repeated once; a page that still cannot be loaded fails the check, and
+// is reported as "unloaded" so that it can be told from a form that has really changed.
 async function fetchText(url: string): Promise<string> {
   let failure: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
