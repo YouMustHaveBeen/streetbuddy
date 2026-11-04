@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import worker from "./index";
 import type { Env } from "./index";
-import { INSTALL_PATH, INSTALL_URL, SCRIPT_PATH, installPage, userscriptFile } from "./install";
+import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 
 describe("installation guide page", () => {
   it("is served as HTML", async () => {
@@ -49,18 +49,23 @@ describe("Worker routes", () => {
   const get = (path: string, method = "GET") =>
     worker.fetch(new Request(`https://example.com${path}`, { method }), env, ctx);
 
-  it("serves the page and the script on GET", async () => {
-    expect((await get(INSTALL_PATH)).status).toBe(200);
-    expect((await get(SCRIPT_PATH)).status).toBe(200);
+  it("serves the page as HTML on GET", async () => {
+    const response = await get(INSTALL_PATH);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(await response.text()).toContain("<title>Руководство по установке StreetBuddy</title>");
+  });
+
+  it("serves the script as JavaScript on GET", async () => {
+    const response = await get(SCRIPT_PATH);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
+    expect((await response.text()).startsWith("// ==UserScript==")).toBe(true);
   });
 
   it("answers 404 to other methods and other paths", async () => {
     expect((await get(INSTALL_PATH, "POST")).status).toBe(404);
     expect((await get(SCRIPT_PATH, "POST")).status).toBe(404);
     expect((await get("/other")).status).toBe(404);
-  });
-
-  it("gives the bot a link to the page path", () => {
-    expect(INSTALL_URL.endsWith(INSTALL_PATH)).toBe(true);
   });
 });

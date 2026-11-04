@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeD1 } from "../../test/fakeD1";
 import { district } from "../core";
-import { INSTALL_URL } from "../install";
 import { handleButton, handleMessage } from "./dialog";
 import type { DialogEnv, Message } from "./dialog";
 
@@ -62,7 +61,7 @@ beforeEach(() => {
   const fake = fakeD1();
   sqlite = fake.sqlite;
   run = vi.fn(async () => ({ response: '["12-D-3456"]' }));
-  env = { AI: { run } as unknown as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token" };
+  env = { AI: { run } as unknown as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", SITE_URL: "https://site.example" };
   calls = [];
   nextId = 1000;
   nextMessage = 0;
@@ -101,7 +100,7 @@ describe("/start", () => {
     expect(lastSent().text).toContain("To start a report, send your location.");
     expect(lastSent().text).not.toContain("<link>");
     expect(lastSent().text).toContain("Здесь будет ссылка на Политику конфиденциальности\nInstallation guide: https://");
-    expect(lastSent().text).toContain(`Installation guide: ${INSTALL_URL}\n`);
+    expect(lastSent().text).toContain("Installation guide: https://site.example/install\n");
     expect(lastSent().reply_markup.keyboard[0][0]).toEqual({ text: "Location", request_location: true });
     expect(draft()).toBeUndefined();
   });

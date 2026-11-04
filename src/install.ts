@@ -3,7 +3,6 @@ import userscript from "../userscript/streetbuddy.user.js";
 
 export const INSTALL_PATH = "/install";
 export const SCRIPT_PATH = "/streetbuddy.user.js";
-export const INSTALL_URL = `https://streetbuddy.youmusthavebeen.workers.dev${INSTALL_PATH}`;
 
 const FIREFOX_URL = "https://play.google.com/store/apps/details?id=org.mozilla.firefox";
 const VIOLENTMONKEY_URL = "https://addons.mozilla.org/firefox/addon/violentmonkey/";

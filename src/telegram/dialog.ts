@@ -13,7 +13,7 @@ import {
   reverseGeocode,
   searchAddress,
 } from "../core";
-import { INSTALL_URL } from "../install";
+import { INSTALL_PATH } from "../install";
 import { callTelegram, downloadFile } from "./api";
 import {
   addCleanup,
@@ -40,6 +40,7 @@ export interface DialogEnv {
   AI: Ai;
   DB: D1Database;
   TELEGRAM_BOT_TOKEN: string;
+  SITE_URL: string;
 }
 
 export interface PhotoSize {
@@ -70,7 +71,7 @@ interface Context {
   chatId: number;
 }
 
-const START_TEXT = `StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch form. You tick the two boxes, pass the captcha and press Submit yourself.
+const startText = (siteUrl: string) => `StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch form. You tick the two boxes, pass the captcha and press Submit yourself.
 
 This bot is not affiliated with An Garda Síochána.
 
@@ -79,7 +80,7 @@ A report may require you to give a statement in court.
 To start a report, send your location.
 
 Здесь будет ссылка на Политику конфиденциальности
-Installation guide: ${INSTALL_URL}
+Installation guide: ${siteUrl}${INSTALL_PATH}
 
 © OpenStreetMap contributors`;
 
@@ -245,7 +246,7 @@ async function redraw(c: Context, draft: Draft, message: Message): Promise<void>
 }
 
 async function handleStart(c: Context, draft: Draft | null, message: Message): Promise<void> {
-  const startId = await send(c, START_TEXT, LOCATION_KEYBOARD);
+  const startId = await send(c, startText(c.env.SITE_URL), LOCATION_KEYBOARD);
   if (!draft) return;
   // The report is left as it was: its screen only moves below the /start text.
   const cleanupIds = [message.message_id, ...(startId === null ? [] : [startId])];

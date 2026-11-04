@@ -12,6 +12,7 @@ export interface Env {
   WEBHOOK_SECRET: string;
   OWNER_TELEGRAM_ID: string;
   GROUP_ID: string;
+  SITE_URL: string;
 }
 
 export default {

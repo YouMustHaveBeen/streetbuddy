@@ -62,7 +62,7 @@ A report may require you to give a statement in court.
 To start a report, send your location.
 
 Здесь будет ссылка на Политику конфиденциальности
-Installation guide: https://streetbuddy.youmusthavebeen.workers.dev/install
+Installation guide: <адрес сайта Worker>/install
 
 © OpenStreetMap contributors
 ```
@@ -168,7 +168,7 @@ Installation guide: https://streetbuddy.youmusthavebeen.workers.dev/install
 51. [сделано] Модуль core не знает о Telegram: распознавание номера, геокодирование, проверка района, шаблоны описаний, сборка ссылки. Его же потом использует WhatsApp.
 52. [сделано] Модуль telegram — диалог, кнопки, шаг текущей жалобы.
 53. [частично: счетчиков лимитов нет] D1 хранит черновики жалоб (24 часа), кеш распознавания и адресов, счетчики лимитов, ID обработанных обновлений Telegram, тексты итоговых сообщений (п.24), рубильник бота и результат последней проверки формы (по одной строке). KV не используется: на бесплатном тарифе всего 1000 записей в сутки и задержка синхронизации.
-54. [сделано] Секреты Worker: TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET, OWNER_TELEGRAM_ID (Telegram ID владельца бота), GROUP_ID (ID закрытой Telegram-группы); Workers AI подключается привязкой AI, без ключа.
+54. [сделано] Секреты Worker: TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET, OWNER_TELEGRAM_ID (Telegram ID владельца бота), GROUP_ID (ID закрытой Telegram-группы); Workers AI подключается привязкой AI, без ключа. Адрес сайта Worker — переменная SITE_URL в `wrangler.toml` (не секрет): из нее бот собирает адрес страницы установки для `/start` (п.12).
 55. [сделано] Запросы к Nominatim — с User-Agent `StreetBuddy (t.me/streetbuddy_bot)`, не чаще 1 в секунду (очередь хранится в D1), с кешем результатов.
 56. [частично: сборки закладки и ее отдачи Worker-ом нет] Скрипт — отдельный файл в репозитории; закладка собирается из него автоматически; файл скрипта (`/streetbuddy.user.js`), закладку и страницу инструкции отдает тот же Worker.
 57. [сделано] Репозиторий StreetBuddy (публичный): `src/core`, `src/telegram`, `src/install.ts` (страница `/install` и отдача скрипта), `userscript/`, `test/userscript/` (браузерный тест скрипта на копии формы, запуск `npm run test:userscript`, на новой машине перед первым запуском один раз `npx playwright install chromium`), `config/area.geojson`, `config/form.json` (эталон формы для ежедневной проверки), `docs/architecture.md`.
