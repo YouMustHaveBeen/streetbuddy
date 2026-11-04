@@ -64,8 +64,12 @@ describe("Worker routes", () => {
   });
 
   it("answers HEAD like GET", async () => {
-    expect((await get(INSTALL_PATH, "HEAD")).status).toBe(200);
-    expect((await get(SCRIPT_PATH, "HEAD")).status).toBe(200);
+    const page = await get(INSTALL_PATH, "HEAD");
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    const script = await get(SCRIPT_PATH, "HEAD");
+    expect(script.status).toBe(200);
+    expect(script.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
   });
 
   it("answers 404 to other methods and other paths", async () => {
