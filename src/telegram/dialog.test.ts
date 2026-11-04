@@ -547,7 +547,7 @@ describe("parking and the final message", () => {
     const screen = buttonId();
     await press("done");
     const roadScreen = buttonId();
-    await press("road:0");
+    await press("road:Pedestrian");
 
     const final = lastSent();
     expect(final.text).toBe(
@@ -571,7 +571,7 @@ describe("parking and the final message", () => {
     await toParking();
     await press("opt:1");
     await press("done");
-    await press("road:0");
+    await press("road:Pedestrian");
     const rows = sqlite.prepare("SELECT * FROM report_log").all() as any[];
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ plate: "12-D-3456", parking: 2, address: "12 Main Street, Clongriffin, D13", lat: latInside, lon: lonInside });
@@ -581,7 +581,7 @@ describe("parking and the final message", () => {
     await toParking();
     await press("opt:1");
     await press("done");
-    await press("road:0");
+    await press("road:Pedestrian");
     expect(lastSent().text).toContain("Open the link in an external browser.");
     expect(draft()).toBeUndefined();
     expect(console.error).toHaveBeenCalledWith("Writing the report log failed");
@@ -591,7 +591,7 @@ describe("parking and the final message", () => {
     await press("opt:0");
     await press("done");
     failSend = true;
-    await press("road:0");
+    await press("road:Pedestrian");
     expect(draft().step).toBe("road_user");
     expect(called("deleteMessages")).toEqual([]);
   });
@@ -600,7 +600,7 @@ describe("parking and the final message", () => {
     await press("opt:0");
     await press("done");
     const screen = buttonId();
-    await Promise.all([press("road:0", screen), press("road:1", screen)]);
+    await Promise.all([press("road:Pedestrian", screen), press("road:Passenger", screen)]);
     expect(sentTexts().filter((value) => String(value).startsWith("Vehicle 12-D-3456"))).toHaveLength(1);
   });
   it("uses the options chosen up to the moment of Done", async () => {
@@ -610,7 +610,7 @@ describe("parking and the final message", () => {
     onAnswer = () => sqlite.prepare("UPDATE drafts SET parking = parking | 4 WHERE user_id = ?").run(USER);
     await press("done");
     onAnswer = null;
-    await press("road:0");
+    await press("road:Pedestrian");
     expect(lastSent().text).toContain("parked on a cycle track\nand on a grass margin");
   });
   it("draws the options again when the last one was switched off at the moment of Done", async () => {
@@ -621,7 +621,7 @@ describe("parking and the final message", () => {
     onAnswer = null;
     const screen = buttonId();
     const sentBefore = called("sendMessage").length;
-    await press("road:0");
+    await press("road:Pedestrian");
     expect(draft().step).toBe("parking");
     expect(called("sendMessage").length).toBe(sentBefore + 1);
     expect(buttonId()).not.toBe(screen);
@@ -647,7 +647,7 @@ describe("final message buttons", () => {
     await toParking();
     await press("opt:0");
     await press("done");
-    await press("road:0");
+    await press("road:Pedestrian");
     return finalRow() as { chat_id: number; message_id: number; text: string };
   }
 
@@ -700,6 +700,27 @@ describe("final message buttons", () => {
     expect(finalRow()).toBeUndefined();
   });
 
+  it("Cancel takes the report out of the log, Done keeps it", async () => {
+    const logRows = () => sqlite.prepare("SELECT id FROM report_log").all();
+    const row = await toFinal();
+    expect(logRows()).toHaveLength(1);
+    await press("final_cancel", row.message_id);
+    expect(logRows()).toEqual([]);
+
+    const second = await toFinal();
+    await press("final_done", second.message_id);
+    expect(logRows()).toHaveLength(1);
+  });
+
+  it("Cancel leaves the other lines of the log alone", async () => {
+    sqlite
+      .prepare("INSERT INTO report_log (created_at, plate, parking, address, lat, lon) VALUES (1, 'x', 1, 'a', 53.4, -6.1)")
+      .run();
+    const row = await toFinal();
+    await press("final_cancel", row.message_id);
+    expect(sqlite.prepare("SELECT plate FROM report_log").all()).toEqual([{ plate: "x" }]);
+  });
+
   it("Done only removes the buttons when the text is no longer stored", async () => {
     const row = await toFinal();
     sqlite.prepare("DELETE FROM final_messages").run();
@@ -745,7 +766,7 @@ describe("final message buttons", () => {
     await press("opt:0");
     await press("done");
     sqlite.exec("DROP TABLE final_messages");
-    await press("road:0");
+    await press("road:Pedestrian");
     expect(lastSent().text).toContain("Open the link in an external browser.");
     expect(draft()).toBeUndefined();
     expect(console.error).toHaveBeenCalledWith("Saving the final message failed");
@@ -793,7 +814,7 @@ describe("cancel and old buttons", () => {
       }
       return realFetch(url, init);
     });
-    const finishing = press("road:0", screen);
+    const finishing = press("road:Pedestrian", screen);
     await vi.waitFor(() => expect(release).not.toBe(undefined));
     await vi.waitFor(() => expect(draft().step).toBe("finishing"));
     await press("cancel", screen);

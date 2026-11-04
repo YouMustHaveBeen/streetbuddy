@@ -111,7 +111,7 @@ describe("scheduled", () => {
         logLine(sqlite, run.scheduledTime - 12 * 60 * 60 * 1000);
         await worker.scheduled(run, { DB: db } as Env, {} as ExecutionContext);
         expect(rows(sqlite, "SELECT reports FROM daily_stats")).toEqual([1]);
-        expect(rows(sqlite, "SELECT reports FROM hotspots")).toEqual([1]);
+        expect(rows(sqlite, "SELECT reports FROM hotspots")).toEqual([]);
       } finally {
         vi.useRealTimers();
       }

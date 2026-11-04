@@ -10,6 +10,7 @@ export const FINAL_MESSAGE_TTL_MS = 48 * 60 * 60 * 1000;
 
 export interface Draft {
   user_id: number;
+  draft_id: number;
   step: Step;
   prompt: string;
   buttons_message_id: number;
@@ -64,6 +65,9 @@ export async function loadDraft(db: D1Database, userId: number): Promise<Draft |
     .first<Draft>();
 }
 
+// Every draft gets its own ID. A slow handler of a report that has been cancelled or replaced
+// still holds the ID of its own draft, so its writes find nothing and cannot touch the new one.
+// Returns the ID of the new draft.
 export async function createDraft(
   db: D1Database,
   userId: number,
@@ -71,15 +75,17 @@ export async function createDraft(
   prompt: string,
   changes: DraftChanges,
   cleanupIds: number[],
-): Promise<void> {
+): Promise<number> {
+  const draftId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER) + 1;
   await db
     .prepare(
       `INSERT OR REPLACE INTO drafts
-       (user_id, step, prompt, buttons_message_id, cleanup, failures, address, lat, lon, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+       (user_id, draft_id, step, prompt, buttons_message_id, cleanup, failures, address, lat, lon, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
     )
     .bind(
       userId,
+      draftId,
       changes.step,
       prompt,
       messageId,
@@ -91,6 +97,7 @@ export async function createDraft(
       Date.now(),
     )
     .run();
+  return draftId;
 }
 
 // Puts the just sent message in place of the previous one, only if the draft is still on
@@ -99,6 +106,7 @@ export async function createDraft(
 export async function swapScreen(
   db: D1Database,
   userId: number,
+  draftId: number,
   expectedStep: Step,
   messageId: number,
   prompt: string,
@@ -106,15 +114,16 @@ export async function swapScreen(
   cleanupIds: number[],
 ): Promise<number | null> {
   const columns = Object.keys(changes) as (keyof DraftChanges)[];
-  const sets = columns.map((column, i) => `${column} = ?${i + 6}`);
+  const sets = columns.map((column, i) => `${column} = ?${i + 7}`);
   const update = db
     .prepare(
-      `UPDATE drafts SET buttons_message_id = ?3, prompt = ?4, ${appendCleanup("?5")}
+      `UPDATE drafts SET buttons_message_id = ?4, prompt = ?5, ${appendCleanup("?6")}
        ${sets.map((set) => `, ${set}`).join("")}
-       WHERE user_id = ?1 AND step = ?2`,
+       WHERE user_id = ?1 AND draft_id = ?2 AND step = ?3`,
     )
     .bind(
       userId,
+      draftId,
       expectedStep,
       messageId,
       prompt,
@@ -122,42 +131,48 @@ export async function swapScreen(
       ...columns.map((column) => changes[column] ?? null),
     );
   const select = db
-    .prepare("SELECT buttons_message_id FROM drafts WHERE user_id = ?1 AND step = ?2")
-    .bind(userId, expectedStep);
+    .prepare("SELECT buttons_message_id FROM drafts WHERE user_id = ?1 AND draft_id = ?2 AND step = ?3")
+    .bind(userId, draftId, expectedStep);
   // A batch is one transaction, so no other screen can slip in between the two statements.
   const [previous, updated] = await db.batch<{ buttons_message_id: number }>([select, update]);
   return updated.meta.changes > 0 ? (previous.results[0]?.buttons_message_id ?? null) : null;
 }
 
-export async function addCleanup(db: D1Database, userId: number, ids: number[]): Promise<void> {
+export async function addCleanup(
+  db: D1Database,
+  userId: number,
+  draftId: number,
+  ids: number[],
+): Promise<void> {
   await db
-    .prepare(`UPDATE drafts SET ${appendCleanup("?2")} WHERE user_id = ?1`)
-    .bind(userId, JSON.stringify(ids))
+    .prepare(`UPDATE drafts SET ${appendCleanup("?3")} WHERE user_id = ?1 AND draft_id = ?2`)
+    .bind(userId, draftId, JSON.stringify(ids))
     .run();
 }
 
 export async function recordPhoto(
   db: D1Database,
   userId: number,
+  draftId: number,
   photo: { fileId: string; fileUniqueId: string; sentAt: number; messageId: number },
 ): Promise<{ photoCount: number; isFirst: boolean } | null> {
   // Album photos can reach the database in any order, so the first photo is the one with
   // the lowest message ID. When it changes, the plates of the previous one no longer count.
-  const earlier = "first_message_id IS NULL OR ?5 < first_message_id";
+  const earlier = "first_message_id IS NULL OR ?6 < first_message_id";
   const row = await db
     .prepare(
       `UPDATE drafts SET
-         first_file_id = CASE WHEN ${earlier} THEN ?2 ELSE first_file_id END,
-         first_file_unique_id = CASE WHEN ${earlier} THEN ?3 ELSE first_file_unique_id END,
-         first_photo_at = CASE WHEN ${earlier} THEN ?4 ELSE first_photo_at END,
+         first_file_id = CASE WHEN ${earlier} THEN ?3 ELSE first_file_id END,
+         first_file_unique_id = CASE WHEN ${earlier} THEN ?4 ELSE first_file_unique_id END,
+         first_photo_at = CASE WHEN ${earlier} THEN ?5 ELSE first_photo_at END,
          plates = CASE WHEN ${earlier} THEN NULL ELSE plates END,
-         first_message_id = CASE WHEN ${earlier} THEN ?5 ELSE first_message_id END,
-         last_photo_id = MAX(COALESCE(last_photo_id, 0), ?5),
+         first_message_id = CASE WHEN ${earlier} THEN ?6 ELSE first_message_id END,
+         last_photo_id = MAX(COALESCE(last_photo_id, 0), ?6),
          photo_count = photo_count + 1
-       WHERE user_id = ?1 AND step = 'photos'
+       WHERE user_id = ?1 AND draft_id = ?2 AND step = 'photos'
        RETURNING photo_count, first_message_id`,
     )
-    .bind(userId, photo.fileId, photo.fileUniqueId, photo.sentAt, photo.messageId)
+    .bind(userId, draftId, photo.fileId, photo.fileUniqueId, photo.sentAt, photo.messageId)
     .first<{ photo_count: number; first_message_id: number }>();
   if (!row) return null;
   return { photoCount: row.photo_count, isFirst: row.first_message_id === photo.messageId };
@@ -168,12 +183,13 @@ export async function recordPhoto(
 export async function setPlates(
   db: D1Database,
   userId: number,
+  draftId: number,
   fileUniqueId: string,
   plates: string[],
 ): Promise<void> {
   await db
-    .prepare("UPDATE drafts SET plates = ?3 WHERE user_id = ?1 AND first_file_unique_id = ?2")
-    .bind(userId, fileUniqueId, JSON.stringify(plates))
+    .prepare("UPDATE drafts SET plates = ?4 WHERE user_id = ?1 AND draft_id = ?2 AND first_file_unique_id = ?3")
+    .bind(userId, draftId, fileUniqueId, JSON.stringify(plates))
     .run();
 }
 
@@ -181,12 +197,13 @@ export async function setPlates(
 export async function moveStep(
   db: D1Database,
   userId: number,
+  draftId: number,
   from: Step,
   to: Step,
 ): Promise<boolean> {
   const result = await db
-    .prepare("UPDATE drafts SET step = ?3 WHERE user_id = ?1 AND step = ?2")
-    .bind(userId, from, to)
+    .prepare("UPDATE drafts SET step = ?4 WHERE user_id = ?1 AND draft_id = ?2 AND step = ?3")
+    .bind(userId, draftId, from, to)
     .run();
   return result.meta.changes > 0;
 }
@@ -194,12 +211,17 @@ export async function moveStep(
 // Takes the report for giving the link and returns the parking options as they are at that
 // moment: a tap on an option can land after the draft was loaded. Null means someone else
 // got there first.
-export async function startFinishing(db: D1Database, userId: number): Promise<number | null> {
+export async function startFinishing(
+  db: D1Database,
+  userId: number,
+  draftId: number,
+): Promise<number | null> {
   const row = await db
     .prepare(
-      "UPDATE drafts SET step = 'finishing' WHERE user_id = ?1 AND step = 'road_user' RETURNING parking",
+      `UPDATE drafts SET step = 'finishing'
+       WHERE user_id = ?1 AND draft_id = ?2 AND step = 'road_user' RETURNING parking`,
     )
-    .bind(userId)
+    .bind(userId, draftId)
     .first<{ parking: number }>();
   return row?.parking ?? null;
 }
@@ -208,20 +230,21 @@ export async function startFinishing(db: D1Database, userId: number): Promise<nu
 export async function toggleParking(
   db: D1Database,
   userId: number,
+  draftId: number,
   bit: number,
 ): Promise<number | null> {
   const row = await db
     .prepare(
-      `UPDATE drafts SET parking = (parking | ?2) - (parking & ?2)
-       WHERE user_id = ?1 AND step = 'parking' RETURNING parking`,
+      `UPDATE drafts SET parking = (parking | ?3) - (parking & ?3)
+       WHERE user_id = ?1 AND draft_id = ?2 AND step = 'parking' RETURNING parking`,
     )
-    .bind(userId, bit)
+    .bind(userId, draftId, bit)
     .first<{ parking: number }>();
   return row?.parking ?? null;
 }
 
-export async function deleteDraft(db: D1Database, userId: number): Promise<void> {
-  await db.prepare("DELETE FROM drafts WHERE user_id = ?1").bind(userId).run();
+export async function deleteDraft(db: D1Database, userId: number, draftId: number): Promise<void> {
+  await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2").bind(userId, draftId).run();
 }
 
 // Stops a report that has buttons on screen and returns the message with them. One statement, so
@@ -235,19 +258,27 @@ export async function deleteDraftWithButtons(db: D1Database, userId: number): Pr
 }
 
 // A cancel during this step may already have made room for a new report, which must stay.
-export async function deleteFinishedDraft(db: D1Database, userId: number): Promise<void> {
-  await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND step = 'finishing'").bind(userId).run();
+export async function deleteFinishedDraft(db: D1Database, userId: number, draftId: number): Promise<void> {
+  await db
+    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2 AND step = 'finishing'")
+    .bind(userId, draftId)
+    .run();
 }
 
+// logId is the line of the report log written for this report, or null when there is none;
+// Cancel under the final message takes that line out again.
 export async function saveFinalMessage(
   db: D1Database,
   chatId: number,
   messageId: number,
   text: string,
+  logId: number | null,
 ): Promise<void> {
   await db
-    .prepare("INSERT OR REPLACE INTO final_messages (chat_id, message_id, text, created_at) VALUES (?1, ?2, ?3, ?4)")
-    .bind(chatId, messageId, text, Date.now())
+    .prepare(
+      "INSERT OR REPLACE INTO final_messages (chat_id, message_id, text, created_at, log_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+    )
+    .bind(chatId, messageId, text, Date.now(), logId)
     .run();
 }
 
@@ -264,6 +295,20 @@ export async function readFinalMessage(
     .bind(chatId, messageId, Date.now() - FINAL_MESSAGE_TTL_MS)
     .first<{ text: string }>();
   return row?.text ?? null;
+}
+
+// Cancel under the final message: the report does not count, so its line of the log goes too.
+// One batch, the log line first because it is found through the final message.
+export async function cancelFinalMessage(db: D1Database, chatId: number, messageId: number): Promise<void> {
+  await db.batch([
+    db
+      .prepare(
+        `DELETE FROM report_log WHERE id =
+           (SELECT log_id FROM final_messages WHERE chat_id = ?1 AND message_id = ?2)`,
+      )
+      .bind(chatId, messageId),
+    db.prepare("DELETE FROM final_messages WHERE chat_id = ?1 AND message_id = ?2").bind(chatId, messageId),
+  ]);
 }
 
 export async function deleteFinalMessage(db: D1Database, chatId: number, messageId: number): Promise<void> {

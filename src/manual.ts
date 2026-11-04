@@ -71,7 +71,7 @@ ${BASE_STYLE}
 <p>Затем нажмите «Done».</p>
 
 <h3>6. Выберите, кем вы были</h3>
-<p>Бот спросит «Were you a:». Нажмите один из вариантов: Cyclist; Driver; E-Scooter User, E-Moped User, E-Cyclist; Motorcyclist; Passenger; Pedestrian.</p>
+<p>Бот спросит «Were you a:». Нажмите один из вариантов: Pedestrian; Passenger; Driver; Cyclist; Motorcyclist; E-Scooter User, E-Moped User, E-Cyclist.</p>
 
 <h3>7. Проверьте описание и откройте форму</h3>
 <p>Бот уберет свои промежуточные сообщения и пришлет итоговое сообщение под вашим последним фото: готовое описание нарушения: номер машины, варианты парковки, адрес, дату и время, каждое с новой строки.</p>

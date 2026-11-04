@@ -40,3 +40,10 @@ CREATE TABLE feedback (
   text TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+
+-- The line of the report log written for a final message, which Cancel under that message
+-- takes out again; null when no line was written.
+ALTER TABLE final_messages ADD COLUMN log_id INTEGER;
+
+-- The ID of a draft: handlers of a cancelled or replaced report must not write into the next one.
+ALTER TABLE drafts ADD COLUMN draft_id INTEGER NOT NULL DEFAULT 0;

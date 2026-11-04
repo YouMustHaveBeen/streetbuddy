@@ -8,6 +8,8 @@ export const REPORT_LOG_TTL_MS = 60 * 24 * 60 * 60 * 1000;
 // one report per plate and place.
 export const HOTSPOT_RADIUS_M = 50;
 export const HOTSPOT_COUNT = 5;
+// A place with fewer reports is not shown: a few reports could point at one person's home.
+export const HOTSPOT_MIN_REPORTS = 10;
 
 const M_PER_DEG = 111_320;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -25,14 +27,15 @@ export interface Hotspot {
   reports: number;
 }
 
-// One row for every link given; there is no Telegram ID in it.
-export async function logReport(db: D1Database, report: LoggedReport): Promise<void> {
-  await db
+// One row for every link given; there is no Telegram ID in it. Returns the ID of the row.
+export async function logReport(db: D1Database, report: LoggedReport): Promise<number> {
+  const result = await db
     .prepare(
       "INSERT INTO report_log (created_at, plate, parking, address, lat, lon) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )
     .bind(Date.now(), report.plate, report.parking, report.address, report.lat, report.lon)
     .run();
+  return result.meta.last_row_id;
 }
 
 export async function getHotspots(db: D1Database): Promise<Hotspot[]> {
@@ -59,7 +62,8 @@ interface PlaceRow {
 
 // Rows are in time order. A row joins the first group whose first point is within
 // HOTSPOT_RADIUS_M and starts a group of its own otherwise; a group is shown by the address
-// that occurs in it most often, and by the latest of those when they are equal.
+// that occurs in it most often, and by the latest of those when they are equal. Groups of fewer
+// than HOTSPOT_MIN_REPORTS reports are left out.
 export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
   const groups: { lat: number; lon: number; rows: PlaceRow[] }[] = [];
   for (const row of rows) {
@@ -79,6 +83,7 @@ export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
       )[0];
       return { address, reports: group.rows.length };
     })
+    .filter((spot) => spot.reports >= HOTSPOT_MIN_REPORTS)
     .sort((a, b) => b.reports - a.reports)
     .slice(0, HOTSPOT_COUNT);
 }

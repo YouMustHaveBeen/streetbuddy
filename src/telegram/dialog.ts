@@ -34,6 +34,7 @@ import {
   setPlates,
   startFinishing,
   swapScreen,
+  cancelFinalMessage,
   deleteFinalMessage,
   readFinalMessage,
   toggleParking,
@@ -185,7 +186,7 @@ function buttonsFor(
         [{ text: "Done", callback_data: "done" }, CANCEL],
       ];
     case "road_user":
-      return [...ROAD_USER_TYPES.map((type, i) => [{ text: type, callback_data: `road:${i}` }]), [CANCEL]];
+      return [...ROAD_USER_TYPES.map((type) => [{ text: type, callback_data: `road:${type}` }]), [CANCEL]];
     default:
       return [[CANCEL]];
   }
@@ -238,6 +239,7 @@ async function show(
   const previous = await swapScreen(
     c.env.DB,
     c.userId,
+    draft.draft_id,
     draft.step,
     messageId,
     text,
@@ -254,7 +256,7 @@ async function redraw(c: Context, draft: Draft, message: Message): Promise<void>
   // While the link is being given the list of messages to delete is already read, so a
   // new screen would stay behind.
   if (draft.step === "finishing") {
-    if (cleanupIds.length > 0) await addCleanup(c.env.DB, c.userId, cleanupIds);
+    if (cleanupIds.length > 0) await addCleanup(c.env.DB, c.userId, draft.draft_id, cleanupIds);
     return;
   }
   await show(c, draft, draft.prompt, {}, cleanupIds);
@@ -299,7 +301,7 @@ async function handleCommand(c: Context, command: string): Promise<void> {
 
 async function refuseArea(c: Context, draft: Draft | null): Promise<void> {
   if (draft) {
-    await deleteDraft(c.env.DB, c.userId);
+    await deleteDraft(c.env.DB, c.userId, draft.draft_id);
     await deleteMessage(c, draft.buttons_message_id);
   }
   await send(c, OUT_OF_AREA);
@@ -396,7 +398,7 @@ function pickPhoto(sizes: PhotoSize[]): PhotoSize {
 // plate by hand, which also covers the used-up daily Workers AI limit.
 // QUERY BUDGET EXCEPTION: up to three statements (cache read, cache write, result write):
 // the recognition runs next to the dialog and shares only D1 with it.
-async function recognize(c: Context, photo: PhotoSize): Promise<void> {
+async function recognize(c: Context, draftId: number, photo: PhotoSize): Promise<void> {
   let plates: string[] = [];
   try {
     const cached = await cachedPlates(c.env.DB, photo.file_unique_id);
@@ -413,7 +415,7 @@ async function recognize(c: Context, photo: PhotoSize): Promise<void> {
   } catch {
     console.error("Plate recognition failed");
   }
-  await setPlates(c.env.DB, c.userId, photo.file_unique_id, plates);
+  await setPlates(c.env.DB, c.userId, draftId, photo.file_unique_id, plates);
 }
 
 async function answerPhoto(c: Context, draft: Draft, message: Message, count: number): Promise<void> {
@@ -422,7 +424,7 @@ async function answerPhoto(c: Context, draft: Draft, message: Message, count: nu
     await sleep(ALBUM_WAIT_MS);
     const latest = await loadDraft(c.env.DB, c.userId);
     // Another photo has arrived since: its own wait will answer for the whole album.
-    if (latest?.step !== "photos" || latest.photo_count !== count) return;
+    if (latest?.draft_id !== draft.draft_id || latest.step !== "photos" || latest.photo_count !== count) return;
     photoCount = latest.photo_count;
   }
   await show(c, { ...draft, photo_count: photoCount }, PHOTO_RECEIVED, {});
@@ -433,7 +435,7 @@ async function answerPhoto(c: Context, draft: Draft, message: Message, count: nu
 // statements of the recognition (see recognize).
 async function handlePhoto(c: Context, draft: Draft, message: Message): Promise<void> {
   const photo = pickPhoto(message.photo as PhotoSize[]);
-  const recorded = await recordPhoto(c.env.DB, c.userId, {
+  const recorded = await recordPhoto(c.env.DB, c.userId, draft.draft_id, {
     fileId: photo.file_id,
     fileUniqueId: photo.file_unique_id,
     sentAt: message.date * 1000,
@@ -442,7 +444,7 @@ async function handlePhoto(c: Context, draft: Draft, message: Message): Promise<
   if (recorded === null) return;
   await Promise.all([
     answerPhoto(c, draft, message, recorded.photoCount),
-    recorded.isFirst ? recognize(c, photo) : Promise.resolve(),
+    recorded.isFirst ? recognize(c, draft.draft_id, photo) : Promise.resolve(),
   ]);
 }
 
@@ -511,7 +513,7 @@ async function handleFeedback(c: Context, draft: Draft, text: string): Promise<v
     return;
   }
   await saveFeedback(c.env.DB, c.userId, text);
-  await deleteDraft(c.env.DB, c.userId);
+  await deleteDraft(c.env.DB, c.userId, draft.draft_id);
   await deleteMessage(c, draft.buttons_message_id);
   await send(c, FEEDBACK_SENT);
 }
@@ -565,7 +567,7 @@ export async function handleMessage(env: DialogEnv, userId: number, chatId: numb
 }
 
 async function cancel(c: Context, draft: Draft): Promise<void> {
-  await deleteDraft(c.env.DB, c.userId);
+  await deleteDraft(c.env.DB, c.userId, draft.draft_id);
   await deleteMessage(c, draft.buttons_message_id);
   // Feedback is not a report: its Cancel only removes the screen.
   if (draft.step !== "feedback_input") await send(c, CANCELLED);
@@ -579,14 +581,14 @@ async function waitForPlates(c: Context, draft: Draft): Promise<string[] | null>
   for (let i = 0; i < PLATES_POLL_LIMIT; i++) {
     await sleep(PLATES_POLL_MS);
     const latest = await loadDraft(c.env.DB, c.userId);
-    if (latest?.step !== "recognizing") return null;
+    if (latest?.draft_id !== draft.draft_id || latest.step !== "recognizing") return null;
     if (latest.plates !== null) return parsePlateList(latest);
   }
   return [];
 }
 
 async function createReport(c: Context, draft: Draft): Promise<void> {
-  if (!(await moveStep(c.env.DB, c.userId, "photos", "recognizing"))) return;
+  if (!(await moveStep(c.env.DB, c.userId, draft.draft_id, "photos", "recognizing"))) return;
   const claimed: Draft = { ...draft, step: "recognizing" };
   const plates = await waitForPlates(c, claimed);
   if (plates === null) return;
@@ -604,12 +606,12 @@ async function createReport(c: Context, draft: Draft): Promise<void> {
 // link, and is moved back if Telegram fails, so the report is not lost; the text of the final
 // message and the line of the report log are saved once the link is out.
 async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPES)[number]): Promise<void> {
-  const chosen = await startFinishing(c.env.DB, c.userId);
+  const chosen = await startFinishing(c.env.DB, c.userId, draft.draft_id);
   if (chosen === null) return;
   if (chosen === 0) {
     // The last option was switched off after Done had loaded the draft; a report needs one.
     // The button has already been answered, so a pop-up is out of reach: the options are drawn again.
-    if (await moveStep(c.env.DB, c.userId, "finishing", "parking")) {
+    if (await moveStep(c.env.DB, c.userId, draft.draft_id, "finishing", "parking")) {
       await show(c, { ...draft, step: "parking", parking: 0 }, CHOOSE_PARKING, {});
     }
     return;
@@ -646,21 +648,22 @@ async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPE
     },
   });
   if (!sent) {
-    await moveStep(c.env.DB, c.userId, "finishing", "road_user");
+    await moveStep(c.env.DB, c.userId, draft.draft_id, "finishing", "road_user");
     return;
   }
-  // The link is already out, so a failure to keep the text must not leave the report in
-  // "finishing": Done then only removes the buttons.
+  // The link is already out, so a failure to write the log or to keep the text must not
+  // leave the report in "finishing": Done then only removes the buttons. The log goes first
+  // because the stored final message remembers its line.
+  let logId: number | null = null;
   try {
-    await saveFinalMessage(c.env.DB, c.chatId, sent.message_id, body);
-  } catch {
-    console.error("Saving the final message failed");
-  }
-  // The link is out too: a failure to write the log must not lose the report either.
-  try {
-    await logReport(c.env.DB, { plate, parking: chosen, address, lat: draft.lat as number, lon: draft.lon as number });
+    logId = await logReport(c.env.DB, { plate, parking: chosen, address, lat: draft.lat as number, lon: draft.lon as number });
   } catch {
     console.error("Writing the report log failed");
+  }
+  try {
+    await saveFinalMessage(c.env.DB, c.chatId, sent.message_id, body, logId);
+  } catch {
+    console.error("Saving the final message failed");
   }
 
   const ids = [...(JSON.parse(draft.cleanup) as number[]), draft.buttons_message_id];
@@ -670,7 +673,7 @@ async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPE
       message_ids: ids.slice(i, i + DELETE_BATCH),
     });
   }
-  await deleteFinishedDraft(c.env.DB, c.userId);
+  await deleteFinishedDraft(c.env.DB, c.userId, draft.draft_id);
 }
 
 async function answerButton(c: Context, queryId: string, text?: string): Promise<void> {
@@ -684,7 +687,7 @@ async function answerButton(c: Context, queryId: string, text?: string): Promise
 // gone, and a new report may already be under way, which these buttons must not touch.
 async function handleFinalButton(c: Context, done: boolean, messageId: number): Promise<void> {
   if (!done) {
-    await deleteFinalMessage(c.env.DB, c.chatId, messageId);
+    await cancelFinalMessage(c.env.DB, c.chatId, messageId);
     await deleteMessage(c, messageId);
     return;
   }
@@ -762,7 +765,7 @@ export async function handleButton(
     const time = draft.time ?? dublinDateTime(draft.first_photo_at as number).time;
     await show(c, draft, `${time}\n\n${WRITE_TIME}`, { step: "time_input" });
   } else if (action === "opt" && step === "parking") {
-    const parking = await toggleParking(env.DB, userId, 1 << Number(argument));
+    const parking = await toggleParking(env.DB, userId, draft.draft_id, 1 << Number(argument));
     if (parking !== null) {
       await callTelegram(env.TELEGRAM_BOT_TOKEN, "editMessageReplyMarkup", {
         chat_id: chatId,
@@ -774,7 +777,7 @@ export async function handleButton(
     await answerButton(c, query.id, draft.parking === 0 ? CHOOSE_ONE : undefined);
     if (draft.parking !== 0) await show(c, draft, CHOOSE_ROAD_USER, { step: "road_user" });
   } else if (action === "road" && step === "road_user") {
-    const roadUser = ROAD_USER_TYPES[Number(argument)];
+    const roadUser = ROAD_USER_TYPES.find((type) => type === argument);
     if (roadUser !== undefined) await finish(c, draft, roadUser);
   } else if (action === "done") {
     await answerButton(c, query.id);
