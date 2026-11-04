@@ -47,6 +47,11 @@ describe("topHotspots", () => {
     expect(spots).toHaveLength(5);
     expect(spots[0]).toEqual({ address: "B", reports: n + 2 });
   });
+  it("joins a chain of points, each within 50 m of the next, into one place", () => {
+    const n = HOTSPOT_MIN_REPORTS;
+    const rows = [...many(n / 2, "A"), ...many(n / 2, "C", 0.0008), ...many(n / 2, "B", 0.0004)];
+    expect(topHotspots(rows)).toEqual([{ address: "A", reports: n / 2 * 3 }]);
+  });
   it("leaves out places with fewer reports than the minimum", () => {
     const rows = [...many(HOTSPOT_MIN_REPORTS - 1, "Few"), ...many(HOTSPOT_MIN_REPORTS, "Enough", 0.002)];
     expect(topHotspots(rows)).toEqual([{ address: "Enough", reports: HOTSPOT_MIN_REPORTS }]);

@@ -137,8 +137,11 @@ describe("the commands of the menu", () => {
     await text("/manual");
     expect(lastSent().text).toBe('<a href="https://site.example/manual">User manual</a>');
     expect((lastSent() as unknown as { parse_mode: string }).parse_mode).toBe("HTML");
+    expect((lastSent() as unknown as { link_preview_options: unknown }).link_preview_options).toEqual({ is_disabled: true });
     await text("/setup@streetbuddy_bot");
     expect(lastSent().text).toBe('<a href="https://site.example/install">Set up guide</a>');
+    expect((lastSent() as unknown as { parse_mode: string }).parse_mode).toBe("HTML");
+    expect((lastSent() as unknown as { link_preview_options: unknown }).link_preview_options).toEqual({ is_disabled: true });
   });
   it("/hotspots says there are none yet", async () => {
     await text("/hotspots");
@@ -170,7 +173,8 @@ describe("the commands of the menu", () => {
       await toPhotos();
       const screen = buttonId();
       await text(command);
-      expect(draft()?.step).not.toBe("photos");
+      if (command === "/feedback") expect(draft()?.step).toBe("feedback_input");
+      else expect(draft()).toBeUndefined();
       expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
       expect(sentTexts()).not.toContain("Report cancelled");
       await press("cancel");

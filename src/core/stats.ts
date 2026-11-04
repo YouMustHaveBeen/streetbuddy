@@ -60,28 +60,30 @@ interface PlaceRow {
   created_at: number;
 }
 
-// Rows are in time order. A row joins the first group whose first point is within
-// HOTSPOT_RADIUS_M and starts a group of its own otherwise; a group is shown by the address
+// Rows are in time order. A row joins the group that has a point within HOTSPOT_RADIUS_M of it,
+// so a chain of close points is one place, and starts a group of its own otherwise; a group is shown by the address
 // that occurs in it most often, and by the latest of those when they are equal. Groups of fewer
 // than HOTSPOT_MIN_REPORTS reports are left out.
 export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
-  const groups: { lat: number; lon: number; rows: PlaceRow[] }[] = [];
+  const groups: PlaceRow[][] = [];
   for (const row of rows) {
-    const group = groups.find((g) => distanceM(g.lat, g.lon, row.lat, row.lon) <= HOTSPOT_RADIUS_M);
-    if (group) group.rows.push(row);
-    else groups.push({ lat: row.lat, lon: row.lon, rows: [row] });
+    // A row within the radius of any row of a group belongs to it; when it touches several
+    // groups, they become one.
+    const near = groups.filter((g) => g.some((r) => distanceM(r.lat, r.lon, row.lat, row.lon) <= HOTSPOT_RADIUS_M));
+    for (const g of near) groups.splice(groups.indexOf(g), 1);
+    groups.push([...near.flat(), row]);
   }
   return groups
     .map((group) => {
       const counts = new Map<string, { count: number; latest: number }>();
-      for (const row of group.rows) {
+      for (const row of group) {
         const seen = counts.get(row.address) ?? { count: 0, latest: 0 };
         counts.set(row.address, { count: seen.count + 1, latest: Math.max(seen.latest, row.created_at) });
       }
       const [address] = [...counts.entries()].sort(
         (a, b) => b[1].count - a[1].count || b[1].latest - a[1].latest,
       )[0];
-      return { address, reports: group.rows.length };
+      return { address, reports: group.length };
     })
     .filter((spot) => spot.reports >= HOTSPOT_MIN_REPORTS)
     .sort((a, b) => b.reports - a.reports)
