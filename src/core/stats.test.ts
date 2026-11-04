@@ -4,7 +4,10 @@ import { getHotspots, HOTSPOT_MIN_REPORTS, logReport, runNightlyStats, topHotspo
 
 const HOUR = 60 * 60 * 1000;
 // Around 53.4, -6.1: 0.0001 degrees of latitude are about 11 m.
-const row = (address: string, createdAt: number, dLat = 0) => ({
+// Every row has a plate of its own unless one is given.
+let plateNumber = 0;
+const row = (address: string, createdAt: number, dLat = 0, plate = `P${++plateNumber}`) => ({
+  plate,
   address,
   lat: 53.4 + dLat,
   lon: -6.1,
@@ -52,6 +55,12 @@ describe("topHotspots", () => {
     const rows = [...many(n / 2, "A"), ...many(n / 2, "C", 0.0008), ...many(n / 2, "B", 0.0004)];
     expect(topHotspots(rows)).toEqual([{ address: "A", reports: n / 2 * 3 }]);
   });
+  it("counts different plates, so one plate reported again and again stays out", () => {
+    const same = Array.from({ length: HOTSPOT_MIN_REPORTS }, (_, i) => row("Same", i + 1, 0, "12-D-1"));
+    expect(topHotspots(same)).toEqual([]);
+    const different = [...same, ...many(HOTSPOT_MIN_REPORTS - 1, "Same")];
+    expect(topHotspots(different)).toEqual([{ address: "Same", reports: HOTSPOT_MIN_REPORTS }]);
+  });
   it("leaves out places with fewer reports than the minimum", () => {
     const rows = [...many(HOTSPOT_MIN_REPORTS - 1, "Few"), ...many(HOTSPOT_MIN_REPORTS, "Enough", 0.002)];
     expect(topHotspots(rows)).toEqual([{ address: "Enough", reports: HOTSPOT_MIN_REPORTS }]);
@@ -66,8 +75,8 @@ describe("runNightlyStats", () => {
   const NOW = Date.UTC(2026, 11, 15, 3, 0);
   const line = (sqlite: ReturnType<typeof fakeD1>["sqlite"], createdAt: number, parking: number, address = "A") =>
     sqlite
-      .prepare("INSERT INTO report_log (created_at, plate, parking, address, lat, lon) VALUES (?, 'p', ?, ?, 53.4, -6.1)")
-      .run(createdAt, parking, address);
+      .prepare("INSERT INTO report_log (created_at, plate, parking, address, lat, lon) VALUES (?, ?, ?, ?, 53.4, -6.1)")
+      .run(createdAt, `P${createdAt}`, parking, address);
 
   it("counts the reports of yesterday in Dublin and how often each option was chosen", async () => {
     const { db, sqlite } = fakeD1();

@@ -8,7 +8,7 @@ export const REPORT_LOG_TTL_MS = 60 * 24 * 60 * 60 * 1000;
 // one report per plate and place.
 export const HOTSPOT_RADIUS_M = 50;
 export const HOTSPOT_COUNT = 5;
-// A place with fewer reports is not shown: a few reports could point at one person's home.
+// A place with fewer different plates is not shown: a few reports could point at one person's home.
 export const HOTSPOT_MIN_REPORTS = 10;
 
 const M_PER_DEG = 111_320;
@@ -54,6 +54,7 @@ function distanceM(aLat: number, aLon: number, bLat: number, bLon: number): numb
 }
 
 interface PlaceRow {
+  plate: string;
   address: string;
   lat: number;
   lon: number;
@@ -63,7 +64,8 @@ interface PlaceRow {
 // Rows are in time order. A row joins the group that has a point within HOTSPOT_RADIUS_M of it,
 // so a chain of close points is one place, and starts a group of its own otherwise; a group is shown by the address
 // that occurs in it most often, and by the latest of those when they are equal. Groups of fewer
-// than HOTSPOT_MIN_REPORTS reports are left out.
+// than HOTSPOT_MIN_REPORTS different plates are left out: the count of a place is the number of
+// different plates, so that one plate reported again and again does not make a place visible.
 export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
   const groups: PlaceRow[][] = [];
   for (const row of rows) {
@@ -83,7 +85,7 @@ export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
       const [address] = [...counts.entries()].sort(
         (a, b) => b[1].count - a[1].count || b[1].latest - a[1].latest,
       )[0];
-      return { address, reports: group.length };
+      return { address, reports: new Set(group.map((row) => row.plate)).size };
     })
     .filter((spot) => spot.reports >= HOTSPOT_MIN_REPORTS)
     .sort((a, b) => b.reports - a.reports)
@@ -98,7 +100,7 @@ const dayKey = (date: string) => date.split("/").reverse().join("-");
 // One read of the whole log (2 months of a small district) and one batch of writes.
 export async function runNightlyStats(db: D1Database, now: number): Promise<void> {
   const { results } = await db
-    .prepare("SELECT address, lat, lon, parking, created_at FROM report_log ORDER BY created_at")
+    .prepare("SELECT plate, address, lat, lon, parking, created_at FROM report_log ORDER BY created_at")
     .all<PlaceRow & { parking: number }>();
 
   const yesterday = dublinDateTime(now - DAY_MS).date;
