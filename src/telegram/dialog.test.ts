@@ -337,6 +337,34 @@ describe("parking and the final message", () => {
     expect(called("answerCallbackQuery").at(-1)?.body.text).toBe("Choose at least one option.");
     expect(draft().step).toBe("parking");
   });
+  it("asks Were you a after Done, with the six options of the form and Cancel", async () => {
+    await toParking();
+    await press("opt:0");
+    const screen = buttonId();
+    await press("done");
+    expect(draft().step).toBe("road_user");
+    expect(lastSent().text).toBe("Were you a:");
+    expect(labels()).toEqual([
+      "Cyclist",
+      "Driver",
+      "E-Scooter User, E-Moped User, E-Cyclist",
+      "Motorcyclist",
+      "Passenger",
+      "Pedestrian",
+      "Cancel",
+    ]);
+    expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
+  });
+  it("draws Were you a again on a stray message and ignores an unknown option", async () => {
+    await toParking();
+    await press("opt:0");
+    await press("done");
+    await text("stray");
+    expect(lastSent().text).toBe("Were you a:");
+    await press("road:9");
+    expect(draft().step).toBe("road_user");
+    expect(called("sendMessage").filter((call) => JSON.stringify(call.body).includes("Open form"))).toEqual([]);
+  });
   it("gives the link as a reply to the last photo and removes the dialog", async () => {
     await toPhotos();
     await photo("a");
@@ -348,6 +376,8 @@ describe("parking and the final message", () => {
     await press("opt:4");
     const screen = buttonId();
     await press("done");
+    const roadScreen = buttonId();
+    await press("road:5");
 
     const final = lastSent();
     expect(final.text).toContain(
@@ -361,24 +391,29 @@ describe("parking and the final message", () => {
     const data = JSON.parse(atob(button.url.split("#sb=")[1].replace(/-/g, "+").replace(/_/g, "/")));
     expect(data.c).toBe("Dublin");
     expect(data.l).toContain(latInside.toFixed(5));
+    expect(data.r).toBe("Pedestrian");
+    expect(final.text).not.toContain("Pedestrian");
     const removed = called("deleteMessages").flatMap((call) => call.body.message_ids as number[]);
-    expect(removed).toContain(screen);
+    expect(removed).toContain(roadScreen);
+    expect(removed).not.toContain(screen);
     expect(removed).not.toContain(lastPhoto);
     expect(draft()).toBeUndefined();
   });
   it("keeps the report when Telegram fails to send the final message", async () => {
     await toParking();
     await press("opt:0");
-    failSend = true;
     await press("done");
-    expect(draft().step).toBe("parking");
+    failSend = true;
+    await press("road:0");
+    expect(draft().step).toBe("road_user");
     expect(called("deleteMessages")).toEqual([]);
   });
   it("gives one link for a double tap", async () => {
     await toParking();
     await press("opt:0");
+    await press("done");
     const screen = buttonId();
-    await Promise.all([press("done", screen), press("done", screen)]);
+    await Promise.all([press("road:0", screen), press("road:1", screen)]);
     expect(sentTexts().filter((value) => String(value).startsWith("Plate:") && String(value).includes("Description"))).toHaveLength(1);
   });
   it("uses the options chosen up to the moment of Done", async () => {
@@ -387,15 +422,19 @@ describe("parking and the final message", () => {
     // A tap on another option lands after Done has loaded the draft.
     onAnswer = () => sqlite.prepare("UPDATE drafts SET parking = parking | 4 WHERE user_id = ?").run(USER);
     await press("done");
+    onAnswer = null;
+    await press("road:0");
     expect(lastSent().text).toContain("on a cycle track and on a grass margin");
   });
   it("draws the options again when the last one was switched off at the moment of Done", async () => {
     await toParking();
     await press("opt:0");
     onAnswer = () => sqlite.prepare("UPDATE drafts SET parking = 0 WHERE user_id = ?").run(USER);
+    await press("done");
+    onAnswer = null;
     const screen = buttonId();
     const sentBefore = called("sendMessage").length;
-    await press("done");
+    await press("road:0");
     expect(draft().step).toBe("parking");
     expect(called("sendMessage").length).toBe(sentBefore + 1);
     expect(buttonId()).not.toBe(screen);
@@ -421,6 +460,7 @@ describe("final message buttons", () => {
     await toParking();
     await press("opt:0");
     await press("done");
+    await press("road:0");
     return finalRow() as { chat_id: number; message_id: number; text: string };
   }
 
@@ -516,8 +556,9 @@ describe("final message buttons", () => {
   it("still gives the link and clears the report when the text cannot be saved", async () => {
     await toParking();
     await press("opt:0");
-    sqlite.exec("DROP TABLE final_messages");
     await press("done");
+    sqlite.exec("DROP TABLE final_messages");
+    await press("road:0");
     expect(lastSent().text).toContain("Open the link in an external browser.");
     expect(draft()).toBeUndefined();
     expect(console.error).toHaveBeenCalledWith("Saving the final message failed");
@@ -555,6 +596,7 @@ describe("cancel and old buttons", () => {
     await press("create");
     await press("plate_ok");
     await press("opt:0");
+    await press("done");
     const screen = buttonId();
     const realFetch = globalThis.fetch;
     let release = () => {};
@@ -564,7 +606,7 @@ describe("cancel and old buttons", () => {
       }
       return realFetch(url, init);
     });
-    const finishing = press("done", screen);
+    const finishing = press("road:0", screen);
     await vi.waitFor(() => expect(release).not.toBe(undefined));
     await vi.waitFor(() => expect(draft().step).toBe("finishing"));
     await press("cancel", screen);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import worker from "./index";
 import type { Env } from "./index";
+import userscript from "../userscript/streetbuddy.user.js";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 
 describe("installation guide page", () => {
@@ -18,18 +19,28 @@ describe("installation guide page", () => {
     expect(html).toContain(`href="${SCRIPT_PATH}">Установить скрипт</a>`);
   });
 
-  it("offers only Android and Firefox", async () => {
+  it("offers Android with Firefox and Chrome, and no iPhone yet", async () => {
     const html = await installPage().text();
     expect(html).toContain('aria-pressed="true">Android</button>');
-    expect(html).toContain('aria-pressed="true">Firefox</button>');
+    expect(html).toContain('aria-pressed="true" data-browser="firefox">Firefox</button>');
+    expect(html).toContain('aria-pressed="false" data-browser="chrome">Chrome</button>');
     expect(html).toContain("disabled>iPhone</button>");
-    expect(html).toContain("disabled>Chrome</button>");
+    expect(html).toContain('<section data-browser-section="chrome" hidden>');
+  });
+
+  it("carries the userscript for the bookmarklet without ending its own script early", async () => {
+    const html = await installPage().text();
+    const pageScript = html.slice(html.indexOf("<script>") + "<script>".length, html.indexOf("</script>"));
+    expect(html.match(/<\/script>/g)).toHaveLength(1);
+    expect(pageScript).toContain("var CODE = " + JSON.stringify(userscript).replace(/</g, "\\u003c") + ";");
   });
 
   it("does not use the word Garda or the letter yo", async () => {
     const html = await installPage().text();
+    // The userscript inside the page is checked as it is, not as page text.
+    const text = html.replace(JSON.stringify(userscript).replace(/</g, "\\u003c"), "");
     const yo = String.fromCharCode(0x451);
-    expect(html).not.toMatch(/garda/i);
+    expect(text).not.toMatch(/garda/i);
     expect(html.includes(yo)).toBe(false);
   });
 });

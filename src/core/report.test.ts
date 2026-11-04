@@ -65,7 +65,13 @@ describe("buildLocation", () => {
 
 describe("buildReportLink", () => {
   it("packs the fields into URL-safe base64, keeping Irish letters", () => {
-    const fields = { location: "Sráid Mhór?>~ (53.4, -6.1)", county: "Dublin", description: "á é", date: "02/11/2026" };
+    const fields = {
+      location: "Sráid Mhór?>~ (53.4, -6.1)",
+      county: "Dublin",
+      description: "á é",
+      date: "02/11/2026",
+      roadUser: "E-Scooter User, E-Moped User, E-Cyclist" as const,
+    };
     const link = buildReportLink(fields);
     expect(link.startsWith("https://www.garda.ie/en/trafficwatchreport/#sb=")).toBe(true);
     expect(link.split("#sb=")[1]).toMatch(/^[A-Za-z0-9_-]+$/);
@@ -74,6 +80,7 @@ describe("buildReportLink", () => {
       c: fields.county,
       d: fields.description,
       t: fields.date,
+      r: fields.roadUser,
     });
   });
 });

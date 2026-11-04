@@ -1,4 +1,4 @@
-// The report dialog: location, photos, plate and time, parking options, final message.
+// The report dialog: location, photos, plate and time, parking options, "Were you a", final message.
 import {
   buildDescription,
   buildLocation,
@@ -10,6 +10,7 @@ import {
   PARKING_OPTIONS,
   PLATE_MAX_LENGTH,
   recognizePlates,
+  ROAD_USER_TYPES,
   reverseGeocode,
   searchAddress,
 } from "../core";
@@ -100,6 +101,7 @@ const WRITE_TIME = "Write the time as hh:mm.";
 const WRONG_TIME = "Wrong time. Please write it again.";
 const CHOOSE_PARKING = "Choose one or more options, then press Done.";
 const CHOOSE_ONE = "Choose at least one option.";
+const CHOOSE_ROAD_USER = "Were you a:";
 const CANCELLED = "Report cancelled";
 const OPEN_EXTERNALLY = "Open the link in an external browser.";
 const REPORT_SENT = "Report sent";
@@ -174,6 +176,8 @@ function buttonsFor(
         [{ text: "Done", callback_data: "done" }],
         [CANCEL],
       ];
+    case "road_user":
+      return [...ROAD_USER_TYPES.map((type, i) => [{ text: type, callback_data: `road:${i}` }]), [CANCEL]];
     default:
       return [[CANCEL]];
   }
@@ -539,15 +543,15 @@ async function createReport(c: Context, draft: Draft): Promise<void> {
   }
 }
 
-// QUERY BUDGET EXCEPTION: the step is moved first so that a second tap on Done cannot give
-// a second link, and is moved back if Telegram fails, so the report is not lost; the text of
-// the final message is saved once the link is out.
-async function finish(c: Context, draft: Draft): Promise<void> {
+// QUERY BUDGET EXCEPTION: the step is moved first so that a second tap cannot give a second
+// link, and is moved back if Telegram fails, so the report is not lost; the text of the final
+// message is saved once the link is out.
+async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPES)[number]): Promise<void> {
   const chosen = await startFinishing(c.env.DB, c.userId);
   if (chosen === null) return;
   if (chosen === 0) {
-    // The last option was switched off after the draft was loaded; a report needs one.
-    // Done has already been answered, so a pop-up is out of reach: the screen is drawn again.
+    // The last option was switched off after Done had loaded the draft; a report needs one.
+    // The button has already been answered, so a pop-up is out of reach: the options are drawn again.
     if (await moveStep(c.env.DB, c.userId, "finishing", "parking")) {
       await show(c, { ...draft, step: "parking", parking: 0 }, CHOOSE_PARKING, {});
     }
@@ -565,6 +569,7 @@ async function finish(c: Context, draft: Draft): Promise<void> {
     county: district.county,
     description,
     date: moment.date,
+    roadUser,
   });
   // The report text without its last line: Done puts "Report sent ..." in place of that line.
   const body = `Plate: ${plate}
@@ -587,7 +592,7 @@ Description: ${description}`;
     },
   });
   if (!sent) {
-    await moveStep(c.env.DB, c.userId, "finishing", "parking");
+    await moveStep(c.env.DB, c.userId, "finishing", "road_user");
     return;
   }
   // The link is already out, so a failure to keep the text must not leave the report in
@@ -701,7 +706,10 @@ export async function handleButton(
     }
   } else if (action === "done" && step === "parking") {
     await answerButton(c, query.id, draft.parking === 0 ? CHOOSE_ONE : undefined);
-    if (draft.parking !== 0) await finish(c, draft);
+    if (draft.parking !== 0) await show(c, draft, CHOOSE_ROAD_USER, { step: "road_user" });
+  } else if (action === "road" && step === "road_user") {
+    const roadUser = ROAD_USER_TYPES[Number(argument)];
+    if (roadUser !== undefined) await finish(c, draft, roadUser);
   } else if (action === "done") {
     await answerButton(c, query.id);
   }

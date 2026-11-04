@@ -43,6 +43,7 @@ export type Step =
   | "plate_time"
   | "time_input"
   | "parking"
+  | "road_user"
   | "finishing";
 
 export type DraftChanges = Partial<
@@ -195,7 +196,7 @@ export async function moveStep(
 export async function startFinishing(db: D1Database, userId: number): Promise<number | null> {
   const row = await db
     .prepare(
-      "UPDATE drafts SET step = 'finishing' WHERE user_id = ?1 AND step = 'parking' RETURNING parking",
+      "UPDATE drafts SET step = 'finishing' WHERE user_id = ?1 AND step = 'road_user' RETURNING parking",
     )
     .bind(userId)
     .first<{ parking: number }>();

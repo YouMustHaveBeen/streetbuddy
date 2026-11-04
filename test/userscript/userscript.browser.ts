@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildDescription, buildLocation, buildReportLink, dublinDateTime } from "../../src/core/report";
+import { INSTALL_PATH, installPage } from "../../src/install";
 
 const FORM_PATH = "/en/trafficwatchreport/";
 const SCRIPT = readFileSync("userscript/streetbuddy.user.js", "utf8");
@@ -25,7 +26,6 @@ const PROFILE = {
   email: "test.person@example.com",
   address: "1 Test Road, Dublin",
   contact: "Email",
-  roadUser: "Pedestrian",
 };
 
 const FIELD_IDS = [
@@ -55,6 +55,13 @@ beforeAll(async () => {
     if (path === FORM_PATH) {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end(FORM_HTML);
+    } else if (path === INSTALL_PATH) {
+      void installPage()
+        .text()
+        .then((html) => {
+          response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+          response.end(html);
+        });
     } else if (VENDOR_FILES[path]) {
       response.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
       response.end(readFileSync(VENDOR_FILES[path]));
@@ -75,10 +82,15 @@ afterAll(async () => {
 
 // A new context is a new browser profile: its session storage starts empty.
 // `changeForm` edits the page text before the browser gets it (to take a field or option away).
-async function newContext(changeForm?: (html: string) => string): Promise<BrowserContext> {
+// `stored` is the personal data in the extension storage; null means none is saved yet.
+async function newContext(
+  changeForm?: (html: string) => string,
+  stored: object | null = PROFILE,
+): Promise<BrowserContext> {
   const context = await browser.newContext();
   // One init script: the order of several scripts is not guaranteed, and the script reads GM at once.
-  const gmMock = `globalThis.GM = { getValue: async (key) => (key === "profile" ? ${JSON.stringify(JSON.stringify(PROFILE))} : undefined), setValue: async () => {} };`;
+  const saved = stored === null ? "undefined" : JSON.stringify(JSON.stringify(stored));
+  const gmMock = `globalThis.GM = { getValue: async (key) => (key === "profile" ? ${saved} : undefined), setValue: async () => {} };`;
   await context.addInitScript(`${gmMock}\n${SCRIPT}`);
   if (changeForm) {
     await context.route(`**${FORM_PATH}`, (route) =>
@@ -119,12 +131,12 @@ async function waitUntilFilled(page: Page): Promise<void> {
   await page.waitForFunction("document.getElementById('ContactMethod').value !== ''");
 }
 
-function expectedValues(fields: { location: string; county: string; description: string; date: string }) {
+function expectedValues(fields: Parameters<typeof buildReportLink>[0]) {
   return {
     Location: fields.location,
     County: fields.county,
     Crime: "Parking Offences",
-    RoadUserType: PROFILE.roadUser,
+    RoadUserType: fields.roadUser,
     CrimeDescription: fields.description,
     crimeDate_1: fields.date,
     UserName: PROFILE.name,
@@ -135,7 +147,7 @@ function expectedValues(fields: { location: string; county: string; description:
   };
 }
 
-function ordinaryReport() {
+function ordinaryReport(): Parameters<typeof buildReportLink>[0] {
   return {
     location: buildLocation("Main Street, Swords, Fingal, County Dublin", 53.45975, -6.21811),
     county: "Dublin",
@@ -147,6 +159,7 @@ function ordinaryReport() {
       time: "13:02",
     }),
     date: yesterday(),
+    roadUser: "Pedestrian",
   };
 }
 
@@ -271,6 +284,7 @@ describe("form-filling script on a copy of the report form", () => {
         time: "23:59",
       }),
       date,
+      roadUser: "E-Scooter User, E-Moped User, E-Cyclist" as const,
     };
     expect(report.description.length).toBeLessThanOrEqual(300);
     expect(report.description).toMatch(/[áé]/);
@@ -291,10 +305,15 @@ describe("form-filling script on a copy of the report form", () => {
     ["empty data", ""],
     ["not JSON", base64url("not json")],
     ["JSON that is not an object", base64url('["a","b","c","d"]')],
-    ["a key is missing", base64url(JSON.stringify({ l: "x", c: "Dublin", d: "x" }))],
-    ["an unknown key", base64url(JSON.stringify({ l: "x", c: "Dublin", d: "x", t: yesterday(), z: "x" }))],
-    ["a date that does not exist", base64url(JSON.stringify({ l: "x", c: "Dublin", d: "x", t: "30/02/2026" }))],
-    ["a description over 300 characters", base64url(JSON.stringify({ l: "x", c: "Dublin", d: "x".repeat(301), t: yesterday() }))],
+    ["a key is missing", base64url(JSON.stringify({ l: "x", c: "Dublin", d: "x", r: "Driver" }))],
+    ["no Were you a", base64url(JSON.stringify({ l: "x", c: "Dublin", d: "x", t: yesterday() }))],
+    ["an unknown Were you a", base64url(JSON.stringify({ l: "x", c: "Dublin", d: "x", t: yesterday(), r: "Pilot" }))],
+    ["an unknown key", base64url(JSON.stringify({ l: "x", c: "Dublin", d: "x", t: yesterday(), r: "Driver", z: "x" }))],
+    ["a date that does not exist", base64url(JSON.stringify({ l: "x", c: "Dublin", d: "x", t: "30/02/2026", r: "Driver" }))],
+    [
+      "a description over 300 characters",
+      base64url(JSON.stringify({ l: "x", c: "Dublin", d: "x".repeat(301), t: yesterday(), r: "Driver" })),
+    ],
     ["bytes that are not UTF-8", Buffer.from([0xff, 0xfe, 0xfd]).toString("base64url")],
   ];
   it.each(brokenLinks)("shows a message and fills nothing for a broken link: %s", async (_name, data) => {
@@ -374,4 +393,145 @@ describe("form-filling script on a copy of the report form", () => {
     },
     FIELDS_TIMEOUT_MS + 20000,
   );
+
+  it("fills the form with personal data saved by an older version that also kept Were you a", async () => {
+    const context = await newContext(undefined, { ...PROFILE, roadUser: "Driver" });
+    const page = await context.newPage();
+    const report = ordinaryReport();
+    await page.goto(linkTo(report));
+    await tickAndStart(page);
+    await waitUntilFilled(page);
+    expect(await fieldValues(page)).toEqual(expectedValues(report));
+    await context.close();
+  });
+
+  it("asks for the personal data without Were you a, then fills the form", async () => {
+    const context = await newContext(undefined, null);
+    const page = await context.newPage();
+    const report = ordinaryReport();
+    await page.goto(linkTo(report));
+    const panel = page.locator("#streetbuddy-profile");
+    await panel.waitFor();
+    expect((await panel.locator("label").allInnerTexts()).map((label) => label.split("\n")[0])).toEqual([
+      "First Name and Last Name",
+      "Phone",
+      "Email",
+      "Address",
+      "How you wish to be contacted",
+    ]);
+    const inputs = panel.locator("input");
+    await inputs.nth(0).fill(PROFILE.name);
+    await inputs.nth(1).fill(PROFILE.phone);
+    await inputs.nth(2).fill(PROFILE.email);
+    await inputs.nth(3).fill(PROFILE.address);
+    await panel.locator("select").selectOption(PROFILE.contact);
+    await panel.getByRole("button", { name: "Save" }).click();
+    await tickAndStart(page);
+    await waitUntilFilled(page);
+    expect(await fieldValues(page)).toEqual(expectedValues(report));
+    await context.close();
+  });
+});
+
+describe("bookmarklet built on the installation page", () => {
+  // Personal data with quotes, a backslash and Irish letters, as typed on the page.
+  const TYPED = {
+    name: ' Séan "Test" Ó Briain\\ ',
+    phone: "087 000 0000",
+    email: "sean@example.ie",
+    address: "1 Sráid Mhór, Dublin",
+    contact: "Text Message",
+  };
+
+  async function openGuide(context: BrowserContext): Promise<Page> {
+    const page = await context.newPage();
+    await page.goto(origin + INSTALL_PATH);
+    await page.getByRole("button", { name: "Chrome" }).click();
+    return page;
+  }
+
+  async function typeProfile(page: Page, profile: typeof TYPED): Promise<void> {
+    await page.fill("#bookmark-form [name=name]", profile.name);
+    await page.fill("#bookmark-form [name=phone]", profile.phone);
+    await page.fill("#bookmark-form [name=email]", profile.email);
+    await page.fill("#bookmark-form [name=address]", profile.address);
+    await page.selectOption("#bookmark-form [name=contact]", profile.contact);
+    await page.getByRole("button", { name: "Создать закладку" }).click();
+  }
+
+  it("switches the guide between Firefox and Chrome", async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(origin + INSTALL_PATH);
+    expect(await page.isVisible("[data-browser-section=firefox]")).toBe(true);
+    expect(await page.isVisible("[data-browser-section=chrome]")).toBe(false);
+    await page.getByRole("button", { name: "Chrome" }).click();
+    expect(await page.isVisible("[data-browser-section=firefox]")).toBe(false);
+    expect(await page.isVisible("[data-browser-section=chrome]")).toBe(true);
+    expect(await page.getAttribute("[data-browser=chrome]", "aria-pressed")).toBe("true");
+    expect(await page.getAttribute("[data-browser=firefox]", "aria-pressed")).toBe("false");
+    await context.close();
+  });
+
+  it("copies the bookmarklet, which fills the form like the userscript", async () => {
+    const guideContext = await browser.newContext();
+    await guideContext.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+    const sent: string[] = [];
+    guideContext.on("request", (request) => {
+      if (request.method() !== "GET") sent.push(request.url());
+    });
+    const guide = await openGuide(guideContext);
+    expect(await guide.isVisible("#bookmark-ready")).toBe(false);
+    await typeProfile(guide, TYPED);
+    expect(await guide.isVisible("#bookmark-ready")).toBe(true);
+    expect(await guide.isVisible("#bookmark-error")).toBe(false);
+    await guide.getByRole("button", { name: "Скопировать закладку" }).click();
+    await guide.locator("#bookmark-copied").waitFor();
+    const bookmark = (await guide.evaluate("navigator.clipboard.readText()")) as string;
+    expect(await guide.getAttribute("#bookmark-link", "href")).toBe(bookmark);
+    expect(bookmark.startsWith("javascript:")).toBe(true);
+    // Nothing typed on the page is sent anywhere.
+    expect(sent).toEqual([]);
+    // A plain tap on the link runs nothing on the guide page.
+    await guide.click("#bookmark-link");
+    expect(await guide.evaluate("typeof globalThis.STREETBUDDY_PROFILE")).toBe("undefined");
+    await guideContext.close();
+
+    // Chrome with no extension: the person opens the link, then runs the bookmarklet.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const report = ordinaryReport();
+    await page.goto(linkTo(report));
+    await page.evaluate(decodeURIComponent(bookmark.slice("javascript:".length)));
+    expect(page.url()).not.toContain("#sb=");
+    await tickAndStart(page);
+    await waitUntilFilled(page);
+    expect(await fieldValues(page)).toEqual({
+      ...expectedValues(report),
+      UserName: TYPED.name.trim(),
+      Phone: TYPED.phone,
+      Email: TYPED.email,
+      UserAddress: TYPED.address,
+      ContactMethod: TYPED.contact,
+    });
+    expect(await page.locator("[role=alert]").count()).toBe(0);
+    await context.close();
+  });
+
+  const badProfiles: [string, Partial<typeof TYPED>][] = [
+    ["an empty name", { name: "   " }],
+    ["an empty phone", { phone: "" }],
+    ["an empty address", { address: "" }],
+    ["an email without a dot", { email: "sean@example" }],
+    ["an email with a space", { email: "se an@example.ie" }],
+    ["no contact method", { contact: "" }],
+  ];
+  it.each(badProfiles)("does not build a bookmarklet for %s", async (_name, change) => {
+    const context = await browser.newContext();
+    const page = await openGuide(context);
+    await typeProfile(page, { ...TYPED, ...change });
+    expect(await page.isVisible("#bookmark-error")).toBe(true);
+    expect(await page.isVisible("#bookmark-ready")).toBe(false);
+    await context.close();
+  });
 });
