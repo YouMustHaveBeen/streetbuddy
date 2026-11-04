@@ -7,8 +7,8 @@ export const SCRIPT_PATH = "/streetbuddy.user.js";
 const FIREFOX_URL = "https://play.google.com/store/apps/details?id=org.mozilla.firefox";
 const VIOLENTMONKEY_URL = "https://addons.mozilla.org/firefox/addon/violentmonkey/";
 
-// The page builds the bookmarklet in the browser: the personal data typed in never leaves the
-// phone. The bookmarklet holds the data and loads the form-filling script from this same Worker
+// The page builds the bookmarklet in the browser and does not send the personal data typed in to
+// this Worker. The bookmarklet holds the data and loads the form-filling script from this same Worker
 // each time it is run, so it stays short and needs no rebuilding when the script is updated.
 // A bookmarklet can only be added by hand in Chrome on Android, so the page gives the code to
 // copy and also as a link (to copy with a long press, or to drag to the bookmarks bar on a
