@@ -16,6 +16,10 @@ database_id = "77d5ecdb-e082-43e1-b4b7-de039a510f2f"
 [triggers]
 crons = ["0 5 * * *", "0 6 * * *"]
 
+# Address of this Worker; the bot builds the link to the installation guide from it
+[vars]
+SITE_URL = "https://streetbuddy.youmusthavebeen.workers.dev"
+
 # Secrets (set with `wrangler secret put`, not stored here): TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET,
 # OWNER_TELEGRAM_ID, GROUP_ID
 
@@ -23,4 +27,10 @@ crons = ["0 5 * * *", "0 6 * * *"]
 [[rules]]
 type = "Text"
 globs = ["**/*.geojson"]
+fallthrough = true
+
+# Lets src/install.ts serve userscript/streetbuddy.user.js as text
+[[rules]]
+type = "Text"
+globs = ["**/*.user.js"]
 fallthrough = true

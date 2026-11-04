@@ -56,7 +56,7 @@ beforeEach(() => {
   rows = fake.count;
   sqlite = fake.sqlite;
   pending = [];
-  env = { AI: {} as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", WEBHOOK_SECRET: SECRET, GROUP_ID: "-100123" };
+  env = { AI: {} as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", WEBHOOK_SECRET: SECRET, GROUP_ID: "-100123", SITE_URL: "https://site.example" };
 });
 afterEach(() => {
   vi.unstubAllGlobals();

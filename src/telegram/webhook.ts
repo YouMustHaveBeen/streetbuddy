@@ -10,6 +10,7 @@ export interface WebhookEnv {
   TELEGRAM_BOT_TOKEN: string;
   WEBHOOK_SECRET: string;
   GROUP_ID: string;
+  SITE_URL: string;
 }
 
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";

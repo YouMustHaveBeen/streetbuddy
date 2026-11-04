@@ -2,6 +2,7 @@
 import { cleanupExpired } from "./cleanup";
 import { dublinDateTime } from "./core";
 import { runFormCheck } from "./dailyCheck";
+import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 import { handleWebhook } from "./telegram";
 
 export interface Env {
@@ -11,6 +12,7 @@ export interface Env {
   WEBHOOK_SECRET: string;
   OWNER_TELEGRAM_ID: string;
   GROUP_ID: string;
+  SITE_URL: string;
 }
 
 export default {
@@ -19,6 +21,10 @@ export default {
     if (request.method === "POST" && url.pathname === "/webhook") {
       return handleWebhook(request, env, ctx);
     }
+    // HEAD is answered like GET: link checkers and previews ask for the headers only.
+    const reads = request.method === "GET" || request.method === "HEAD";
+    if (reads && url.pathname === INSTALL_PATH) return installPage();
+    if (reads && url.pathname === SCRIPT_PATH) return userscriptFile();
     return new Response("Not Found", { status: 404 });
   },
 
