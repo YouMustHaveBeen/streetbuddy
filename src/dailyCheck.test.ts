@@ -8,7 +8,7 @@ import type { Env } from "./index";
 const PAGE_URL = "https://www.garda.ie/en/trafficwatchreport/";
 const FORM = readFileSync("test/userscript/form.html", "utf8");
 const TEXT =
-  "The Traffic Watch report form has changed, so the bot is temporarily not working. The developer has been notified.";
+  "The Traffic Watch report form has changed, so the bot is temporarily not working. The developer has been notified";
 
 let page: () => Response;
 let sent: { chat_id: string; text: string }[];

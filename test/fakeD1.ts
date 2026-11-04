@@ -11,14 +11,15 @@ export function fakeD1() {
     if (/^\s*SELECT|RETURNING/.test(sql)) {
       return { results: sqlite.prepare(sql).all(...(args as never[])), meta: { changes: 0 } };
     }
-    const changes = Number(sqlite.prepare(sql).run(...(args as never[])).changes);
-    return { results: [], meta: { changes } };
+    const run = sqlite.prepare(sql).run(...(args as never[]));
+    return { results: [], meta: { changes: Number(run.changes), last_row_id: Number(run.lastInsertRowid) } };
   };
   const prepare = (sql: string) => {
     const bound = (args: unknown[]) => ({
       execute: () => execute(sql, args),
       run: async () => execute(sql, args),
       first: async () => execute(sql, args).results[0] ?? null,
+      all: async () => execute(sql, args),
     });
     return { bind: (...args: unknown[]) => bound(args), ...bound([]) };
   };

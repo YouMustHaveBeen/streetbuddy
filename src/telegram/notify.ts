@@ -3,7 +3,7 @@ import { callTelegram } from "./api";
 
 // Also the answer to a user who tries to start a report while the bot is off.
 export const FORM_CHANGED_TEXT =
-  "The Traffic Watch report form has changed, so the bot is temporarily not working. The developer has been notified.";
+  "The Traffic Watch report form has changed, so the bot is temporarily not working. The developer has been notified";
 
 interface NotifyEnv {
   TELEGRAM_BOT_TOKEN: string;

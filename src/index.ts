@@ -1,6 +1,6 @@
 // StreetBuddy Worker entry point.
 import { cleanupExpired } from "./cleanup";
-import { dublinDateTime } from "./core";
+import { dublinDateTime, runNightlyStats } from "./core";
 import { runFormCheck } from "./dailyCheck";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
@@ -38,9 +38,18 @@ export default {
     } catch (error) {
       console.error("scheduled: cleanup failed", error);
     }
-    // The cron runs at 5:00 and 6:00 UTC (Cloudflare cron is UTC only); the form check
-    // runs in the one of them that is 6:00 in Dublin, whatever the season.
-    if (dublinDateTime(event.scheduledTime).time.startsWith("06:")) {
+    // The cron runs at 2:00, 3:00, 5:00 and 6:00 UTC (Cloudflare cron is UTC only); the
+    // statistics are counted in the one of the first two that is 3:00 in Dublin and the form
+    // check in the one of the last two that is 6:00 in Dublin, whatever the season.
+    const dublinTime = dublinDateTime(event.scheduledTime).time;
+    if (dublinTime.startsWith("03:")) {
+      try {
+        await runNightlyStats(env.DB, event.scheduledTime);
+      } catch (error) {
+        console.error("scheduled: statistics failed", error);
+      }
+    }
+    if (dublinTime.startsWith("06:")) {
       try {
         await runFormCheck(env);
       } catch (error) {

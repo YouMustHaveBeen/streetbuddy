@@ -30,6 +30,12 @@ function seed(sqlite: ReturnType<typeof fakeD1>["sqlite"], ttl: number) {
     sqlite
       .prepare("INSERT INTO final_messages (chat_id, message_id, text, created_at) VALUES (1, ?, 'x', ?)")
       .run(i, createdAt);
+    sqlite
+      .prepare("INSERT INTO report_log (id, created_at, plate, parking, address, lat, lon) VALUES (?, ?, 'p', 1, 'a', 1, 2)")
+      .run(i, createdAt);
+    sqlite
+      .prepare("INSERT INTO feedback (id, user_id, text, created_at) VALUES (?, 1, 'x', ?)")
+      .run(i, createdAt);
   });
 }
 
@@ -55,6 +61,14 @@ describe("cleanupExpired", () => {
     expect(rows(sqlite, "SELECT message_id FROM final_messages")).toEqual([2]);
   });
 
+  it("removes log lines and feedback older than 60 days and keeps the rest", async () => {
+    const { db, sqlite } = fakeD1();
+    seed(sqlite, GEOCODE_TTL);
+    await cleanupExpired(db, NOW);
+    expect(rows(sqlite, "SELECT id FROM report_log")).toEqual([2]);
+    expect(rows(sqlite, "SELECT id FROM feedback")).toEqual([2]);
+  });
+
   it("removes cached addresses older than 60 days and keeps the rest", async () => {
     const { db, sqlite } = fakeD1();
     seed(sqlite, GEOCODE_TTL);
@@ -78,6 +92,48 @@ describe("cleanupExpired", () => {
 });
 
 describe("scheduled", () => {
+  // 3:00 in Dublin in winter, and in summer (when it is 2:00 UTC).
+  const NIGHT_WINTER = { scheduledTime: Date.UTC(2026, 11, 15, 3, 0) } as ScheduledController;
+  const NIGHT_SUMMER = { scheduledTime: Date.UTC(2026, 6, 15, 2, 0) } as ScheduledController;
+  const OTHER_RUN = { scheduledTime: Date.UTC(2026, 11, 15, 2, 0) } as ScheduledController;
+  const logLine = (sqlite: ReturnType<typeof fakeD1>["sqlite"], createdAt: number) =>
+    sqlite
+      .prepare("INSERT INTO report_log (created_at, plate, parking, address, lat, lon) VALUES (?, 'p', 1, 'a', 53.4, -6.1)")
+      .run(createdAt);
+
+  it("counts the statistics in the run that is 3:00 in Dublin, winter or summer", async () => {
+    for (const run of [NIGHT_WINTER, NIGHT_SUMMER]) {
+      // The cleanup that runs first goes by the clock, so the clock is set to the run.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(run.scheduledTime);
+      try {
+        const { db, sqlite } = fakeD1();
+        logLine(sqlite, run.scheduledTime - 12 * 60 * 60 * 1000);
+        await worker.scheduled(run, { DB: db } as Env, {} as ExecutionContext);
+        expect(rows(sqlite, "SELECT reports FROM daily_stats")).toEqual([1]);
+        expect(rows(sqlite, "SELECT plates FROM hotspots")).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  });
+
+  it("does not count them in the other run of the pair", async () => {
+    const { db, sqlite } = fakeD1();
+    logLine(sqlite, OTHER_RUN.scheduledTime - 12 * 60 * 60 * 1000);
+    await worker.scheduled(OTHER_RUN, { DB: db } as Env, {} as ExecutionContext);
+    expect(rows(sqlite, "SELECT day FROM daily_stats")).toEqual([]);
+  });
+
+  it("logs a failed count and does not throw", async () => {
+    const { db, sqlite } = fakeD1();
+    sqlite.exec("DROP TABLE hotspots");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(worker.scheduled(NIGHT_WINTER, { DB: db } as Env, {} as ExecutionContext)).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith("scheduled: statistics failed", expect.any(Error));
+    log.mockRestore();
+  });
+
   it("runs the cleanup", async () => {
     const { db, sqlite } = fakeD1();
     sqlite.prepare("INSERT INTO processed_updates (update_id, created_at) VALUES (1, 0)").run();

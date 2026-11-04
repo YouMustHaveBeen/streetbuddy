@@ -15,14 +15,15 @@ export const PARKING_OPTIONS = [
 
 export type ParkingOption = (typeof PARKING_OPTIONS)[number];
 
-// The "Were you a" options exactly as the form shows them: the script finds them by this text.
+// The "Were you a" options exactly as the form words them (the script finds them by this text),
+// in the order the bot shows its buttons.
 export const ROAD_USER_TYPES = [
-  "Cyclist",
-  "Driver",
-  "E-Scooter User, E-Moped User, E-Cyclist",
-  "Motorcyclist",
-  "Passenger",
   "Pedestrian",
+  "Passenger",
+  "Driver",
+  "Cyclist",
+  "Motorcyclist",
+  "E-Scooter User, E-Moped User, E-Cyclist",
 ] as const;
 
 export type RoadUserType = (typeof ROAD_USER_TYPES)[number];
@@ -50,25 +51,47 @@ function joinOptions(options: readonly ParkingOption[]): string {
   return `${options.slice(0, -1).join(", ")} and ${options[options.length - 1]}`;
 }
 
-export function buildDescription(report: {
+interface ReportText {
   plate: string;
   parking: readonly ParkingOption[];
   address: string;
   date: string;
   time: string;
-}): string {
-  const text = (address: string) =>
-    `Vehicle ${report.plate} parked ${joinOptions(report.parking)} at ${address} on ${report.date} at ${report.time}.`;
+}
 
-  // The form states a 300-character limit but does not enforce it. Only the address
-  // here is shortened: the full one stays in the Location field.
+const sentence = (report: ReportText, address: string) =>
+  `Vehicle ${report.plate} parked ${joinOptions(report.parking)} at ${address} on ${report.date} at ${report.time}.`;
+
+// The form states a 300-character limit but does not enforce it. Only the address
+// here is shortened: the full one stays in the Location field.
+function fitAddress(report: ReportText): string {
   const parts = report.address.split(", ");
-  while (parts.length > 1 && text(parts.join(", ")).length > DESCRIPTION_LIMIT) {
+  while (parts.length > 1 && sentence(report, parts.join(", ")).length > DESCRIPTION_LIMIT) {
     parts.pop();
   }
   const address = parts.join(", ");
-  const excess = text(address).length - DESCRIPTION_LIMIT;
-  return excess > 0 ? text(address.slice(0, Math.max(0, address.length - excess)).trimEnd()) : text(address);
+  const excess = sentence(report, address).length - DESCRIPTION_LIMIT;
+  return excess > 0 ? address.slice(0, Math.max(0, address.length - excess)).trimEnd() : address;
+}
+
+export function buildDescription(report: ReportText): string {
+  return sentence(report, fitAddress(report));
+}
+
+// The same description for the final message of the bot: one part of it on every line, each
+// parking option on a line of its own.
+export function buildDescriptionLines(report: ReportText): string {
+  const options = report.parking.map((option, i) => {
+    const last = report.parking.length - 1;
+    const text = i === 0 ? `parked ${option}` : i === last ? `and ${option}` : option;
+    return i < last - 1 ? `${text},` : text;
+  });
+  return [
+    `Vehicle ${report.plate}`,
+    ...options,
+    `at ${fitAddress(report)}`,
+    `on ${report.date} at ${report.time}.`,
+  ].join("\n");
 }
 
 export function buildLocation(address: string, lat: number, lon: number): string {

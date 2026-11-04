@@ -10,6 +10,10 @@ function testD1() {
 }
 
 const SECRET = "s3cret";
+const ADMIN_ROW = [
+  { text: "Feedback", callback_data: "admin_feedback" },
+  { text: "Statistics", callback_data: "admin_statistics" },
+];
 let env: WebhookEnv;
 let rows: () => number;
 let sqlite: ReturnType<typeof fakeD1>["sqlite"];
@@ -151,7 +155,7 @@ describe("membership", () => {
       expect(methods(mock)).toEqual(["getChatMember", "sendMessage"]);
       expect(bodyOf(mock, "sendMessage")).toEqual({
         chat_id: 42,
-        text: "This bot is only for members of the group.",
+        text: "This bot is only for members of the group",
       });
     },
   );
@@ -161,7 +165,7 @@ describe("membership", () => {
     expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery"]);
     expect(bodyOf(mock, "answerCallbackQuery")).toEqual({
       callback_query_id: "cb1",
-      text: "This bot is only for members of the group.",
+      text: "This bot is only for members of the group",
     });
   });
   it("passes a member's button press to the dialog", async () => {
@@ -175,7 +179,7 @@ describe("membership", () => {
     press.callback_query.data = "address_ok";
     press.callback_query.message.message_id = 5;
     await send(press);
-    expect(bodyOf(mock, "sendMessage").text).toBe("Now send photos, the first one with the number plate.");
+    expect(bodyOf(mock, "sendMessage").text).toBe("Now send photos, the first one with the number plate");
   });
   it("lets nobody in and says nothing when Telegram fails the check", async () => {
     const mock = telegram({ ok: false, error_code: 400 });
@@ -219,8 +223,8 @@ describe("/admin", () => {
     expect(methods(mock)).toEqual(["getChatMember", "sendMessage"]);
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
-      text: "Bot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }]] },
+      text: "Admin console\nBot: on\nLast form check: none yet",
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW] },
     });
   });
   it("answers /admin written with the bot name", async () => {
@@ -237,8 +241,8 @@ describe("/admin", () => {
     await send(textMessage("/admin"));
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
-      text: "Bot: off\nLast form check: 03/11/2026 06:00 - form changed",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }]] },
+      text: "Admin console\nBot: off\nLast form check: 03/11/2026 06:00 - form changed",
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW] },
     });
   });
   it.each([
@@ -250,7 +254,7 @@ describe("/admin", () => {
       .prepare("INSERT INTO form_check (id, checked_at, result) VALUES (1, ?, ?)")
       .run(Date.UTC(2026, 6, 15, 5, 30), result);
     await send(textMessage("/admin"));
-    expect(bodyOf(mock, "sendMessage").text).toBe(`Bot: on\nLast form check: 15/07/2026 06:30 - ${text}`);
+    expect(bodyOf(mock, "sendMessage").text).toBe(`Admin console\nBot: on\nLast form check: 15/07/2026 06:30 - ${text}`);
   });
   it("gives a member who is not an administrator no answer at all", async () => {
     const mock = adminTelegram("member");
@@ -288,7 +292,7 @@ describe("/admin", () => {
     await send(textMessage("/admin"));
     expect(methods(mock)).toEqual(["getChatMember", "deleteMessage", "sendMessage"]);
     expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: 5 });
-    expect(bodyOf(mock, "sendMessage").text).toBe("Bot: on\nLast form check: none yet");
+    expect(bodyOf(mock, "sendMessage").text).toBe("Admin console\nBot: on\nLast form check: none yet");
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
   });
   it("leaves a report alone while the link is being given", async () => {
@@ -321,8 +325,8 @@ describe("/admin", () => {
     expect(bodyOf(mock, "answerCallbackQuery")).toEqual({ callback_query_id: "cb1" });
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
-      text: "Bot: off\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }]] },
+      text: "Admin console\nBot: off\nLast form check: none yet",
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW] },
     });
     expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
   });
@@ -331,14 +335,30 @@ describe("/admin", () => {
     sqlite.prepare("UPDATE bot_switch SET enabled = 0").run();
     await send(adminButton("admin_on"));
     expect(enabled()).toBe(1);
-    expect(bodyOf(mock, "sendMessage").text).toBe("Bot: on\nLast form check: none yet");
+    expect(bodyOf(mock, "sendMessage").text).toBe("Admin console\nBot: on\nLast form check: none yet");
   });
   it("sets the state a button names, so an old screen cannot flip it the wrong way", async () => {
     const mock = adminTelegram("administrator");
     sqlite.prepare("UPDATE bot_switch SET enabled = 0").run();
     await send(adminButton("admin_off"));
     expect(enabled()).toBe(0);
-    expect(bodyOf(mock, "sendMessage").text).toBe("Bot: off\nLast form check: none yet");
+    expect(bodyOf(mock, "sendMessage").text).toBe("Admin console\nBot: off\nLast form check: none yet");
+  });
+  it("answers the Feedback and Statistics buttons and does nothing else", async () => {
+    for (const data of ["admin_feedback", "admin_statistics"]) {
+      const mock = adminTelegram("administrator");
+      await send(adminButton(data));
+      expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery"]);
+      expect(enabled()).toBe(1);
+      pending = [];
+      vi.unstubAllGlobals();
+      sqlite.prepare("DELETE FROM processed_updates").run();
+    }
+  });
+  it("gives a member who is not an administrator no answer to the Feedback button", async () => {
+    const mock = adminTelegram("member");
+    await send(adminButton("admin_feedback"));
+    expect(methods(mock)).toEqual(["getChatMember"]);
   });
   it("does not remove the old screen when the new one could not be sent", async () => {
     const mock = adminTelegram("administrator");

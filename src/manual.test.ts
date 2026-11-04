@@ -40,7 +40,7 @@ describe("manual page", () => {
 
   it("walks through every step with the bot's own button names", async () => {
     const html = await manualPage().text();
-    for (const name of ["Confirm", "Edit", "Create report", "Edit plate", "Change time", "Done", "Open form", "Cancel", "Click Here to Start", "Submit Report"]) {
+    for (const name of ["Confirm", "Edit", "Create report", "Edit plate", "Change time", "Done", "Open report", "Cancel", "Click Here to Start", "Submit Report"]) {
       expect(html).toContain(`«${name}»`);
     }
   });
