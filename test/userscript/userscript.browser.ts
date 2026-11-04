@@ -471,6 +471,7 @@ describe("bookmarklet built on the installation page", () => {
     await typeProfile(guide, TYPED);
     expect(await guide.isVisible("#bookmark-ready")).toBe(true);
     expect(await guide.isVisible("#bookmark-created")).toBe(true);
+    expect(await guide.textContent("#bookmark-created")).toBe("Закладка создана.");
     // The other ways to add the bookmark stay folded until the person opens them.
     expect(await guide.isVisible("#bookmark-link")).toBe(false);
     expect(await guide.isVisible("#bookmark-error")).toBe(false);
@@ -487,7 +488,7 @@ describe("bookmarklet built on the installation page", () => {
     // Nothing typed on the page is sent anywhere.
     expect(sent).toEqual([]);
     // The phone way is shown first; the computer way replaces it when chosen.
-    await guide.click("summary");
+    await guide.getByText("Другие варианты добавления закладки", { exact: true }).click();
     expect(await guide.isVisible("[data-variant-section=phone]")).toBe(true);
     expect(await guide.isVisible("[data-variant-section=computer]")).toBe(false);
     await guide.getByRole("button", { name: "Настроить с компьютера" }).click();

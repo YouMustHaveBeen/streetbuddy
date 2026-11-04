@@ -19,6 +19,7 @@ describe("installation guide page", () => {
     const html = await installPage().text();
     expect(html).toContain('aria-pressed="true">Android</button>');
     expect(html).toContain("disabled>iPhone</button>");
+    expect(html).toContain('<button class="install" type="submit">Создать закладку</button>');
     expect(html).not.toMatch(/firefox|violentmonkey/i);
     expect(html).not.toContain("data-browser");
   });
