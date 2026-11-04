@@ -7,18 +7,16 @@ export const SCRIPT_PATH = "/streetbuddy.user.js";
 const FIREFOX_URL = "https://play.google.com/store/apps/details?id=org.mozilla.firefox";
 const VIOLENTMONKEY_URL = "https://addons.mozilla.org/firefox/addon/violentmonkey/";
 
-// The userscript goes into the page's own script as a JSON string; "<" is escaped so that the
-// text "</script>" inside it cannot end that script early.
-const SCRIPT_JSON = JSON.stringify(userscript).replace(/</g, "\\u003c");
-
 // The page builds the bookmarklet in the browser: the personal data typed in never leaves the
-// phone. A bookmarklet can only be added by hand in Chrome on Android, so the page gives the
-// code to copy and also as a link (to copy with a long press, or to drag to the bookmarks bar
-// on a computer). The data is checked by the same rules as validateProfile in the userscript:
-// the bookmarklet stays silent on data it does not accept.
+// phone. The bookmarklet holds the data and loads the form-filling script from this same Worker
+// each time it is run, so it stays short and needs no rebuilding when the script is updated.
+// A bookmarklet can only be added by hand in Chrome on Android, so the page gives the code to
+// copy and also as a link (to copy with a long press, or to drag to the bookmarks bar on a
+// computer). The data is checked by the same rules as validateProfile in the userscript: the
+// script stays silent on data it does not accept.
 const PAGE_SCRIPT = `(function () {
   "use strict";
-  var CODE = ${SCRIPT_JSON};
+  var SCRIPT_URL = location.origin + "${SCRIPT_PATH}";
   var CONTACT_METHODS = ["Email", "Phone Call", "Text Message"];
 
   function select(button) {
@@ -68,7 +66,9 @@ const PAGE_SCRIPT = `(function () {
     if (!profile) return;
     // void: a bookmarklet that returns a value replaces the page with that value.
     bookmark = "javascript:" + encodeURIComponent(
-      "void function () {\\nglobalThis.STREETBUDDY_PROFILE = " + JSON.stringify(profile) + ";\\n" + CODE + "\\n}();"
+      "void function () {globalThis.STREETBUDDY_PROFILE = " + JSON.stringify(profile) + ";" +
+      "var s = document.createElement('script'); s.src = " + JSON.stringify(SCRIPT_URL) + ";" +
+      "document.head.appendChild(s);}();"
     );
     link.href = bookmark;
   });
@@ -165,7 +165,7 @@ const PAGE = `<!doctype html>
 </section>
 
 <section data-browser-section="chrome" hidden>
-<p>Chrome на телефоне не поддерживает расширения, поэтому ваши личные данные будут храниться в закладке Chrome: закладка содержит скрипт, который добавляет их в форму репорта.</p>
+<p>Chrome на телефоне не поддерживает расширения, поэтому ваши личные данные будут храниться в закладке Chrome: при запуске закладка загружает с сайта StreetBuddy скрипт, который добавляет эти данные в форму репорта. Для запуска нужен интернет.</p>
 <p>Вам потребуется:</p>
 <ul>
 <li>Ввести ваши личные данные на этой странице и создать закладку.</li>
@@ -199,7 +199,7 @@ const PAGE = `<!doctype html>
 <p>Если кнопка «Скопировать закладку» не сработала, долго нажмите на кнопку qwerty и выберите «Копировать адрес ссылки», затем добавьте закладку так же, как описано выше.</p>
 <p><a class="install" id="bookmark-link" href="#">qwerty</a></p>
 <p>Не открывайте закладку qwerty из списка закладок: так она откроется на пустой странице и не сработает. Ее запускают на форме репорта, как описано в шаге 4.</p>
-<p>Закладка содержит ваши личные данные, не пересылайте ее другим. Чтобы изменить данные, создайте закладку на этой странице заново и вставьте ее в закладку qwerty вместо прежней.</p>
+<p>Закладка содержит ваши личные данные, не пересылайте ее другим. Чтобы изменить данные, создайте закладку на этой странице заново и вставьте ее в закладку qwerty вместо прежней. Скрипт обновляется сам, ради этого закладку пересоздавать не нужно.</p>
 
 <h3>Если у вас есть компьютер</h3>
 <p>Закладку можно добавить и с компьютера, если Chrome на компьютере и на телефоне подключен к одному аккаунту Google и в обоих включена синхронизация закладок (на телефоне: «⋮», «Настройки», ваш аккаунт, «Синхронизация», «Закладки»).</p>

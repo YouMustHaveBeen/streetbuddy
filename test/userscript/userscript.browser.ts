@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildDescription, buildLocation, buildReportLink, dublinDateTime } from "../../src/core/report";
-import { INSTALL_PATH, installPage } from "../../src/install";
+import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "../../src/install";
 
 const FORM_PATH = "/en/trafficwatchreport/";
 const SCRIPT = readFileSync("userscript/streetbuddy.user.js", "utf8");
@@ -55,13 +55,13 @@ beforeAll(async () => {
     if (path === FORM_PATH) {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end(FORM_HTML);
-    } else if (path === INSTALL_PATH) {
-      void installPage()
-        .text()
-        .then((html) => {
-          response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-          response.end(html);
-        });
+    } else if (path === INSTALL_PATH || path === SCRIPT_PATH) {
+      // The pages of the Worker itself, served by its own code.
+      const served = path === INSTALL_PATH ? installPage() : userscriptFile();
+      void served.text().then((body) => {
+        response.writeHead(200, { "content-type": served.headers.get("content-type") ?? "text/plain" });
+        response.end(body);
+      });
     } else if (VENDOR_FILES[path]) {
       response.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
       response.end(readFileSync(VENDOR_FILES[path]));
@@ -473,7 +473,7 @@ describe("bookmarklet built on the installation page", () => {
     await context.close();
   });
 
-  it("copies the bookmarklet, which fills the form like the userscript", async () => {
+  it("copies a short bookmarklet, which loads the script and fills the form like the userscript", async () => {
     const guideContext = await browser.newContext();
     await guideContext.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
     const sent: string[] = [];
@@ -490,6 +490,11 @@ describe("bookmarklet built on the installation page", () => {
     const bookmark = (await guide.evaluate("navigator.clipboard.readText()")) as string;
     expect(await guide.getAttribute("#bookmark-link", "href")).toBe(bookmark);
     expect(bookmark.startsWith("javascript:")).toBe(true);
+    // The bookmarklet holds the data and the address of the script, not the script.
+    expect(bookmark.length).toBeLessThan(1500);
+    const code = decodeURIComponent(bookmark.slice("javascript:".length));
+    expect(code).not.toContain("validateReport");
+    expect(code).toContain(JSON.stringify(origin + SCRIPT_PATH));
     // Nothing typed on the page is sent anywhere.
     expect(sent).toEqual([]);
     // A plain tap on the link runs nothing on the guide page.
@@ -499,11 +504,16 @@ describe("bookmarklet built on the installation page", () => {
 
     // Chrome with no extension: the person opens the link, then runs the bookmarklet.
     const context = await browser.newContext();
+    const loaded: string[] = [];
+    context.on("request", (request) => {
+      if (request.url().endsWith(SCRIPT_PATH)) loaded.push(request.url());
+    });
     const page = await context.newPage();
     const report = ordinaryReport();
     await page.goto(linkTo(report));
-    await page.evaluate(decodeURIComponent(bookmark.slice("javascript:".length)));
-    expect(page.url()).not.toContain("#sb=");
+    await page.evaluate(code);
+    await page.waitForFunction("!location.hash.startsWith('#sb=')");
+    expect(loaded).toEqual([origin + SCRIPT_PATH]);
     await tickAndStart(page);
     await waitUntilFilled(page);
     expect(await fieldValues(page)).toEqual({

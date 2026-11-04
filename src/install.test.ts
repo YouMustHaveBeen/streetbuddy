@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import worker from "./index";
 import type { Env } from "./index";
-import userscript from "../userscript/streetbuddy.user.js";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 
 describe("installation guide page", () => {
@@ -28,19 +27,17 @@ describe("installation guide page", () => {
     expect(html).toContain('<section data-browser-section="chrome" hidden>');
   });
 
-  it("carries the userscript for the bookmarklet without ending its own script early", async () => {
+  it("does not carry the userscript itself: the bookmarklet loads it from the Worker", async () => {
     const html = await installPage().text();
-    const pageScript = html.slice(html.indexOf("<script>") + "<script>".length, html.indexOf("</script>"));
-    expect(html.match(/<\/script>/g)).toHaveLength(1);
-    expect(pageScript).toContain("var CODE = " + JSON.stringify(userscript).replace(/</g, "\\u003c") + ";");
+    expect(html).toContain(`location.origin + "${SCRIPT_PATH}"`);
+    expect(html).not.toContain("validateReport");
+    expect(html).not.toContain("==UserScript==");
   });
 
   it("does not use the word Garda or the letter yo", async () => {
     const html = await installPage().text();
-    // The userscript inside the page is checked as it is, not as page text.
-    const text = html.replace(JSON.stringify(userscript).replace(/</g, "\\u003c"), "");
     const yo = String.fromCharCode(0x451);
-    expect(text).not.toMatch(/garda/i);
+    expect(html).not.toMatch(/garda/i);
     expect(html.includes(yo)).toBe(false);
   });
 });

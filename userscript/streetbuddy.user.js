@@ -12,7 +12,7 @@
 // @grant        GM_setValue
 // ==/UserScript==
 
-// StreetBuddy form-filling script (userscript and bookmarklet are built from this file).
+// StreetBuddy form-filling script: the userscript and the bookmarklet both run this same file.
 // It never ticks the confirmation checkboxes, never presses "Click Here to Start" or
 // "Submit Report" and never touches the captcha: those steps always stay with the person.
 (function () {
