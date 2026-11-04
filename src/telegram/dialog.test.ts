@@ -97,12 +97,29 @@ afterEach(() => {
 describe("/start", () => {
   it("shows the text with the Location button", async () => {
     await text("/start");
-    expect(lastSent().text).toContain("To start a report, send your location.");
-    expect(lastSent().text).not.toContain("<link>");
-    expect(lastSent().text).toContain("A link to the Privacy Policy will be here\nInstallation guide: https://");
-    expect(lastSent().text).toContain("Installation guide: https://site.example/install\n");
+    expect(lastSent().text).toBe(`StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
+Please note: a report may require you to give a statement in court.
+***
+First, read the <a href="https://site.example/manual">manual</a>.
+Second, set up your phone: <a href="https://site.example/install">Installation guide</a>.
+Third, to start a report, send location to the bot.
+***
+This bot is not affiliated with An Garda Síochána.
+(A link to the Privacy Policy will be here.)
+© OpenStreetMap contributors`);
     expect(lastSent().reply_markup.keyboard[0][0]).toEqual({ text: "Location", request_location: true });
     expect(draft()).toBeUndefined();
+  });
+  it("sends the text as HTML without a link preview", async () => {
+    await text("/start");
+    const body = lastSent() as unknown as { parse_mode?: string; link_preview_options?: unknown };
+    expect(body.parse_mode).toBe("HTML");
+    expect(body.link_preview_options).toEqual({ is_disabled: true });
+  });
+  it("sends the other messages as plain text", async () => {
+    await location();
+    const body = lastSent() as unknown as { parse_mode?: string };
+    expect(body.parse_mode).toBeUndefined();
   });
   it("keeps the draft in the middle of a report and moves its screen below", async () => {
     await location();
@@ -701,7 +718,7 @@ describe("bot switched off", () => {
     await text("/start");
     await photo();
     expect(sentTexts()).toHaveLength(1);
-    expect(lastSent().text).toContain("To start a report, send your location.");
+    expect(lastSent().text).toContain("Third, to start a report, send location to the bot.");
     expect(draft()).toBeUndefined();
   });
   it("carries on a report that was already begun", async () => {
