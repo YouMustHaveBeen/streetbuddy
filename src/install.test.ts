@@ -10,21 +10,18 @@ describe("installation guide page", () => {
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
   });
 
-  it("has the title, the two links and the install button", async () => {
+  it("has the title", async () => {
     const html = await installPage().text();
     expect(html).toContain("<title>Руководство по установке StreetBuddy</title>");
-    expect(html).toContain('href="https://play.google.com/store/apps/details?id=org.mozilla.firefox"');
-    expect(html).toContain('href="https://addons.mozilla.org/firefox/addon/violentmonkey/"');
-    expect(html).toContain(`href="${SCRIPT_PATH}">Установить скрипт</a>`);
   });
 
-  it("offers Android with Firefox and Chrome, and no iPhone yet", async () => {
+  it("offers Android with Chrome only, and no iPhone yet", async () => {
     const html = await installPage().text();
     expect(html).toContain('aria-pressed="true">Android</button>');
-    expect(html).toContain('aria-pressed="true" data-browser="firefox">Firefox</button>');
-    expect(html).toContain('aria-pressed="false" data-browser="chrome">Chrome</button>');
     expect(html).toContain("disabled>iPhone</button>");
-    expect(html).toContain('<section data-browser-section="chrome" hidden>');
+    expect(html).toContain('<button class="install" type="submit">Создать закладку</button>');
+    expect(html).not.toMatch(/firefox|violentmonkey/i);
+    expect(html).not.toContain("data-browser");
   });
 
   it("does not carry the userscript itself: the bookmarklet loads it from the Worker", async () => {
