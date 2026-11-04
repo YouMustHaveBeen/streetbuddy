@@ -8,6 +8,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildDescription, buildLocation, buildReportLink, dublinDateTime } from "../../src/core/report";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "../../src/install";
+import { MANUAL_PATH, manualPage } from "../../src/manual";
 
 const FORM_PATH = "/en/trafficwatchreport/";
 const SCRIPT = readFileSync("userscript/streetbuddy.user.js", "utf8");
@@ -55,9 +56,9 @@ beforeAll(async () => {
     if (path === FORM_PATH) {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end(FORM_HTML);
-    } else if (path === INSTALL_PATH || path === SCRIPT_PATH) {
+    } else if (path === INSTALL_PATH || path === MANUAL_PATH || path === SCRIPT_PATH) {
       // The pages of the Worker itself, served by its own code.
-      const served = path === INSTALL_PATH ? installPage() : userscriptFile();
+      const served = path === INSTALL_PATH ? installPage() : path === MANUAL_PATH ? manualPage() : userscriptFile();
       void served.text().then((body) => {
         response.writeHead(200, { "content-type": served.headers.get("content-type") ?? "text/plain" });
         response.end(body);
@@ -540,6 +541,28 @@ describe("bookmarklet built on the installation page", () => {
     expect(await page.isVisible("#bookmark-error")).toBe(true);
     expect(await page.isVisible("#bookmark-ready")).toBe(false);
     expect(await page.isVisible("#bookmark-created")).toBe(false);
+    await context.close();
+  });
+});
+
+describe("manual page", () => {
+  it("switches between the Android and iPhone instructions", async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(origin + MANUAL_PATH);
+    expect(await page.isVisible("[data-os-section=android]")).toBe(true);
+    expect(await page.isVisible("[data-os-section=iphone]")).toBe(false);
+
+    await page.getByRole("button", { name: "iPhone" }).click();
+    expect(await page.isVisible("[data-os-section=android]")).toBe(false);
+    expect(await page.isVisible("[data-os-section=iphone]")).toBe(true);
+    expect(await page.textContent("[data-os-section=iphone]")).toContain("Инструкция для iPhone скоро появится.");
+    expect(await page.getAttribute("[data-os=iphone]", "aria-pressed")).toBe("true");
+    expect(await page.getAttribute("[data-os=android]", "aria-pressed")).toBe("false");
+
+    await page.getByRole("button", { name: "Android" }).click();
+    expect(await page.isVisible("[data-os-section=android]")).toBe(true);
+    expect(await page.isVisible("[data-os-section=iphone]")).toBe(false);
     await context.close();
   });
 });

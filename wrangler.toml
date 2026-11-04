@@ -16,7 +16,8 @@ database_id = "77d5ecdb-e082-43e1-b4b7-de039a510f2f"
 [triggers]
 crons = ["0 5 * * *", "0 6 * * *"]
 
-# Address of this Worker; the bot builds the link to the installation guide from it
+# Address of this Worker; the bot builds the links to the manual and the installation guide from it.
+# It goes into an HTML link as it is, so it must not contain & < > or quotes.
 [vars]
 SITE_URL = "https://streetbuddy.youmusthavebeen.workers.dev"
 

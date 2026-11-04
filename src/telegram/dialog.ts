@@ -74,7 +74,7 @@ interface Context {
 }
 
 // Sent as HTML so that the words "manual" and "Installation guide" are the links; the text has no
-// characters that HTML treats specially.
+// characters that HTML treats specially, and SITE_URL (see wrangler.toml) goes into the links as it is.
 const startText = (siteUrl: string) => `StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
 ***
@@ -86,24 +86,24 @@ This bot is not affiliated with An Garda Síochána.
 (A link to the Privacy Policy will be here.)
 © OpenStreetMap contributors`;
 
-const OUT_OF_AREA = "Sorry, this bot doesn't work in this area";
+export const OUT_OF_AREA = "Sorry, this bot doesn't work in this area";
 const TRY_AGAIN = "Could not get the address. Please try again in a minute.";
 const WRITE_ADDRESS = "Could not get the address. Please write it.";
 const SEND_LOCATION = "Please send the location.";
 const EDIT_ADDRESS = "Write the correct address.";
 const ADDRESS_TOO_LONG = "The address must be 100 characters or less.";
-const SEND_PHOTOS = "Now send photos, the first one with the number plate.";
-const PHOTO_RECEIVED = "Photo received. Send more photos or press Create report";
-const SEVERAL_PLATES = "Several plates found. Choose one.";
+export const SEND_PHOTOS = "Now send photos, the first one with the number plate.";
+export const PHOTO_RECEIVED = "Photo received. Send more photos or press Create report";
+export const SEVERAL_PLATES = "Several plates found. Choose one.";
 const WRITE_PLATE = "Write the plate number.";
-const NO_PLATE = "Could not read the plate. Please write it.";
+export const NO_PLATE = "Could not read the plate. Please write it.";
 const PLATE_TOO_LONG = "The plate number is too long. Please write it again.";
 const WRITE_TIME = "Write the time as hh:mm.";
 const WRONG_TIME = "Wrong time. Please write it again.";
-const CHOOSE_PARKING = "Choose one or more options, then press Done.";
+export const CHOOSE_PARKING = "Choose one or more options, then press Done.";
 const CHOOSE_ONE = "Choose at least one option.";
-const CHOOSE_ROAD_USER = "Were you a:";
-const CANCELLED = "Report cancelled";
+export const CHOOSE_ROAD_USER = "Were you a:";
+export const CANCELLED = "Report cancelled";
 const OPEN_EXTERNALLY = "Open the link in an external browser.";
 const REPORT_SENT = "Report sent";
 

@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
 import worker from "./index";
 import type { Env } from "./index";
+import { PARKING_OPTIONS, ROAD_USER_TYPES } from "./core";
 import { INSTALL_PATH } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
+import {
+  CANCELLED,
+  CHOOSE_PARKING,
+  CHOOSE_ROAD_USER,
+  NO_PLATE,
+  OUT_OF_AREA,
+  PHOTO_RECEIVED,
+  SEND_PHOTOS,
+  SEVERAL_PLATES,
+} from "./telegram/dialog";
 
 describe("manual page", () => {
   it("is served as HTML with the title", async () => {
@@ -31,6 +42,14 @@ describe("manual page", () => {
     const html = await manualPage().text();
     for (const name of ["Confirm", "Edit", "Create report", "Edit plate", "Change time", "Done", "Open form", "Cancel", "Click Here to Start", "Submit Report"]) {
       expect(html).toContain(`«${name}»`);
+    }
+  });
+
+  it("quotes the bot's texts and button names exactly as the bot sends them", async () => {
+    const html = await manualPage().text();
+    const quoted = [OUT_OF_AREA, SEND_PHOTOS, PHOTO_RECEIVED, SEVERAL_PLATES, NO_PLATE, CHOOSE_PARKING, CHOOSE_ROAD_USER, CANCELLED];
+    for (const text of [...quoted, ...PARKING_OPTIONS, ...ROAD_USER_TYPES]) {
+      expect(html).toContain(text);
     }
   });
 

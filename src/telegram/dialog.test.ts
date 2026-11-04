@@ -95,7 +95,7 @@ afterEach(() => {
 });
 
 describe("/start", () => {
-  it("shows the text with the Location button", async () => {
+  it("shows the /start text with the Location button", async () => {
     await text("/start");
     expect(lastSent().text).toBe(`StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
