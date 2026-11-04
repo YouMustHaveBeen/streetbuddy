@@ -15,6 +15,7 @@ import {
   searchAddress,
 } from "../core";
 import { INSTALL_PATH } from "../install";
+import { MANUAL_PATH } from "../manual";
 import { callTelegram, downloadFile } from "./api";
 import {
   addCleanup,
@@ -72,37 +73,37 @@ interface Context {
   chatId: number;
 }
 
-const startText = (siteUrl: string) => `StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch form. You tick the two boxes, pass the captcha and press Submit yourself.
-
+// Sent as HTML so that the words "manual" and "Installation guide" are the links; the text has no
+// characters that HTML treats specially, and SITE_URL (see wrangler.toml) goes into the links as it is.
+const startText = (siteUrl: string) => `StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
+Please note: a report may require you to give a statement in court.
+***
+First, read the <a href="${siteUrl}${MANUAL_PATH}">manual</a>.
+Second, set up your phone: <a href="${siteUrl}${INSTALL_PATH}">Installation guide</a>.
+Third, to start a report, send location to the bot.
+***
 This bot is not affiliated with An Garda Síochána.
-
-A report may require you to give a statement in court.
-
-To start a report, send your location.
-
-A link to the Privacy Policy will be here
-Installation guide: ${siteUrl}${INSTALL_PATH}
-
+(A link to the Privacy Policy will be here.)
 © OpenStreetMap contributors`;
 
-const OUT_OF_AREA = "Sorry, this bot doesn't work in this area";
+export const OUT_OF_AREA = "Sorry, this bot doesn't work in this area";
 const TRY_AGAIN = "Could not get the address. Please try again in a minute.";
 const WRITE_ADDRESS = "Could not get the address. Please write it.";
 const SEND_LOCATION = "Please send the location.";
 const EDIT_ADDRESS = "Write the correct address.";
 const ADDRESS_TOO_LONG = "The address must be 100 characters or less.";
-const SEND_PHOTOS = "Now send photos, the first one with the number plate.";
-const PHOTO_RECEIVED = "Photo received. Send more photos or press Create report";
-const SEVERAL_PLATES = "Several plates found. Choose one.";
+export const SEND_PHOTOS = "Now send photos, the first one with the number plate.";
+export const PHOTO_RECEIVED = "Photo received. Send more photos or press Create report";
+export const SEVERAL_PLATES = "Several plates found. Choose one.";
 const WRITE_PLATE = "Write the plate number.";
-const NO_PLATE = "Could not read the plate. Please write it.";
+export const NO_PLATE = "Could not read the plate. Please write it.";
 const PLATE_TOO_LONG = "The plate number is too long. Please write it again.";
 const WRITE_TIME = "Write the time as hh:mm.";
 const WRONG_TIME = "Wrong time. Please write it again.";
-const CHOOSE_PARKING = "Choose one or more options, then press Done.";
+export const CHOOSE_PARKING = "Choose one or more options, then press Done.";
 const CHOOSE_ONE = "Choose at least one option.";
-const CHOOSE_ROAD_USER = "Were you a:";
-const CANCELLED = "Report cancelled";
+export const CHOOSE_ROAD_USER = "Were you a:";
+export const CANCELLED = "Report cancelled";
 const OPEN_EXTERNALLY = "Open the link in an external browser.";
 const REPORT_SENT = "Report sent";
 
@@ -187,10 +188,13 @@ async function send(
   c: Context,
   text: string,
   replyMarkup?: unknown,
+  html = false,
 ): Promise<number | null> {
   const sent = await callTelegram<{ message_id: number }>(c.env.TELEGRAM_BOT_TOKEN, "sendMessage", {
     chat_id: c.chatId,
     text,
+    // Two links in one message would otherwise open a preview of the first page.
+    ...(html ? { parse_mode: "HTML", link_preview_options: { is_disabled: true } } : {}),
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   });
   return sent?.message_id ?? null;
@@ -250,7 +254,7 @@ async function redraw(c: Context, draft: Draft, message: Message): Promise<void>
 }
 
 async function handleStart(c: Context, draft: Draft | null, message: Message): Promise<void> {
-  const startId = await send(c, startText(c.env.SITE_URL), LOCATION_KEYBOARD);
+  const startId = await send(c, startText(c.env.SITE_URL), LOCATION_KEYBOARD, true);
   if (!draft) return;
   // The report is left as it was: its screen only moves below the /start text.
   const cleanupIds = [message.message_id, ...(startId === null ? [] : [startId])];

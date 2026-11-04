@@ -11,13 +11,9 @@ export const SCRIPT_PATH = "/streetbuddy.user.js";
 // copy and also as a link (to copy with a long press, or to drag to the bookmarks bar on a
 // computer). The data is checked by the same rules as validateProfile in the userscript: the
 // script stays silent on data it does not accept.
-const PAGE_SCRIPT = `(function () {
-  "use strict";
-  var SCRIPT_URL = location.origin + "${SCRIPT_PATH}";
-  var CONTACT_METHODS = ["Email", "Phone Call", "Text Message"];
-
-  // A row of choice buttons: the pressed one shows its sections (data-<key>-section) and hides the others.
-  function select(button, key) {
+// Shared with the manual page. A row of choice buttons: the pressed one shows its sections
+// (data-<key>-section) and hides the others.
+export const CHOICE_SCRIPT = `function select(button, key) {
     var group = button.parentNode.querySelectorAll("button");
     for (var i = 0; i < group.length; i++) group[i].setAttribute("aria-pressed", String(group[i] === button));
     var sections = document.querySelectorAll("[data-" + key + "-section]");
@@ -30,7 +26,26 @@ const PAGE_SCRIPT = `(function () {
     for (var k = 0; k < buttons.length; k++) {
       buttons[k].addEventListener("click", function (event) { select(event.currentTarget, key); });
     }
-  }
+  }`;
+
+// Shared with the manual page.
+export const BASE_STYLE = `  :root { color-scheme: light dark; }
+  body { margin: 0; font: 17px/1.5 system-ui, sans-serif; }
+  main { max-width: 40rem; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.2rem; margin-top: 2rem; }
+  h3 { font-size: 1.05rem; margin-top: 1.5rem; }
+  a { overflow-wrap: anywhere; }
+  .choice button { font: inherit; padding: 8px 16px; margin-right: 8px; }
+  .choice button[aria-pressed="true"] { font-weight: bold; }
+  [hidden] { display: none !important; }`;
+
+const PAGE_SCRIPT = `(function () {
+  "use strict";
+  var SCRIPT_URL = location.origin + "${SCRIPT_PATH}";
+  var CONTACT_METHODS = ["Email", "Phone Call", "Text Message"];
+
+  ${CHOICE_SCRIPT}
   bindChoice("variant");
 
   function validProfile(form) {
@@ -97,15 +112,7 @@ const PAGE = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Руководство по установке StreetBuddy</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; font: 17px/1.5 system-ui, sans-serif; }
-  main { max-width: 40rem; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 1.5rem; }
-  h2 { font-size: 1.2rem; margin-top: 2rem; }
-  h3 { font-size: 1.05rem; margin-top: 1.5rem; }
-  a { overflow-wrap: anywhere; }
-  .choice button { font: inherit; padding: 8px 16px; margin-right: 8px; }
-  .choice button[aria-pressed="true"] { font-weight: bold; }
+${BASE_STYLE}
   .install { display: inline-block; padding: 10px 20px; border: 2px solid; border-radius: 6px; font: inherit; font-weight: bold; text-decoration: none; }
   /* The bookmark is a link, which would otherwise be blue unlike the real buttons. */
   #bookmark-link { color: ButtonText; background-color: ButtonFace; }
@@ -114,7 +121,6 @@ const PAGE = `<!doctype html>
   summary { cursor: pointer; font-weight: bold; margin: 1.5rem 0 0.75rem; }
   label { display: block; margin: 12px 0; }
   input, select { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: 6px; }
-  [hidden] { display: none !important; }
 </style>
 </head>
 <body>

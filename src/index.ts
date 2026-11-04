@@ -3,6 +3,7 @@ import { cleanupExpired } from "./cleanup";
 import { dublinDateTime } from "./core";
 import { runFormCheck } from "./dailyCheck";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
+import { MANUAL_PATH, manualPage } from "./manual";
 import { handleWebhook } from "./telegram";
 
 export interface Env {
@@ -24,6 +25,7 @@ export default {
     // HEAD is answered like GET: link checkers and previews ask for the headers only.
     const reads = request.method === "GET" || request.method === "HEAD";
     if (reads && url.pathname === INSTALL_PATH) return installPage();
+    if (reads && url.pathname === MANUAL_PATH) return manualPage();
     if (reads && url.pathname === SCRIPT_PATH) return userscriptFile();
     return new Response("Not Found", { status: 404 });
   },
