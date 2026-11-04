@@ -63,6 +63,11 @@ describe("Worker routes", () => {
     expect((await response.text()).startsWith("// ==UserScript==")).toBe(true);
   });
 
+  it("answers HEAD like GET", async () => {
+    expect((await get(INSTALL_PATH, "HEAD")).status).toBe(200);
+    expect((await get(SCRIPT_PATH, "HEAD")).status).toBe(200);
+  });
+
   it("answers 404 to other methods and other paths", async () => {
     expect((await get(INSTALL_PATH, "POST")).status).toBe(404);
     expect((await get(SCRIPT_PATH, "POST")).status).toBe(404);

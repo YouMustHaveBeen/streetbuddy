@@ -21,8 +21,10 @@ export default {
     if (request.method === "POST" && url.pathname === "/webhook") {
       return handleWebhook(request, env, ctx);
     }
-    if (request.method === "GET" && url.pathname === INSTALL_PATH) return installPage();
-    if (request.method === "GET" && url.pathname === SCRIPT_PATH) return userscriptFile();
+    // HEAD is answered like GET: link checkers and previews ask for the headers only.
+    const reads = request.method === "GET" || request.method === "HEAD";
+    if (reads && url.pathname === INSTALL_PATH) return installPage();
+    if (reads && url.pathname === SCRIPT_PATH) return userscriptFile();
     return new Response("Not Found", { status: 404 });
   },
 
