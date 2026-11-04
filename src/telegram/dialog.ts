@@ -79,7 +79,7 @@ A report may require you to give a statement in court.
 
 To start a report, send your location.
 
-Здесь будет ссылка на Политику конфиденциальности
+A link to the Privacy Policy will be here
 Installation guide: ${siteUrl}${INSTALL_PATH}
 
 © OpenStreetMap contributors`;

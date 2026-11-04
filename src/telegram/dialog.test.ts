@@ -99,7 +99,7 @@ describe("/start", () => {
     await text("/start");
     expect(lastSent().text).toContain("To start a report, send your location.");
     expect(lastSent().text).not.toContain("<link>");
-    expect(lastSent().text).toContain("Здесь будет ссылка на Политику конфиденциальности\nInstallation guide: https://");
+    expect(lastSent().text).toContain("A link to the Privacy Policy will be here\nInstallation guide: https://");
     expect(lastSent().text).toContain("Installation guide: https://site.example/install\n");
     expect(lastSent().reply_markup.keyboard[0][0]).toEqual({ text: "Location", request_location: true });
     expect(draft()).toBeUndefined();
