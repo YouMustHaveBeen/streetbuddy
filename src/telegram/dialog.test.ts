@@ -365,6 +365,46 @@ describe("parking and the final message", () => {
     expect(draft().step).toBe("road_user");
     expect(called("sendMessage").filter((call) => JSON.stringify(call.body).includes("Open form"))).toEqual([]);
   });
+  it("cancels the report at the Were you a step", async () => {
+    await toParking();
+    await press("opt:0");
+    await press("done");
+    const screen = buttonId();
+    await press("cancel");
+    expect(lastSent()).toEqual({ chat_id: USER, text: "Report cancelled" });
+    expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
+    expect(draft()).toBeUndefined();
+  });
+  it("stays on the options with their screen when Were you a cannot be sent", async () => {
+    await toParking();
+    await press("opt:0");
+    const screen = buttonId();
+    const deletedBefore = called("deleteMessage").length;
+    failSend = true;
+    await press("done");
+    expect(draft().step).toBe("parking");
+    expect(buttonId()).toBe(screen);
+    expect(called("deleteMessage")).toHaveLength(deletedBefore);
+    failSend = false;
+    await press("done");
+    expect(draft().step).toBe("road_user");
+  });
+  it("keeps one Were you a screen for a double tap on Done", async () => {
+    await toParking();
+    await press("opt:0");
+    const screen = buttonId();
+    const deletedBefore = called("deleteMessage").length;
+    await Promise.all([press("done", screen), press("done", screen)]);
+    expect(draft().step).toBe("road_user");
+    const asks = sentTexts().filter((value) => value === "Were you a:");
+    const deleted = called("deleteMessage")
+      .slice(deletedBefore)
+      .map((call) => call.body.message_id);
+    // The options screen goes, and so does every Were you a screen but the one the draft holds.
+    expect(deleted).toContain(screen);
+    expect(deleted).not.toContain(buttonId());
+    expect(deleted).toHaveLength(asks.length);
+  });
   it("gives the link as a reply to the last photo and removes the dialog", async () => {
     await toPhotos();
     await photo("a");
