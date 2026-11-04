@@ -45,8 +45,8 @@ describe("topHotspots", () => {
 });
 
 describe("runNightlyStats", () => {
-  // 1:00 in Dublin on 15 December 2026 (GMT).
-  const NOW = Date.UTC(2026, 11, 15, 1, 0);
+  // 3:00 in Dublin on 15 December 2026 (GMT).
+  const NOW = Date.UTC(2026, 11, 15, 3, 0);
   const line = (sqlite: ReturnType<typeof fakeD1>["sqlite"], createdAt: number, parking: number, address = "A") =>
     sqlite
       .prepare("INSERT INTO report_log (created_at, plate, parking, address, lat, lon) VALUES (?, 'p', ?, ?, 53.4, -6.1)")
@@ -54,8 +54,8 @@ describe("runNightlyStats", () => {
 
   it("counts the reports of yesterday in Dublin and how often each option was chosen", async () => {
     const { db, sqlite } = fakeD1();
-    line(sqlite, NOW - 25 * HOUR, 1); // 14 December 00:00 - yesterday
-    line(sqlite, NOW - 2 * HOUR, 1 | 4); // 14 December 23:00 - yesterday
+    line(sqlite, NOW - 25 * HOUR, 1); // 14 December 02:00 - yesterday
+    line(sqlite, NOW - 4 * HOUR, 1 | 4); // 14 December 23:00 - yesterday
     line(sqlite, NOW - 30 * 60 * 1000, 2); // today
     line(sqlite, NOW - 50 * HOUR, 64); // the day before yesterday
     await runNightlyStats(db, NOW);

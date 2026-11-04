@@ -38,11 +38,11 @@ export default {
     } catch (error) {
       console.error("scheduled: cleanup failed", error);
     }
-    // The cron runs at 0:00, 1:00, 5:00 and 6:00 UTC (Cloudflare cron is UTC only); the
-    // statistics are counted in the one of the first two that is 1:00 in Dublin and the form
+    // The cron runs at 2:00, 3:00, 5:00 and 6:00 UTC (Cloudflare cron is UTC only); the
+    // statistics are counted in the one of the first two that is 3:00 in Dublin and the form
     // check in the one of the last two that is 6:00 in Dublin, whatever the season.
     const dublinTime = dublinDateTime(event.scheduledTime).time;
-    if (dublinTime.startsWith("01:")) {
+    if (dublinTime.startsWith("03:")) {
       try {
         await runNightlyStats(env.DB, event.scheduledTime);
       } catch (error) {
