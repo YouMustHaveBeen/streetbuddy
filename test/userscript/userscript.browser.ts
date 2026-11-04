@@ -482,8 +482,12 @@ describe("bookmarklet built on the installation page", () => {
     });
     const guide = await openGuide(guideContext);
     expect(await guide.isVisible("#bookmark-ready")).toBe(false);
+    expect(await guide.isVisible("#bookmark-created")).toBe(false);
     await typeProfile(guide, TYPED);
     expect(await guide.isVisible("#bookmark-ready")).toBe(true);
+    expect(await guide.isVisible("#bookmark-created")).toBe(true);
+    // The other ways to add the bookmark stay folded until the person opens them.
+    expect(await guide.isVisible("#bookmark-link")).toBe(false);
     expect(await guide.isVisible("#bookmark-error")).toBe(false);
     await guide.getByRole("button", { name: "Скопировать закладку" }).click();
     await guide.locator("#bookmark-copied").waitFor();
@@ -497,6 +501,13 @@ describe("bookmarklet built on the installation page", () => {
     expect(code).toContain(JSON.stringify(origin + SCRIPT_PATH));
     // Nothing typed on the page is sent anywhere.
     expect(sent).toEqual([]);
+    // The phone way is shown first; the computer way replaces it when chosen.
+    await guide.click("summary");
+    expect(await guide.isVisible("[data-variant-section=phone]")).toBe(true);
+    expect(await guide.isVisible("[data-variant-section=computer]")).toBe(false);
+    await guide.getByRole("button", { name: "Настроить с компьютера" }).click();
+    expect(await guide.isVisible("[data-variant-section=phone]")).toBe(false);
+    expect(await guide.isVisible("[data-variant-section=computer]")).toBe(true);
     // A plain tap on the link runs nothing on the guide page.
     await guide.click("#bookmark-link");
     expect(await guide.evaluate("typeof globalThis.STREETBUDDY_PROFILE")).toBe("undefined");
@@ -542,6 +553,7 @@ describe("bookmarklet built on the installation page", () => {
     await typeProfile(page, { ...TYPED, ...change });
     expect(await page.isVisible("#bookmark-error")).toBe(true);
     expect(await page.isVisible("#bookmark-ready")).toBe(false);
+    expect(await page.isVisible("#bookmark-created")).toBe(false);
     await context.close();
   });
 });

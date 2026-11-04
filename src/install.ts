@@ -19,18 +19,23 @@ const PAGE_SCRIPT = `(function () {
   var SCRIPT_URL = location.origin + "${SCRIPT_PATH}";
   var CONTACT_METHODS = ["Email", "Phone Call", "Text Message"];
 
-  function select(button) {
+  // A row of choice buttons: the pressed one shows its sections (data-<key>-section) and hides the others.
+  function select(button, key) {
     var group = button.parentNode.querySelectorAll("button");
     for (var i = 0; i < group.length; i++) group[i].setAttribute("aria-pressed", String(group[i] === button));
-    var sections = document.querySelectorAll("[data-browser-section]");
+    var sections = document.querySelectorAll("[data-" + key + "-section]");
     for (var j = 0; j < sections.length; j++) {
-      sections[j].hidden = sections[j].getAttribute("data-browser-section") !== button.getAttribute("data-browser");
+      sections[j].hidden = sections[j].getAttribute("data-" + key + "-section") !== button.getAttribute("data-" + key);
     }
   }
-  var browsers = document.querySelectorAll("[data-browser]");
-  for (var k = 0; k < browsers.length; k++) {
-    browsers[k].addEventListener("click", function (event) { select(event.currentTarget); });
+  function bindChoice(key) {
+    var buttons = document.querySelectorAll("[data-" + key + "]");
+    for (var k = 0; k < buttons.length; k++) {
+      buttons[k].addEventListener("click", function (event) { select(event.currentTarget, key); });
+    }
   }
+  bindChoice("browser");
+  bindChoice("variant");
 
   function validProfile(form) {
     // form.elements, not the form itself: form.name is the name of the form.
@@ -50,6 +55,7 @@ const PAGE_SCRIPT = `(function () {
 
   var form = document.getElementById("bookmark-form");
   var error = document.getElementById("bookmark-error");
+  var created = document.getElementById("bookmark-created");
   var ready = document.getElementById("bookmark-ready");
   var link = document.getElementById("bookmark-link");
   var copied = document.getElementById("bookmark-copied");
@@ -60,6 +66,7 @@ const PAGE_SCRIPT = `(function () {
     event.preventDefault();
     var profile = validProfile(form);
     error.hidden = profile !== null;
+    created.hidden = profile === null;
     ready.hidden = profile === null;
     copied.hidden = true;
     copyFailed.hidden = true;
@@ -104,6 +111,11 @@ const PAGE = `<!doctype html>
   .choice button { font: inherit; padding: 8px 16px; margin-right: 8px; }
   .choice button[aria-pressed="true"] { font-weight: bold; }
   .install { display: inline-block; padding: 10px 20px; border: 2px solid; border-radius: 6px; font: inherit; font-weight: bold; text-decoration: none; }
+  /* The bookmark is a link, which would otherwise be blue unlike the real buttons. */
+  #bookmark-link { color: ButtonText; background-color: ButtonFace; }
+  .ok { color: #1a7f37; }
+  @media (prefers-color-scheme: dark) { .ok { color: #3fb950; } }
+  summary { cursor: pointer; font-weight: bold; margin: 1.5rem 0 0.75rem; }
   label { display: block; margin: 12px 0; }
   input, select { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: 6px; }
   [hidden] { display: none !important; }
@@ -185,6 +197,7 @@ const PAGE = `<!doctype html>
 <label>Адрес (Address)<input name="address" type="text"></label>
 <label>Как с вами связаться (How you wish to be contacted)<select name="contact"><option value="" selected></option><option>Email</option><option>Phone Call</option><option>Text Message</option></select></label>
 <p><button class="install" type="submit">Создать закладку</button></p>
+<p id="bookmark-created" class="ok" role="status" hidden>Закладка создана.</p>
 <p id="bookmark-error" role="alert" hidden>Заполните все поля. Email должен быть в виде name@example.com.</p>
 </form>
 
@@ -192,19 +205,26 @@ const PAGE = `<!doctype html>
 <h3>3. Добавьте закладку в Chrome</h3>
 <p>Нажмите кнопку «Скопировать закладку»:</p>
 <p><button class="install" type="button" id="bookmark-copy">Скопировать закладку</button></p>
-<p id="bookmark-copied" role="status" hidden>Закладка скопирована.</p>
-<p id="bookmark-copy-failed" role="alert" hidden>Скопировать не получилось. Скопируйте закладку кнопкой qwerty ниже.</p>
+<p id="bookmark-copied" class="ok" role="status" hidden>Закладка скопирована.</p>
+<p id="bookmark-copy-failed" role="alert" hidden>Скопировать не получилось. Попробуйте «Другие варианты добавления закладки» ниже.</p>
 <p>Добавьте эту страницу в закладки: нажмите «⋮» вверху справа и значок звезды ☆. Звезда станет закрашенной ★: нажмите «⋮» и ее еще раз, откроется окно закладки.</p>
 <p>В окне закладки в поле названия сотрите название и напишите qwerty. В поле адреса сотрите адрес этой страницы и вставьте скопированное (долгое нажатие на поле, «Вставить»). Вернитесь кнопкой «Назад»: закладка сохранится.</p>
+<details>
+<summary>Другие варианты добавления закладки</summary>
+<p class="choice"><button type="button" aria-pressed="true" data-variant="phone">Продолжить с телефона</button><button type="button" aria-pressed="false" data-variant="computer">Настроить с компьютера</button></p>
+<div data-variant-section="phone">
 <p>Если кнопка «Скопировать закладку» не сработала, долго нажмите на кнопку qwerty и выберите «Копировать адрес ссылки», затем добавьте закладку так же, как описано выше.</p>
-<p><a class="install" id="bookmark-link" href="#">qwerty</a></p>
-<p>Не открывайте закладку qwerty из списка закладок: так она откроется на пустой странице и не сработает. Ее запускают на форме репорта, как описано в шаге 4.</p>
-<p>Закладка содержит ваши личные данные, не пересылайте ее другим. Чтобы изменить данные, создайте закладку на этой странице заново и вставьте ее в закладку qwerty вместо прежней. Скрипт обновляется сам, ради этого закладку пересоздавать не нужно.</p>
-
-<h3>Если у вас есть компьютер</h3>
+</div>
+<div data-variant-section="computer" hidden>
 <p>Закладку можно добавить и с компьютера, если Chrome на компьютере и на телефоне подключен к одному аккаунту Google и в обоих включена синхронизация закладок (на телефоне: «⋮», «Настройки», ваш аккаунт, «Синхронизация», «Закладки»).</p>
 <p>Откройте это руководство в Chrome на компьютере, выберите Chrome, введите данные, нажмите «Создать закладку» и перетащите мышкой кнопку qwerty на панель закладок (если панели не видно, нажмите Ctrl+Shift+B, на Mac Cmd+Shift+B). Через несколько минут закладка появится в Chrome на телефоне.</p>
 <p>Закладка с вашими данными будет храниться в вашем аккаунте Google.</p>
+</div>
+<p><a class="install" id="bookmark-link" href="#">qwerty</a></p>
+</details>
+<p>Не открывайте закладку qwerty из списка закладок: так она откроется на пустой странице и не сработает. Ее запускают на форме репорта, как описано в шаге 4.</p>
+<p>Закладка содержит ваши личные данные, не пересылайте ее другим. Чтобы изменить данные, создайте закладку на этой странице заново и вставьте ее в закладку qwerty вместо прежней. Скрипт обновляется сам, ради этого закладку пересоздавать не нужно.</p>
+
 </div>
 
 <h3>4. Составьте тестовый репорт</h3>
