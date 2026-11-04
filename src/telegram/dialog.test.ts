@@ -95,7 +95,7 @@ afterEach(() => {
 });
 
 describe("/start", () => {
-  it("shows the /start text with the Location button", async () => {
+  it("shows the /start text and takes away the Location button", async () => {
     await text("/start");
     expect(lastSent().text).toBe(`StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
@@ -107,7 +107,7 @@ Third, to start a report, send location to the bot.
 This bot is not affiliated with An Garda Síochána.
 (A link to the Privacy Policy will be here.)
 © OpenStreetMap contributors`);
-    expect(lastSent().reply_markup.keyboard[0][0]).toEqual({ text: "Location", request_location: true });
+    expect(lastSent().reply_markup).toEqual({ remove_keyboard: true });
     expect(draft()).toBeUndefined();
   });
   it("sends the text as HTML without a link preview", async () => {
@@ -121,13 +121,101 @@ This bot is not affiliated with An Garda Síochána.
     const body = lastSent() as unknown as { parse_mode?: string };
     expect(body.parse_mode).toBeUndefined();
   });
-  it("keeps the draft in the middle of a report and moves its screen below", async () => {
+  it("stops a report in the middle of it without a word", async () => {
     await location();
     const before = buttonId();
     await text("/start");
-    expect(draft().step).toBe("address");
-    expect(sentTexts().at(-1)).toBe("12 Main Street, Clongriffin, D13");
+    expect(draft()).toBeUndefined();
     expect(called("deleteMessage").at(-1)?.body.message_id).toBe(before);
+    expect(sentTexts()).not.toContain("Report cancelled");
+    expect(lastSent().text).toContain("StreetBuddy turns a photo");
+  });
+});
+
+describe("the commands of the menu", () => {
+  it("/manual and /setup give a link each, as HTML without a preview", async () => {
+    await text("/manual");
+    expect(lastSent().text).toBe('<a href="https://site.example/manual">User manual</a>');
+    expect((lastSent() as unknown as { parse_mode: string }).parse_mode).toBe("HTML");
+    await text("/setup@streetbuddy_bot");
+    expect(lastSent().text).toBe('<a href="https://site.example/install">Set up guide</a>');
+  });
+  it("/hotspots says there are none yet", async () => {
+    await text("/hotspots");
+    expect(lastSent().text).toBe("No hotspots yet");
+  });
+  it("/hotspots lists the places with the number of reports", async () => {
+    sqlite.prepare("INSERT INTO hotspots (rank, address, reports) VALUES (1, '12 Main Street, D13', 7), (2, '3 Other Road, D13', 4)").run();
+    await text("/hotspots");
+    expect(lastSent().text).toBe("Hotspots\n1. 12 Main Street, D13 (7)\n2. 3 Other Road, D13 (4)");
+  });
+  it("/reportmap shows the four buttons, and each answers that the map will be here", async () => {
+    await text("/reportmap");
+    expect(lastSent().text).toBe("Report map");
+    expect(lastSent().reply_markup.inline_keyboard).toEqual([
+      [
+        { text: "Today", callback_data: "map:today" },
+        { text: "Week", callback_data: "map:week" },
+      ],
+      [
+        { text: "Last month", callback_data: "map:last_month" },
+        { text: "Month before", callback_data: "map:month_before" },
+      ],
+    ]);
+    await press("map:week", 5);
+    expect(lastSent().text).toBe("The map will be here");
+  });
+  it("every command stops a report in progress without a word", async () => {
+    for (const command of ["/manual", "/setup", "/hotspots", "/reportmap", "/feedback"]) {
+      await toPhotos();
+      const screen = buttonId();
+      await text(command);
+      expect(draft()?.step).not.toBe("photos");
+      expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
+      expect(sentTexts()).not.toContain("Report cancelled");
+      await press("cancel");
+    }
+  });
+});
+
+describe("feedback", () => {
+  const feedbackRows = () => sqlite.prepare("SELECT user_id, text FROM feedback").all();
+  it("asks for the text with Cancel and keeps it with the Telegram ID", async () => {
+    await text("/feedback");
+    expect(lastSent().text).toBe("Write your feedback");
+    expect(labels()).toEqual(["Cancel"]);
+    const screen = buttonId();
+    await text("It works");
+    expect(feedbackRows()).toEqual([{ user_id: USER, text: "It works" }]);
+    expect(lastSent().text).toBe("Thank you for your feedback");
+    expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
+    expect(draft()).toBeUndefined();
+  });
+  it("takes 1000 characters and refuses more, asking again", async () => {
+    await text("/feedback");
+    await text("x".repeat(1001));
+    expect(lastSent().text).toBe("The feedback must not be longer than 1000 characters");
+    expect(feedbackRows()).toEqual([]);
+    expect(draft().step).toBe("feedback_input");
+    await text("x".repeat(1000));
+    expect(feedbackRows()).toHaveLength(1);
+  });
+  it("Cancel removes the screen and says nothing", async () => {
+    await text("/feedback");
+    const screen = buttonId();
+    const sent = sentTexts().length;
+    await press("cancel");
+    expect(sentTexts().length).toBe(sent);
+    expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
+    expect(draft()).toBeUndefined();
+    expect(feedbackRows()).toEqual([]);
+  });
+  it("shows the screen again on anything but text, and a location starts a report", async () => {
+    await text("/feedback");
+    await photo();
+    expect(lastSent().text).toBe("Write your feedback");
+    await location();
+    expect(draft().step).toBe("address");
   });
 });
 
@@ -158,9 +246,9 @@ describe("location", () => {
   it("after two failures on a location takes the address as text", async () => {
     nominatim = () => new Response("", { status: 500 });
     await location();
-    expect(lastSent().text).toBe("Could not get the address. Please try again in a minute.");
+    expect(lastSent().text).toBe("Could not get the address. Please try again in a minute");
     await location();
-    expect(lastSent().text).toBe("Could not get the address. Please write it.");
+    expect(lastSent().text).toBe("Could not get the address. Please write it");
     await text("My street");
     expect(lastSent().text).toBe("My street");
     expect(draft().address).toBe("My street");
@@ -170,15 +258,15 @@ describe("location", () => {
     nominatim = () => new Response("", { status: 500 });
     await text("Main Street");
     await text("Main Street");
-    expect(lastSent().text).toBe("Please send the location.");
+    expect(lastSent().text).toBe("Please send the location");
     expect(draft().step).toBe("location");
   });
   it("edits the address, keeps the coordinates, limits the length", async () => {
     await location();
     await press("address_edit");
-    expect(lastSent().text).toBe("Write the correct address.");
+    expect(lastSent().text).toBe("12 Main Street, Clongriffin, D13\n\nWrite the correct address");
     await text("x".repeat(101));
-    expect(lastSent().text).toBe("The address must be 100 characters or less.");
+    expect(lastSent().text).toBe("The address must be 100 characters or less");
     await text("5 New Street");
     expect(draft().step).toBe("address");
     expect(draft().address).toBe("5 New Street");
@@ -192,11 +280,32 @@ describe("location", () => {
     expect(buttonId()).not.toBe(before);
     expect(JSON.parse(draft().cleanup)).toHaveLength(1);
   });
-  it("ignores a new location in the middle of a report and redraws", async () => {
+  it("starts the report over on a new location, on any step, and removes the old screen", async () => {
+    await toPhotos();
+    await photo();
+    const screen = buttonId();
+    nominatim = () =>
+      new Response(JSON.stringify({ lat: "53.4", lon: "-6.1", address: { house_number: "7", road: "Other Road", suburb: "Clongriffin" } }));
+    // Another point: the address of the first one is cached.
+    await location(latInside + 0.0002);
+    expect(draft().step).toBe("address");
+    expect(draft().photo_count).toBe(0);
+    expect(lastSent().text).toBe("7 Other Road, Clongriffin, D13");
+    expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
+    expect(sentTexts()).not.toContain("Report cancelled");
+  });
+  it("drops the old report on a new location outside the area", async () => {
     await toPhotos();
     await location(53.0, -7.0);
+    expect(draft()).toBeUndefined();
+    expect(lastSent().text).toBe("Sorry, this bot doesn't work in this area");
+  });
+  it("leaves the report as it is on a new location while the bot is off", async () => {
+    await toPhotos();
+    sqlite.prepare("UPDATE bot_switch SET enabled = 0").run();
+    await location();
     expect(draft().step).toBe("photos");
-    expect(lastSent().text).toBe("Now send photos, the first one with the number plate.");
+    expect(lastSent().text).toContain("report form has changed");
   });
 });
 
@@ -209,6 +318,7 @@ describe("photos", () => {
     expect(called("getFile")[0].body.file_id).toBe("a-m");
     expect(lastSent().text).toBe("Photo received. Send more photos or press Create report");
     expect(labels()).toEqual(["Create report", "Cancel"]);
+    expect(lastSent().reply_markup.inline_keyboard).toHaveLength(1);
     expect(draft().last_photo_id).toBe(nextMessage);
   });
   it("answers an album once", async () => {
@@ -270,8 +380,9 @@ describe("plate and time", () => {
   it("offers several plates and Add", async () => {
     run.mockImplementation(async () => ({ response: '["12-D-1", "13-D-2"]' }));
     await toPlateTime();
-    expect(lastSent().text).toBe("Several plates found. Choose one.");
+    expect(lastSent().text).toBe("Several plates found. Choose one");
     expect(labels()).toEqual(["12-D-1", "13-D-2", "Add", "Cancel"]);
+    expect(lastSent().reply_markup.inline_keyboard.map((line: { text: string }[]) => line.length)).toEqual([1, 1, 2]);
     await press("pick:1");
     expect(lastSent().text).toContain("Plate: 13-D-2");
   });
@@ -279,7 +390,7 @@ describe("plate and time", () => {
     run.mockImplementation(async () => ({ response: '["12-D-1", "13-D-2"]' }));
     await toPlateTime();
     await press("plate_add");
-    expect(lastSent().text).toBe("Write the plate number.");
+    expect(lastSent().text).toBe("Write the plate number");
     await text("99-D-1");
     expect(lastSent().text).toContain("Plate: 99-D-1");
   });
@@ -288,15 +399,16 @@ describe("plate and time", () => {
       throw new Error("limit");
     });
     await toPlateTime();
-    expect(lastSent().text).toBe("Could not read the plate. Please write it.");
+    expect(lastSent().text).toBe("Could not read the plate. Please write it");
     await text("1234567890123456");
-    expect(lastSent().text).toBe("The plate number is too long. Please write it again.");
+    expect(lastSent().text).toBe("The plate number is too long. Please write it again");
     await text("123456789012345");
     expect(lastSent().text).toContain("Plate: 123456789012345");
   });
   it("writes a typed plate in capitals with single spaces", async () => {
     await toPlateTime();
     await press("plate_edit");
+    expect(lastSent().text).toBe("12-D-3456\n\nWrite the plate number");
     await text(" 12-d   3456 ");
     expect(lastSent().text).toContain("Plate: 12-D 3456");
   });
@@ -304,7 +416,7 @@ describe("plate and time", () => {
     await toPlateTime();
     await press("plate_edit");
     await text("\u00a0");
-    expect(lastSent().text).toBe("Write the plate number.");
+    expect(lastSent().text).toBe("Write the plate number");
     expect(draft().step).toBe("plate_input");
   });
   it("changes only the time and rejects a wrong or future one", async () => {
@@ -312,11 +424,11 @@ describe("plate and time", () => {
     const original = draftTime(1793000000000);
     await toPlateTime();
     await press("time_edit");
-    expect(lastSent().text).toBe("Write the time as hh:mm.");
+    expect(lastSent().text).toBe(`${original}\n\nWrite the time as hh:mm`);
     await text("25:00");
-    expect(lastSent().text).toBe("Wrong time. Please write it again.");
+    expect(lastSent().text).toBe("Wrong time. Please write it again");
     await text("23:59");
-    expect(lastSent().text).toBe("Wrong time. Please write it again.");
+    expect(lastSent().text).toBe("Wrong time. Please write it again");
     await text(original);
     expect(draft().time).toBe(original);
     expect(lastSent().text).toContain(original);
@@ -339,7 +451,8 @@ describe("parking and the final message", () => {
   }
   it("toggles options without a new message", async () => {
     await toParking();
-    expect(lastSent().text).toBe("Choose one or more options, then press Done.");
+    expect(lastSent().text).toBe("Choose one or more options, then press Done");
+    expect(lastSent().reply_markup.inline_keyboard.at(-1).map((b: { text: string }) => b.text)).toEqual(["Done", "Cancel"]);
     const before = sentTexts().length;
     await press("opt:1");
     const edited = called("editMessageReplyMarkup").at(-1)?.body as any;
@@ -351,7 +464,7 @@ describe("parking and the final message", () => {
   it("requires one option", async () => {
     await toParking();
     await press("done");
-    expect(called("answerCallbackQuery").at(-1)?.body.text).toBe("Choose at least one option.");
+    expect(called("answerCallbackQuery").at(-1)?.body.text).toBe("Choose at least one option");
     expect(draft().step).toBe("parking");
   });
   it("asks Were you a after Done, with the six options of the form and Cancel", async () => {
@@ -362,12 +475,12 @@ describe("parking and the final message", () => {
     expect(draft().step).toBe("road_user");
     expect(lastSent().text).toBe("Were you a:");
     expect(labels()).toEqual([
-      "Cyclist",
-      "Driver",
-      "E-Scooter User, E-Moped User, E-Cyclist",
-      "Motorcyclist",
-      "Passenger",
       "Pedestrian",
+      "Passenger",
+      "Driver",
+      "Cyclist",
+      "Motorcyclist",
+      "E-Scooter User, E-Moped User, E-Cyclist",
       "Cancel",
     ]);
     expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
@@ -380,7 +493,7 @@ describe("parking and the final message", () => {
     expect(lastSent().text).toBe("Were you a:");
     await press("road:9");
     expect(draft().step).toBe("road_user");
-    expect(called("sendMessage").filter((call) => JSON.stringify(call.body).includes("Open form"))).toEqual([]);
+    expect(called("sendMessage").filter((call) => JSON.stringify(call.body).includes("Open report"))).toEqual([]);
   });
   it("cancels the report at the Were you a step", async () => {
     await toParking();
@@ -434,17 +547,15 @@ describe("parking and the final message", () => {
     const screen = buttonId();
     await press("done");
     const roadScreen = buttonId();
-    await press("road:5");
+    await press("road:0");
 
     const final = lastSent();
-    expect(final.text).toContain(
-      "Plate: 12-D-3456\nLocation: 12 Main Street, Clongriffin, D13\nDate and time: 26/10/2026 07:33\nDescription: ",
+    expect(final.text).toBe(
+      "Vehicle 12-D-3456\nparked on a footpath\nand blocking a private driveway\nat 12 Main Street, Clongriffin, D13\non 26/10/2026 at 07:33.\n\nOpen the link in an external browser.",
     );
-    expect(final.text).toContain("parked on a footpath and blocking a private driveway at");
-    expect(final.text).toContain("Open the link in an external browser.");
     expect(final.reply_parameters.message_id).toBe(lastPhoto);
     const button = final.reply_markup.inline_keyboard[0][0];
-    expect(button.text).toBe("Open form");
+    expect(button.text).toBe("Open report");
     const data = JSON.parse(atob(button.url.split("#sb=")[1].replace(/-/g, "+").replace(/_/g, "/")));
     expect(data.c).toBe("Dublin");
     expect(data.l).toContain(latInside.toFixed(5));
@@ -455,6 +566,25 @@ describe("parking and the final message", () => {
     expect(removed).not.toContain(screen);
     expect(removed).not.toContain(lastPhoto);
     expect(draft()).toBeUndefined();
+  });
+  it("writes a line of the report log without the Telegram ID, and survives a failed write", async () => {
+    await toParking();
+    await press("opt:1");
+    await press("done");
+    await press("road:0");
+    const rows = sqlite.prepare("SELECT * FROM report_log").all() as any[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ plate: "12-D-3456", parking: 2, address: "12 Main Street, Clongriffin, D13", lat: latInside, lon: lonInside });
+    expect(Object.keys(rows[0])).not.toContain("user_id");
+
+    sqlite.exec("DROP TABLE report_log");
+    await toParking();
+    await press("opt:1");
+    await press("done");
+    await press("road:0");
+    expect(lastSent().text).toContain("Open the link in an external browser.");
+    expect(draft()).toBeUndefined();
+    expect(console.error).toHaveBeenCalledWith("Writing the report log failed");
   });
   it("keeps the report when Telegram fails to send the final message", async () => {
     await toParking();
@@ -471,7 +601,7 @@ describe("parking and the final message", () => {
     await press("done");
     const screen = buttonId();
     await Promise.all([press("road:0", screen), press("road:1", screen)]);
-    expect(sentTexts().filter((value) => String(value).startsWith("Plate:") && String(value).includes("Description"))).toHaveLength(1);
+    expect(sentTexts().filter((value) => String(value).startsWith("Vehicle 12-D-3456"))).toHaveLength(1);
   });
   it("uses the options chosen up to the moment of Done", async () => {
     await toParking();
@@ -481,7 +611,7 @@ describe("parking and the final message", () => {
     await press("done");
     onAnswer = null;
     await press("road:0");
-    expect(lastSent().text).toContain("on a cycle track and on a grass margin");
+    expect(lastSent().text).toContain("parked on a cycle track\nand on a grass margin");
   });
   it("draws the options again when the last one was switched off at the moment of Done", async () => {
     await toParking();
@@ -496,9 +626,9 @@ describe("parking and the final message", () => {
     expect(called("sendMessage").length).toBe(sentBefore + 1);
     expect(buttonId()).not.toBe(screen);
     expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
-    expect(lastSent().text).toBe("Choose one or more options, then press Done.");
+    expect(lastSent().text).toBe("Choose one or more options, then press Done");
     expect(labels().some((label: string) => label.startsWith("✅"))).toBe(false);
-    expect(called("sendMessage").filter((call) => JSON.stringify(call.body).includes("Open form"))).toEqual([]);
+    expect(called("sendMessage").filter((call) => JSON.stringify(call.body).includes("Open report"))).toEqual([]);
     expect(called("deleteMessages")).toEqual([]);
   });
 });
@@ -521,10 +651,10 @@ describe("final message buttons", () => {
     return finalRow() as { chat_id: number; message_id: number; text: string };
   }
 
-  it("has Open form, then Cancel and Done, and keeps the report text without the last line", async () => {
+  it("has Open report, then Cancel and Done, and keeps the report text without the last line", async () => {
     const row = await toFinal();
     expect(lastSent().reply_markup.inline_keyboard.map((line: { text: string }[]) => line.map((b) => b.text))).toEqual([
-      ["Open form"],
+      ["Open report"],
       ["Cancel", "Done"],
     ]);
     expect(lastSent().text.endsWith(BODY_END)).toBe(true);
@@ -691,14 +821,14 @@ describe("cancel and old buttons", () => {
     await toPhotos();
     sqlite.prepare("UPDATE drafts SET created_at = 0").run();
     await photo();
-    expect(sentTexts().at(-1)).toBe("Now send photos, the first one with the number plate.");
+    expect(sentTexts().at(-1)).toBe("Now send photos, the first one with the number plate");
     expect(draft().photo_count).toBe(0);
   });
 });
 
 describe("bot switched off", () => {
   const FORM_CHANGED =
-    "The Traffic Watch report form has changed, so the bot is temporarily not working. The developer has been notified.";
+    "The Traffic Watch report form has changed, so the bot is temporarily not working. The developer has been notified";
   const switchOff = () => sqlite.prepare("UPDATE bot_switch SET enabled = 0").run();
 
   it("answers a location with the form-changed message and starts no report", async () => {
@@ -727,7 +857,7 @@ describe("bot switched off", () => {
     await text("hello");
     expect(sentTexts().at(-1)).toBe("12 Main Street, Clongriffin, D13");
     await press("address_ok");
-    expect(sentTexts().at(-1)).toBe("Now send photos, the first one with the number plate.");
+    expect(sentTexts().at(-1)).toBe("Now send photos, the first one with the number plate");
     expect(sentTexts()).not.toContain(FORM_CHANGED);
   });
   it("starts reports again when the bot is switched on", async () => {

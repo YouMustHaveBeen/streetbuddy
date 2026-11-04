@@ -14,7 +14,7 @@ export interface WebhookEnv {
 }
 
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
-const NOT_MEMBER_TEXT = "This bot is only for members of the group.";
+const NOT_MEMBER_TEXT = "This bot is only for members of the group";
 const MEMBER_STATUSES = ["creator", "administrator", "member"];
 const ADMIN_STATUSES = ["creator", "administrator"];
 

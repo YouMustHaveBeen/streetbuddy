@@ -6,6 +6,7 @@ export { reverseGeocode, searchAddress } from "./geocode";
 export { PLATE_MAX_LENGTH, recognizePlates } from "./plate";
 export {
   buildDescription,
+  buildDescriptionLines,
   buildLocation,
   buildReportLink,
   dublinDateTime,
@@ -19,3 +20,5 @@ export { checkForm } from "./formcheck";
 export { disableBot, enableBot, getSwitchStatus, isBotEnabled, recordFormCheck } from "./switch";
 export type { FormCheck } from "./formcheck";
 export type { FormCheckOutcome } from "./switch";
+export { getHotspots, logReport, REPORT_LOG_TTL_MS, runNightlyStats } from "./stats";
+export type { Hotspot, LoggedReport } from "./stats";

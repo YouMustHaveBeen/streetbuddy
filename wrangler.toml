@@ -12,9 +12,10 @@ binding = "DB"
 database_name = "streetbuddy"
 database_id = "77d5ecdb-e082-43e1-b4b7-de039a510f2f"
 
-# Daily form check: Cloudflare cron runs in UTC; the check itself runs only when it is 6:00 in Dublin
+# Nightly statistics and daily form check: Cloudflare cron runs in UTC; the statistics run only when
+# it is 1:00 in Dublin and the form check only when it is 6:00 in Dublin
 [triggers]
-crons = ["0 5 * * *", "0 6 * * *"]
+crons = ["0 0 * * *", "0 1 * * *", "0 5 * * *", "0 6 * * *"]
 
 # Address of this Worker; the bot builds the links to the manual and the installation guide from it.
 # It goes into an HTML link as it is, so it must not contain & < > or quotes.

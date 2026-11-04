@@ -44,7 +44,8 @@ export type Step =
   | "time_input"
   | "parking"
   | "road_user"
-  | "finishing";
+  | "finishing"
+  | "feedback_input"; // Not a report: waiting for the text of a feedback.
 
 export type DraftChanges = Partial<
   Pick<Draft, "step" | "failures" | "address" | "lat" | "lon" | "plate" | "time">

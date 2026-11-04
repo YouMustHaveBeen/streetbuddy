@@ -19,6 +19,7 @@ export function fakeD1() {
       execute: () => execute(sql, args),
       run: async () => execute(sql, args),
       first: async () => execute(sql, args).results[0] ?? null,
+      all: async () => execute(sql, args),
     });
     return { bind: (...args: unknown[]) => bound(args), ...bound([]) };
   };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDescription,
+  buildDescriptionLines,
   buildLocation,
   buildReportLink,
   dublinDateTime,
@@ -54,6 +55,42 @@ describe("buildDescription", () => {
     const text = buildDescription({ ...base, parking: PARKING_OPTIONS, address: "x".repeat(400) });
     expect(text).toHaveLength(300);
     expect(text.endsWith(" on 02/11/2026 at 13:02.")).toBe(true);
+  });
+});
+
+describe("buildDescriptionLines", () => {
+  const report = {
+    plate: "12-D-3456",
+    address: "1 Parkside Crescent, Belmayne, D13",
+    date: "04/11/2026",
+    time: "18:52",
+  };
+  it("puts every part on a line of its own", () => {
+    expect(buildDescriptionLines({ ...report, parking: ["on a grass margin"] })).toBe(
+      "Vehicle 12-D-3456\nparked on a grass margin\nat 1 Parkside Crescent, Belmayne, D13\non 04/11/2026 at 18:52.",
+    );
+  });
+  it("puts two options on two lines, the last one after an and", () => {
+    expect(buildDescriptionLines({ ...report, parking: ["on a footpath", "blocking a private driveway"] })).toBe(
+      "Vehicle 12-D-3456\nparked on a footpath\nand blocking a private driveway\nat 1 Parkside Crescent, Belmayne, D13\non 04/11/2026 at 18:52.",
+    );
+  });
+  it("puts commas after every option but the last two", () => {
+    const text = buildDescriptionLines({
+      ...report,
+      parking: ["on a cycle track", "on a footpath", "on a grass margin", "within 5m of a junction"],
+    });
+    expect(text.split("\n").slice(1, 5)).toEqual([
+      "parked on a cycle track,",
+      "on a footpath,",
+      "on a grass margin",
+      "and within 5m of a junction",
+    ]);
+  });
+  it("shows the same shortened address as the description", () => {
+    const long = { ...report, address: `${"Very Long Street Name ".repeat(12)}, D13`, parking: ["on a footpath" as const] };
+    const lines = buildDescriptionLines(long).split("\n");
+    expect(buildDescription(long)).toContain(lines[2].slice("at ".length));
   });
 });
 
