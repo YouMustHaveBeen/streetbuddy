@@ -2,6 +2,7 @@
 import { cleanupExpired } from "./cleanup";
 import { dublinDateTime } from "./core";
 import { runFormCheck } from "./dailyCheck";
+import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 import { handleWebhook } from "./telegram";
 
 export interface Env {
@@ -19,6 +20,8 @@ export default {
     if (request.method === "POST" && url.pathname === "/webhook") {
       return handleWebhook(request, env, ctx);
     }
+    if (request.method === "GET" && url.pathname === INSTALL_PATH) return installPage();
+    if (request.method === "GET" && url.pathname === SCRIPT_PATH) return userscriptFile();
     return new Response("Not Found", { status: 404 });
   },
 

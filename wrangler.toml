@@ -24,3 +24,9 @@ crons = ["0 5 * * *", "0 6 * * *"]
 type = "Text"
 globs = ["**/*.geojson"]
 fallthrough = true
+
+# Lets src/install.ts serve userscript/streetbuddy.user.js as text
+[[rules]]
+type = "Text"
+globs = ["**/*.user.js"]
+fallthrough = true

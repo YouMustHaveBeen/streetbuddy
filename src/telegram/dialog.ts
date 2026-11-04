@@ -13,6 +13,7 @@ import {
   reverseGeocode,
   searchAddress,
 } from "../core";
+import { INSTALL_URL } from "../install";
 import { callTelegram, downloadFile } from "./api";
 import {
   addCleanup,
@@ -76,6 +77,9 @@ This bot is not affiliated with An Garda Síochána.
 A report may require you to give a statement in court.
 
 To start a report, send your location.
+
+Здесь будет ссылка на Политику конфиденциальности
+Installation guide: ${INSTALL_URL}
 
 © OpenStreetMap contributors`;
 
