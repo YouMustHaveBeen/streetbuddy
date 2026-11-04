@@ -290,7 +290,7 @@ async function handleCommand(c: Context, command: string): Promise<void> {
     await send(c, pageLink(c.env.SITE_URL, INSTALL_PATH, "Set up guide"), undefined, true);
   } else if (command === "hotspots") {
     const hotspots = await getHotspots(c.env.DB);
-    const lines = hotspots.map((spot, i) => `${i + 1}. ${spot.address.replace(/\s+/g, " ")} (${spot.reports})`);
+    const lines = hotspots.map((spot, i) => `${i + 1}. ${spot.address.replace(/\s+/g, " ")} (${spot.plates})`);
     await send(c, hotspots.length === 0 ? NO_HOTSPOTS : `Hotspots\n${lines.join("\n")}`);
   } else if (command === "reportmap") {
     await send(c, REPORT_MAP, { inline_keyboard: REPORT_MAP_BUTTONS });

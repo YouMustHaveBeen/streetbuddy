@@ -26,11 +26,12 @@ CREATE TABLE daily_stats (
   option_6 INTEGER NOT NULL
 );
 
--- The top places of the log, replaced every night; rank 1 is the most frequent place.
+-- The top places of the log, replaced every night; rank 1 is the most frequent place and plates
+-- is the number of different plates reported there.
 CREATE TABLE hotspots (
   rank INTEGER PRIMARY KEY,
   address TEXT NOT NULL,
-  reports INTEGER NOT NULL
+  plates INTEGER NOT NULL
 );
 
 -- The feedback of the users with their Telegram ID, kept for 2 months.

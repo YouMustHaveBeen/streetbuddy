@@ -24,7 +24,7 @@ export interface LoggedReport {
 
 export interface Hotspot {
   address: string;
-  reports: number;
+  plates: number;
 }
 
 // One row for every link given; there is no Telegram ID in it. Returns the ID of the row.
@@ -40,7 +40,7 @@ export async function logReport(db: D1Database, report: LoggedReport): Promise<n
 
 export async function getHotspots(db: D1Database): Promise<Hotspot[]> {
   const { results } = await db
-    .prepare("SELECT address, reports FROM hotspots ORDER BY rank")
+    .prepare("SELECT address, plates FROM hotspots ORDER BY rank")
     .all<Hotspot>();
   return results;
 }
@@ -85,10 +85,10 @@ export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
       const [address] = [...counts.entries()].sort(
         (a, b) => b[1].count - a[1].count || b[1].latest - a[1].latest,
       )[0];
-      return { address, reports: new Set(group.map((row) => row.plate)).size };
+      return { address, plates: new Set(group.map((row) => row.plate)).size };
     })
-    .filter((spot) => spot.reports >= HOTSPOT_MIN_REPORTS)
-    .sort((a, b) => b.reports - a.reports)
+    .filter((spot) => spot.plates >= HOTSPOT_MIN_REPORTS)
+    .sort((a, b) => b.plates - a.plates)
     .slice(0, HOTSPOT_COUNT);
 }
 
@@ -117,7 +117,7 @@ export async function runNightlyStats(db: D1Database, now: number): Promise<void
       .bind(dayKey(yesterday), ofYesterday.length, ...perOption),
     db.prepare("DELETE FROM hotspots"),
     ...topHotspots(results).map((spot, i) =>
-      db.prepare("INSERT INTO hotspots (rank, address, reports) VALUES (?1, ?2, ?3)").bind(i + 1, spot.address, spot.reports),
+      db.prepare("INSERT INTO hotspots (rank, address, plates) VALUES (?1, ?2, ?3)").bind(i + 1, spot.address, spot.plates),
     ),
   ]);
 }

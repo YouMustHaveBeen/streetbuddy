@@ -148,12 +148,12 @@ describe("the commands of the menu", () => {
     expect(lastSent().text).toBe("No hotspots yet");
   });
   it("/hotspots lists the places with the number of reports", async () => {
-    sqlite.prepare("INSERT INTO hotspots (rank, address, reports) VALUES (1, '12 Main Street, D13', 7), (2, '3 Other Road, D13', 4)").run();
+    sqlite.prepare("INSERT INTO hotspots (rank, address, plates) VALUES (1, '12 Main Street, D13', 7), (2, '3 Other Road, D13', 4)").run();
     await text("/hotspots");
     expect(lastSent().text).toBe("Hotspots\n1. 12 Main Street, D13 (7)\n2. 3 Other Road, D13 (4)");
   });
   it("/hotspots shows an address with line breaks on one line", async () => {
-    sqlite.prepare("INSERT INTO hotspots (rank, address, reports) VALUES (1, '12 Main\nStreet', 7)").run();
+    sqlite.prepare("INSERT INTO hotspots (rank, address, plates) VALUES (1, '12 Main\nStreet', 7)").run();
     await text("/hotspots");
     expect(lastSent().text).toBe("Hotspots\n1. 12 Main Street (7)");
   });
