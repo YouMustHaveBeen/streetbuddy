@@ -10,6 +10,7 @@ export {
   buildReportLink,
   dublinDateTime,
   PARKING_OPTIONS,
+  ROAD_USER_TYPES,
 } from "./report";
 export type { Area } from "./area";
 export type { Place } from "./geocode";

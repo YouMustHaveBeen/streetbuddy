@@ -18,12 +18,20 @@ describe("installation guide page", () => {
     expect(html).toContain(`href="${SCRIPT_PATH}">Установить скрипт</a>`);
   });
 
-  it("offers only Android and Firefox", async () => {
+  it("offers Android with Firefox and Chrome, and no iPhone yet", async () => {
     const html = await installPage().text();
     expect(html).toContain('aria-pressed="true">Android</button>');
-    expect(html).toContain('aria-pressed="true">Firefox</button>');
+    expect(html).toContain('aria-pressed="true" data-browser="firefox">Firefox</button>');
+    expect(html).toContain('aria-pressed="false" data-browser="chrome">Chrome</button>');
     expect(html).toContain("disabled>iPhone</button>");
-    expect(html).toContain("disabled>Chrome</button>");
+    expect(html).toContain('<section data-browser-section="chrome" hidden>');
+  });
+
+  it("does not carry the userscript itself: the bookmarklet loads it from the Worker", async () => {
+    const html = await installPage().text();
+    expect(html).toContain(`location.origin + "${SCRIPT_PATH}"`);
+    expect(html).not.toContain("validateReport");
+    expect(html).not.toContain("==UserScript==");
   });
 
   it("does not use the word Garda or the letter yo", async () => {

@@ -15,6 +15,18 @@ export const PARKING_OPTIONS = [
 
 export type ParkingOption = (typeof PARKING_OPTIONS)[number];
 
+// The "Were you a" options exactly as the form shows them: the script finds them by this text.
+export const ROAD_USER_TYPES = [
+  "Cyclist",
+  "Driver",
+  "E-Scooter User, E-Moped User, E-Cyclist",
+  "Motorcyclist",
+  "Passenger",
+  "Pedestrian",
+] as const;
+
+export type RoadUserType = (typeof ROAD_USER_TYPES)[number];
+
 // Date as the form expects it (dd/mm/yyyy) and 24-hour time, both in Dublin time.
 export function dublinDateTime(timestampMs: number): { date: string; time: string } {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -76,12 +88,14 @@ export function buildReportLink(fields: {
   county: string;
   description: string;
   date: string;
+  roadUser: RoadUserType;
 }): string {
   const data = JSON.stringify({
     l: fields.location,
     c: fields.county,
     d: fields.description,
     t: fields.date,
+    r: fields.roadUser,
   });
   return `${FORM_URL}#sb=${base64url(data)}`;
 }

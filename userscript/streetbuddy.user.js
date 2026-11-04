@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreetBuddy
 // @namespace    streetbuddy
-// @version      1.0.1
+// @version      1.1.0
 // @description  Fills in the Garda Traffic Watch form from a StreetBuddy link
 // @match        https://www.garda.ie/en/trafficwatchreport*
 // @match        https://garda.ie/en/trafficwatchreport*
@@ -12,7 +12,7 @@
 // @grant        GM_setValue
 // ==/UserScript==
 
-// StreetBuddy form-filling script (userscript and bookmarklet are built from this file).
+// StreetBuddy form-filling script: the userscript and the bookmarklet both run this same file.
 // It never ticks the confirmation checkboxes, never presses "Click Here to Start" or
 // "Submit Report" and never touches the captcha: those steps always stay with the person.
 (function () {
@@ -74,14 +74,14 @@
     return typeof value === "string" && value.trim() !== "";
   }
 
-  // Returns the four known fields, or null when anything is missing, unknown or out of range.
+  // Returns the five known fields, or null when anything is missing, unknown or out of range.
   function validateReport(data) {
     if (!data || typeof data !== "object" || Array.isArray(data)) return null;
     const keys = Object.keys(data).sort().join(",");
-    if (keys !== "c,d,l,t") return null;
+    if (keys !== "c,d,l,r,t") return null;
     if (!isText(data.l) || !isText(data.c) || !isText(data.d) || !isRealDate(data.t)) return null;
-    if (data.d.length > DESCRIPTION_LIMIT) return null;
-    return { l: data.l, c: data.c, d: data.d, t: data.t };
+    if (data.d.length > DESCRIPTION_LIMIT || !ROAD_USER_TYPES.includes(data.r)) return null;
+    return { l: data.l, c: data.c, d: data.d, t: data.t, r: data.r };
   }
 
   // The data after "#" is removed from the address bar at once. It is kept in sessionStorage
@@ -134,18 +134,18 @@
   }
 
   // Returns the cleaned personal data, or null when anything is missing or not allowed.
+  // The page that builds the bookmarklet checks the data by the same rules.
   function validateProfile(data) {
     if (!data || typeof data !== "object") return null;
     if (!isText(data.name) || !isText(data.phone) || !isText(data.address)) return null;
     if (!isText(data.email) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) return null;
-    if (!CONTACT_METHODS.includes(data.contact) || !ROAD_USER_TYPES.includes(data.roadUser)) return null;
+    if (!CONTACT_METHODS.includes(data.contact)) return null;
     return {
       name: data.name.trim(),
       phone: data.phone.trim(),
       email: data.email.trim(),
       address: data.address.trim(),
       contact: data.contact,
-      roadUser: data.roadUser,
     };
   }
 
@@ -205,7 +205,6 @@
     const email = textInput("email");
     const address = textInput("text");
     const contact = selectInput(CONTACT_METHODS);
-    const roadUser = selectInput(ROAD_USER_TYPES);
     const save = document.createElement("button");
     save.type = "submit";
     save.textContent = "Save";
@@ -216,7 +215,6 @@
       field("Email", email),
       field("Address", address),
       field("How you wish to be contacted", contact),
-      field("Were you a", roadUser),
       save,
     );
     panel.addEventListener("submit", async (event) => {
@@ -227,7 +225,6 @@
         email: email.value,
         address: address.value,
         contact: contact.value,
-        roadUser: roadUser.value,
       });
       if (!profile) return;
       panel.remove();
@@ -275,7 +272,7 @@
       ["Location", report.l],
       ["County", report.c],
       ["Crime", CRIME_TYPE],
-      ["RoadUserType", profile.roadUser],
+      ["RoadUserType", report.r],
       ["CrimeDescription", report.d],
       ["crimeDate_1", report.t],
       ["UserName", profile.name],
