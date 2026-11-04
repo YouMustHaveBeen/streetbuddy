@@ -446,7 +446,6 @@ describe("bookmarklet built on the installation page", () => {
   async function openGuide(context: BrowserContext): Promise<Page> {
     const page = await context.newPage();
     await page.goto(origin + INSTALL_PATH);
-    await page.getByRole("button", { name: "Chrome" }).click();
     return page;
   }
 
@@ -458,20 +457,6 @@ describe("bookmarklet built on the installation page", () => {
     await page.selectOption("#bookmark-form [name=contact]", profile.contact);
     await page.getByRole("button", { name: "Создать закладку" }).click();
   }
-
-  it("switches the guide between Firefox and Chrome", async () => {
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    await page.goto(origin + INSTALL_PATH);
-    expect(await page.isVisible("[data-browser-section=firefox]")).toBe(true);
-    expect(await page.isVisible("[data-browser-section=chrome]")).toBe(false);
-    await page.getByRole("button", { name: "Chrome" }).click();
-    expect(await page.isVisible("[data-browser-section=firefox]")).toBe(false);
-    expect(await page.isVisible("[data-browser-section=chrome]")).toBe(true);
-    expect(await page.getAttribute("[data-browser=chrome]", "aria-pressed")).toBe("true");
-    expect(await page.getAttribute("[data-browser=firefox]", "aria-pressed")).toBe("false");
-    await context.close();
-  });
 
   it("copies a short bookmarklet, which loads the script and fills the form like the userscript", async () => {
     const guideContext = await browser.newContext();
