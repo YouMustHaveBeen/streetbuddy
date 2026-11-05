@@ -67,8 +67,8 @@ describe("draft ID", () => {
     expect(await toggleParking(db, USER, parking.newId, 1)).toBe(1);
 
     const road = await replaced("road_user");
-    expect(await startFinishing(db, USER, road.oldId)).toBeNull();
-    expect(await startFinishing(db, USER, road.newId)).toBe(0);
+    expect(await startFinishing(db, USER, road.oldId, "road_user")).toBeNull();
+    expect(await startFinishing(db, USER, road.newId, "road_user")).toBe(0);
   });
 
   it("does not let an old handler delete the new draft", async () => {

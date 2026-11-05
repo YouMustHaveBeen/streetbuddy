@@ -28,6 +28,8 @@ export interface Draft {
   plate: string | null;
   time: string | null;
   parking: number;
+  road_user: string | null;
+  editing: number;
   created_at: number;
 }
 
@@ -44,11 +46,18 @@ export type Step =
   | "time_input"
   | "parking"
   | "road_user"
+  | "review"
+  | "edit"
+  | "phone" // The phone is asked for before the first link.
   | "finishing"
-  | "feedback_input"; // Not a report: waiting for the text of a feedback.
+  | "feedback_input" // Not a report: waiting for the text of a feedback.
+  | "phone_choice"; // Not a report: /phone.
 
 export type DraftChanges = Partial<
-  Pick<Draft, "step" | "failures" | "address" | "lat" | "lon" | "plate" | "time">
+  Pick<
+    Draft,
+    "step" | "failures" | "address" | "lat" | "lon" | "plate" | "time" | "first_photo_at" | "road_user" | "editing"
+  >
 >;
 
 // Adds message IDs to the JSON list; ?N is the JSON array of the new ones.
@@ -209,13 +218,14 @@ export async function startFinishing(
   db: D1Database,
   userId: number,
   draftId: number,
+  from: Step,
 ): Promise<number | null> {
   const row = await db
     .prepare(
       `UPDATE drafts SET step = 'finishing'
-       WHERE user_id = ?1 AND draft_id = ?2 AND step = 'road_user' RETURNING parking`,
+       WHERE user_id = ?1 AND draft_id = ?2 AND step = ?3 RETURNING parking`,
     )
-    .bind(userId, draftId)
+    .bind(userId, draftId, from)
     .first<{ parking: number }>();
   return row?.parking ?? null;
 }
@@ -311,6 +321,30 @@ export async function cancelFinalMessage(db: D1Database, chatId: number, message
 
 export async function deleteFinalMessage(db: D1Database, chatId: number, messageId: number): Promise<void> {
   await deleteFinalStatement(db, chatId, messageId).run();
+}
+
+export interface OpenFinalMessage {
+  chat_id: number;
+  message_id: number;
+  text: string;
+}
+
+// Removes the stored texts of a chat and returns them.
+export async function takeChatFinalMessages(db: D1Database, chatId: number): Promise<OpenFinalMessage[]> {
+  const rows = await db
+    .prepare("DELETE FROM final_messages WHERE chat_id = ?1 RETURNING chat_id, message_id, text")
+    .bind(chatId)
+    .all<OpenFinalMessage>();
+  return rows.results;
+}
+
+// Removes the stored texts written at or before the cutoff and returns them.
+export async function takeExpiredFinalMessages(db: D1Database, cutoff: number): Promise<OpenFinalMessage[]> {
+  const rows = await db
+    .prepare("DELETE FROM final_messages WHERE created_at <= ?1 RETURNING chat_id, message_id, text")
+    .bind(cutoff)
+    .all<OpenFinalMessage>();
+  return rows.results;
 }
 
 export async function cachedPlates(db: D1Database, fileUniqueId: string): Promise<string[] | null> {

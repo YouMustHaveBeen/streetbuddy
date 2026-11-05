@@ -170,15 +170,15 @@ describe("membership", () => {
     const mock = telegram(memberOf("left"));
     sqlite
       .prepare(
-        "INSERT INTO drafts (user_id, step, prompt, buttons_message_id, created_at) VALUES (42, 'road_user', 'x', 5, ?)",
+        "INSERT INTO drafts (user_id, step, prompt, buttons_message_id, created_at) VALUES (42, 'review', 'x', 5, ?)",
       )
       .run(Date.now());
     const press = privateButton() as any;
-    press.callback_query.data = "road:Pedestrian";
+    press.callback_query.data = "review_ok";
     press.callback_query.message.message_id = 5;
     await send(press);
     expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery"]);
-    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "road_user" }]);
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "review" }]);
     expect(bodyOf(mock, "answerCallbackQuery")).toEqual({
       callback_query_id: "cb1",
       text: "This bot is only for members of the group",
@@ -195,7 +195,7 @@ describe("membership", () => {
     press.callback_query.data = "address_ok";
     press.callback_query.message.message_id = 5;
     await send(press);
-    expect(bodyOf(mock, "sendMessage").text).toBe("Now send photos, the first one with the number plate");
+    expect(bodyOf(mock, "sendMessage").text).toBe("Now send photos, the first one with the number plate, or write the plate number");
   });
   it("lets nobody in and says nothing when Telegram fails the check", async () => {
     const mock = telegram({ ok: false, error_code: 400 });
@@ -429,7 +429,7 @@ describe("which buttons check membership", () => {
       expect(methods(mock)).not.toContain("getChatMember");
     },
   );
-  it.each(["admin_on", "admin_off", "admin_feedback", "admin_statistics", "road:Pedestrian"])(
+  it.each(["admin_on", "admin_off", "admin_feedback", "admin_statistics", "review_ok", "phone:android"])(
     "checks on %s",
     async (data) => {
       const mock = telegram(memberOf("left"));

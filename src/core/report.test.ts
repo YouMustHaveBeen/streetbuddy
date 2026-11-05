@@ -4,6 +4,7 @@ import {
   buildDescriptionLines,
   buildLocation,
   buildReportLink,
+  buildRoadUserLine,
   dublinDateTime,
   PARKING_OPTIONS,
 } from "./report";
@@ -119,5 +120,16 @@ describe("buildReportLink", () => {
       t: fields.date,
       r: fields.roadUser,
     });
+  });
+});
+
+describe("buildRoadUserLine", () => {
+  it("writes the answer in lower case with a full stop", () => {
+    expect(buildRoadUserLine("Pedestrian")).toBe("I was a pedestrian.");
+  });
+  it("puts the other names of the scooter option in brackets", () => {
+    expect(buildRoadUserLine("E-Scooter User, E-Moped User, E-Cyclist")).toBe(
+      "I was a e-scooter user (e-moped user, e-cyclist).",
+    );
   });
 });

@@ -4,7 +4,7 @@ import { dublinDateTime, runNightlyStats } from "./core";
 import { runFormCheck } from "./dailyCheck";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
-import { handleWebhook } from "./telegram";
+import { closeExpiredFinalMessages, handleWebhook } from "./telegram";
 import type { Env } from "./env";
 
 export default {
@@ -23,6 +23,11 @@ export default {
 
   async scheduled(event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     // Runs on every cron trigger. A failure of any job here is only logged and the next job still runs.
+    try {
+      await closeExpiredFinalMessages(env);
+    } catch (error) {
+      console.error("scheduled: closing final messages failed", error);
+    }
     try {
       await cleanupExpired(env.DB);
     } catch (error) {
