@@ -18,5 +18,5 @@ export { checkForm } from "./formcheck";
 export { disableBot, enableBot, getSwitchStatus, isBotEnabled, recordFormCheck } from "./switch";
 export type { FormCheckOutcome } from "./switch";
 export { DAY_MS, REQUEST_TIMEOUT_MS, sleep } from "./shared";
-export { getHotspots, logReport, runNightlyStats } from "./stats";
+export { dublinDay, getHotspots, logReport, runNightlyStats } from "./stats";
 export type { LoggedReport } from "./stats";

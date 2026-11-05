@@ -523,6 +523,14 @@ describe("bookmarklet built on the installation page", () => {
       ContactMethod: TYPED.contact,
     });
     expect(await page.locator("[role=alert]").count()).toBe(0);
+
+    // Run as a link, the way Chrome runs a bookmark: the script is loaded and the page stays.
+    const viaLink = await context.newPage();
+    await viaLink.goto(linkTo(ordinaryReport()));
+    await viaLink.evaluate(`location.href = ${JSON.stringify(bookmark)}`);
+    await viaLink.waitForFunction("globalThis.STREETBUDDY_PROFILE !== undefined");
+    await viaLink.waitForFunction("!location.hash.startsWith('#sb=')");
+    expect(await viaLink.locator("#startBtn").count()).toBe(1);
     await context.close();
   });
 

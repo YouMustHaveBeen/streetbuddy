@@ -5,7 +5,7 @@ import { notifyFormChanged } from "./telegram";
 
 type CheckEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN" | "OWNER_TELEGRAM_ID" | "GROUP_ID">;
 
-// When the form has changed, turns the bot off and tells the owner and the group once.
+// When the form has changed, turns the bot off and sends one alert to the owner and the group.
 // The result is recorded last.
 export async function runFormCheck(env: CheckEnv): Promise<void> {
   const result = await checkForm();

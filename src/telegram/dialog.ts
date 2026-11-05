@@ -445,7 +445,7 @@ async function showPlateTime(
   changes: DraftChanges,
   cleanupIds: number[] = [],
 ): Promise<void> {
-  const next = { ...draft, ...changes };
+  const next = { ...draft, plate: changes.plate ?? draft.plate, time: changes.time ?? draft.time };
   const moment = reportMoment(next);
   const text = `Plate: ${next.plate}\nTime: ${moment.date} ${moment.time}`;
   await show(c, draft, text, { ...changes, step: "plate_time" }, cleanupIds);
@@ -701,8 +701,9 @@ export async function handleButton(
   userId: number,
   chatId: number,
   query: { id: string; data?: string; messageId?: number },
+  defer: Defer,
 ): Promise<void> {
-  const c: Context = { env, userId, chatId, defer: () => {} };
+  const c: Context = { env, userId, chatId, defer };
   const data = query.data ?? "";
   const token = env.TELEGRAM_BOT_TOKEN;
   // Done gets its answer below, with a pop-up when needed; every other button is answered

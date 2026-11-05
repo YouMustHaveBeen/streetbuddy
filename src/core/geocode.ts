@@ -1,14 +1,14 @@
 // Address lookup through OpenStreetMap Nominatim, cached in D1.
 import { areaBounds } from "./area";
 import type { Area } from "./area";
-import { REQUEST_TIMEOUT_MS, sleep, TWO_MONTHS_MS } from "./shared";
+import { DAY_MS, REQUEST_TIMEOUT_MS, sleep } from "./shared";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org";
 const USER_AGENT = "StreetBuddy (t.me/streetbuddy_bot)";
 const MIN_INTERVAL_MS = 1000;
 
 // How long a cached address is kept; older rows are removed by the scheduled cleanup.
-export const GEOCODE_CACHE_TTL_MS = TWO_MONTHS_MS;
+export const GEOCODE_CACHE_TTL_MS = 60 * DAY_MS;
 
 const EIRCODE = /^([AC-FHKNPRTV-Y]\d{2}|D6W)\s?([0-9AC-FHKNPRTV-Y]{4})$/i;
 

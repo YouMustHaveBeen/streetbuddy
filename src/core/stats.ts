@@ -28,6 +28,9 @@ interface Hotspot {
 // "dd/mm/yyyy" of the Dublin date becomes the key of daily_stats and of report_log.day.
 const dayKey = (date: string) => date.split("/").reverse().join("-");
 
+// The Dublin date of a moment as yyyy-mm-dd.
+export const dublinDay = (timestampMs: number): string => dayKey(dublinDateTime(timestampMs).date);
+
 // One row for every link given; there is no Telegram ID in it. Returns the ID of the row.
 export async function logReport(db: D1Database, report: LoggedReport): Promise<number> {
   const now = Date.now();
@@ -35,7 +38,7 @@ export async function logReport(db: D1Database, report: LoggedReport): Promise<n
     .prepare(
       "INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )
-    .bind(now, dayKey(dublinDateTime(now).date), report.plate, report.parking, report.address, report.lat, report.lon)
+    .bind(now, dublinDay(now), report.plate, report.parking, report.address, report.lat, report.lon)
     .run();
   return result.meta.last_row_id;
 }
@@ -59,7 +62,7 @@ interface PlaceRow {
 // points. Rows are put into a grid of cells at least the radius wide, and a row is compared
 // only with the rows of its own and the eight neighbouring cells. A group is a tree of row
 // numbers, with parent[i] pointing towards its root. Groups come in the order of their last rows.
-function groupPlaces(rows: readonly PlaceRow[]): PlaceRow[][] {
+export function groupPlaces(rows: readonly PlaceRow[]): PlaceRow[][] {
   const parent = rows.map((_, i) => i);
   const find = (start: number): number => {
     let i = start;
@@ -128,8 +131,9 @@ export async function runNightlyStats(db: D1Database, now: number): Promise<void
     .prepare("SELECT plate, address, lat, lon, parking, day, created_at FROM report_log ORDER BY created_at")
     .all<PlaceRow & { parking: number; day: string }>();
 
-  const yesterday = dayKey(dublinDateTime(now - DAY_MS).date);
-  const ofYesterday = results.filter((row) => row.day === yesterday);
+  const yesterday = dublinDay(now - DAY_MS);
+  // A row written between the migration and the deploy has no day yet.
+  const ofYesterday = results.filter((row) => (row.day || dublinDay(row.created_at)) === yesterday);
   const perOption = PARKING_OPTIONS.map((_, i) => ofYesterday.filter((row) => row.parking & (1 << i)).length);
 
   await db.batch([

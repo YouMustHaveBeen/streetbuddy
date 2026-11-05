@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fakeD1 } from "../../test/fakeD1";
-import { distanceM } from "./area";
-import { dublinDateTime } from "./report";
-import { getHotspots, HOTSPOT_MIN_REPORTS, logReport, runNightlyStats, topHotspots } from "./stats";
+import { distanceM, M_PER_DEG } from "./area";
+import { dublinDay, getHotspots, groupPlaces, HOTSPOT_MIN_REPORTS, logReport, runNightlyStats, topHotspots } from "./stats";
 
 const HOUR = 60 * 60 * 1000;
 // Around 53.4, -6.1: 0.0001 degrees of latitude are about 11 m.
@@ -19,6 +18,31 @@ const row = (address: string, createdAt: number, dLat = 0, plate = `P${++plateNu
 // n rows of one place, one minute apart.
 const many = (n: number, address: string, dLat = 0, from = 1) =>
   Array.from({ length: n }, (_, i) => row(address, from + i, dLat));
+
+// A simple generator with a fixed start, so that the tests repeat.
+const seeded = (start: number) => {
+  let state = start;
+  return () => {
+    state = (state * 1103515245 + 12345) & 0x7fffffff;
+    return state / 0x7fffffff;
+  };
+};
+
+type Located = { lat: number; lon: number; created_at: number };
+
+// The way places were grouped before the grid: every row against every group.
+function groupsByFullComparison<T extends Located>(rows: readonly T[]): T[][] {
+  const groups: T[][] = [];
+  for (const point of rows) {
+    const near = groups.filter((g) => g.some((r) => distanceM(r.lat, r.lon, point.lat, point.lon) <= 50));
+    for (const g of near) groups.splice(groups.indexOf(g), 1);
+    groups.push([...near.flat(), point]);
+  }
+  return groups;
+}
+
+// The groups as lists of row numbers.
+const compositions = (groups: Located[][]) => groups.map((g) => g.map((r) => r.created_at).sort((a, b) => a - b));
 
 describe("topHotspots", () => {
   it("counts places within 50 m as one and shows the address that occurs most often", () => {
@@ -67,28 +91,60 @@ describe("topHotspots", () => {
     const rows = [...many(HOTSPOT_MIN_REPORTS - 1, "Few"), ...many(HOTSPOT_MIN_REPORTS, "Enough", 0.002)];
     expect(topHotspots(rows)).toEqual([{ address: "Enough", plates: HOTSPOT_MIN_REPORTS }]);
   });
-  it("finds the same places as comparing every row with every other", () => {
-    const rows = Array.from({ length: 400 }, (_, i) => ({
-      plate: `P${i}`,
-      address: `A${i % 7}`,
-      lat: 53.4 + ((i * 7919) % 400) * 0.00002,
-      lon: -6.15 + ((i * 104729) % 400) * 0.00003,
-      created_at: i,
-    }));
-    const groups: (typeof rows)[] = [];
-    for (const point of rows) {
-      const near = groups.filter((g) => g.some((r) => distanceM(r.lat, r.lon, point.lat, point.lon) <= 50));
-      for (const g of near) groups.splice(groups.indexOf(g), 1);
-      groups.push([...near.flat(), point]);
+  it("gives the same address and count for every place of clustered data", () => {
+    const rnd = seeded(11);
+    const rows: ReturnType<typeof row>[] = [];
+    // Ten places 1 km apart, each with a minority address; the place with the number c has 10 + 3c plates.
+    for (let c = 0; c < 10; c++) {
+      for (let i = 0; i < 10 + 3 * c; i++) {
+        rows.push({
+          plate: `C${c}-${i}`,
+          address: i % 5 === 4 ? `Other ${c}` : `Place ${c}`,
+          lat: 53.4 + c * 0.009 + rnd() * 0.00015,
+          lon: -6.15 + c * 0.015 + rnd() * 0.0002,
+          created_at: rows.length + 1,
+        });
+      }
     }
-    const sizes = groups.map((g) => g.length).sort((a, b) => b - a);
-    const expected = groups
-      .map((g) => g.length)
-      .filter((n) => n >= HOTSPOT_MIN_REPORTS)
-      .sort((a, b) => b - a)
-      .slice(0, 5);
-    expect(topHotspots(rows).map((spot) => spot.plates)).toEqual(expected);
-    expect(sizes.length).toBeGreaterThan(1);
+    const order = seeded(5);
+    const mixed = rows.map((r) => ({ ...r, key: order() })).sort((a, b) => a.key - b.key).map(({ key, ...r }, i) => ({ ...r, created_at: i + 1 }));
+    expect(topHotspots(mixed)).toEqual([
+      { address: "Place 9", plates: 37 },
+      { address: "Place 8", plates: 34 },
+      { address: "Place 7", plates: 31 },
+      { address: "Place 6", plates: 28 },
+      { address: "Place 5", plates: 25 },
+    ]);
+  });
+  it("puts rows into the same groups as comparing every row with every other", () => {
+    for (const [seed, count, latSpan, lonSpan] of [[1, 500, 0.004, 0.006], [2, 600, 0.002, 0.003], [3, 300, 0.01, 0.02]]) {
+      const rnd = seeded(seed);
+      const rows = Array.from({ length: count }, (_, i) => ({
+        plate: `P${i}`,
+        address: "A",
+        lat: 53.4 + rnd() * latSpan,
+        lon: -6.15 + rnd() * lonSpan,
+        created_at: i + 1,
+      }));
+      expect(compositions(groupPlaces(rows))).toEqual(compositions(groupsByFullComparison(rows)));
+    }
+  });
+  it("joins two rows 49.9 m apart and keeps two rows 50.1 m apart apart, in any direction and across cell borders", () => {
+    const latStep = 50 / M_PER_DEG;
+    const cosLat = Math.cos((53.4 * Math.PI) / 180);
+    const edge = Math.ceil(53.4 / latStep) * latStep - 1e-9;
+    for (const [distance, groups] of [[49.9, 1], [50.1, 2]]) {
+      const pairs = [
+        [{ lat: 53.4, lon: -6.1 }, { lat: 53.4 + distance / M_PER_DEG, lon: -6.1 }],
+        [{ lat: 53.4, lon: -6.1 }, { lat: 53.4, lon: -6.1 + distance / (M_PER_DEG * cosLat) }],
+        [{ lat: edge, lon: -6.1 }, { lat: edge + distance / M_PER_DEG, lon: -6.1 }],
+        [{ lat: 53.4, lon: -6.1 }, { lat: 53.4 - distance / M_PER_DEG, lon: -6.1 }],
+      ];
+      for (const [a, b] of pairs) {
+        const rows = [a, b].map((p, i) => ({ plate: `P${i}`, address: "A", ...p, created_at: i + 1 }));
+        expect(groupPlaces(rows)).toHaveLength(groups);
+      }
+    }
   });
   it("gives nothing for an empty log", () => {
     expect(topHotspots([])).toEqual([]);
@@ -101,7 +157,7 @@ describe("runNightlyStats", () => {
   const line = (sqlite: ReturnType<typeof fakeD1>["sqlite"], createdAt: number, parking: number, address = "A") =>
     sqlite
       .prepare("INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?, ?, ?, ?, ?, 53.4, -6.1)")
-      .run(createdAt, dublinDateTime(createdAt).date.split("/").reverse().join("-"), `P${createdAt}`, parking, address);
+      .run(createdAt, dublinDay(createdAt), `P${createdAt}`, parking, address);
 
   it("counts the reports of yesterday in Dublin and how often each option was chosen", async () => {
     const { db, sqlite } = fakeD1();
@@ -127,6 +183,18 @@ describe("runNightlyStats", () => {
     expect(await getHotspots(db)).toEqual([]);
   });
 
+  it("counts a row that has no day yet by its time", async () => {
+    const { db, sqlite } = fakeD1();
+    line(sqlite, NOW - 4 * HOUR, 1);
+    sqlite
+      .prepare("INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?, '', 'P', 2, 'A', 53.4, -6.1)")
+      .run(NOW - 5 * HOUR);
+    await runNightlyStats(db, NOW);
+    expect(sqlite.prepare("SELECT reports, option_0, option_1 FROM daily_stats").all()).toEqual([
+      { reports: 2, option_0: 1, option_1: 1 },
+    ]);
+  });
+
   it("writes a day with no reports as zeros", async () => {
     const { db, sqlite } = fakeD1();
     await runNightlyStats(db, NOW);
@@ -141,7 +209,7 @@ describe("logReport", () => {
     const rows = sqlite.prepare("SELECT * FROM report_log").all() as Record<string, unknown>[];
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(id);
-    expect(rows[0].day).toBe(dublinDateTime(rows[0].created_at as number).date.split("/").reverse().join("-"));
+    expect(rows[0].day).toBe(dublinDay(rows[0].created_at as number));
     expect(Object.keys(rows[0]).sort()).toEqual(["address", "created_at", "day", "id", "lat", "lon", "parking", "plate"]);
   });
 });

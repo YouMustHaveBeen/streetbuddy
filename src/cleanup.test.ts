@@ -1,4 +1,4 @@
-import { dublinDateTime } from "./core";
+import { dublinDay } from "./core";
 import { describe, expect, it, vi } from "vitest";
 import { fakeD1 } from "../test/fakeD1";
 import { cleanupExpired } from "./cleanup";
@@ -100,7 +100,7 @@ describe("scheduled", () => {
   const logLine = (sqlite: ReturnType<typeof fakeD1>["sqlite"], createdAt: number) =>
     sqlite
       .prepare("INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?, ?, 'p', 1, 'a', 53.4, -6.1)")
-      .run(createdAt, dublinDateTime(createdAt).date.split("/").reverse().join("-"));
+      .run(createdAt, dublinDay(createdAt));
 
   it("counts the statistics in the run that is 3:00 in Dublin, winter or summer", async () => {
     for (const run of [NIGHT_WINTER, NIGHT_SUMMER]) {

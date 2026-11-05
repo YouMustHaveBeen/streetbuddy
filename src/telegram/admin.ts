@@ -63,15 +63,14 @@ export async function handleAdminButton(
   chatId: number,
   query: { id: string; data?: string; messageId?: number },
 ): Promise<void> {
-  await answerButton(env.TELEGRAM_BOT_TOKEN, query.id);
+  const answered = answerButton(env.TELEGRAM_BOT_TOKEN, query.id);
   // These two buttons only get their answer for now.
-  if (query.data === FEEDBACK || query.data === STATISTICS) return;
-  if (query.data === SWITCH_ON) {
-    await enableBot(env.DB);
-  } else {
-    await disableBot(env.DB);
+  if (query.data === FEEDBACK || query.data === STATISTICS) {
+    await answered;
+    return;
   }
-  const messageId = await sendScreen(env, chatId);
+  await (query.data === SWITCH_ON ? enableBot(env.DB) : disableBot(env.DB));
+  const [messageId] = await Promise.all([sendScreen(env, chatId), answered]);
   if (messageId !== null && query.messageId !== undefined) {
     await deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, query.messageId);
   }

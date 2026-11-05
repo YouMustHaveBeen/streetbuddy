@@ -396,3 +396,27 @@ describe("/admin", () => {
     expect(enabled()).toBe(1);
   });
 });
+
+describe("which buttons check membership", () => {
+  const press = (updateId: number, data: string) => {
+    const update = privateButton(updateId) as any;
+    update.callback_query.data = data;
+    return update;
+  };
+  it.each(["cancel", "address_ok", "opt:0", "done", "create", "pick:0", "plate_add", "map:today", "final_cancel", "final_done"])(
+    "does not check on %s",
+    async (data) => {
+      const mock = telegram(memberOf("left"));
+      await send(press(1, data));
+      expect(methods(mock)).not.toContain("getChatMember");
+    },
+  );
+  it.each(["admin_on", "admin_off", "admin_feedback", "admin_statistics", "road:Pedestrian"])(
+    "checks on %s",
+    async (data) => {
+      const mock = telegram(memberOf("left"));
+      await send(press(1, data));
+      expect(methods(mock)[0]).toBe("getChatMember");
+    },
+  );
+});

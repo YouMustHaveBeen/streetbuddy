@@ -107,7 +107,7 @@
     }
   }
 
-  // Drops the link data when a form is sent, except the panel for personal data.
+  // Drops the link data on submit events, except for the panel for personal data.
   function forgetReport(event) {
     if (event.target && event.target.id === PANEL_ID) return;
     try {

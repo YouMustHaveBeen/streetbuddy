@@ -127,11 +127,13 @@ async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionCont
 
     step = "dialog";
     if (incoming.callbackQueryId) {
-      await handleButton(env, incoming.userId, incoming.chatId, {
-        id: incoming.callbackQueryId,
-        data,
-        messageId,
-      });
+      await handleButton(
+        env,
+        incoming.userId,
+        incoming.chatId,
+        { id: incoming.callbackQueryId, data, messageId },
+        (work) => ctx.waitUntil(work),
+      );
     } else {
       await handleMessage(env, incoming.userId, incoming.chatId, update.message as Message, (work) => ctx.waitUntil(work));
     }

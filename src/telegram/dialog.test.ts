@@ -5,7 +5,9 @@ import { handleButton, handleMessage } from "./dialog";
 import type { DialogEnv, Message } from "./dialog";
 
 const USER = 42;
-const defer = (work: Promise<unknown>) => void work;
+let deferred: Promise<unknown>[] = [];
+const defer = (work: Promise<unknown>) => void deferred.push(work);
+const settle = () => Promise.all(deferred.splice(0));
 const [lonInside, latInside] = (() => {
   const lons = district.ring.map(([lon]) => lon);
   const lats = district.ring.map(([, lat]) => lat);
@@ -30,9 +32,10 @@ const draft = () => sqlite.prepare("SELECT * FROM drafts WHERE user_id = ?").get
 const buttonId = () => (draft()?.buttons_message_id ?? 0) as number;
 const labels = () => lastSent().reply_markup.inline_keyboard.flat().map((b: { text: string }) => b.text);
 
-const message = (fields: Partial<Message>) => {
+const message = async (fields: Partial<Message>) => {
   nextMessage += 1;
-  return handleMessage(env, USER, USER, { message_id: nextMessage, date: 1793000000, ...fields }, defer);
+  await handleMessage(env, USER, USER, { message_id: nextMessage, date: 1793000000, ...fields }, defer);
+  await settle();
 };
 const location = (latitude = latInside, longitude = lonInside) => message({ location: { latitude, longitude } });
 const text = (value: string) => message({ text: value });
@@ -45,8 +48,10 @@ const photo = (id = "a", extra: Partial<Message> = {}) =>
     ],
     ...extra,
   });
-const press = (data: string, messageId = buttonId()) =>
-  handleButton(env, USER, USER, { id: "q", data, messageId });
+const press = async (data: string, messageId = buttonId()) => {
+  await handleButton(env, USER, USER, { id: "q", data, messageId }, defer);
+  await settle();
+};
 
 async function toPhotos() {
   await location();
@@ -64,6 +69,7 @@ beforeEach(() => {
   run = vi.fn(async () => ({ response: '["12-D-3456"]' }));
   env = { AI: { run } as unknown as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", SITE_URL: "https://site.example" };
   calls = [];
+  deferred = [];
   nextId = 1000;
   nextMessage = 0;
   failSend = false;
@@ -352,6 +358,7 @@ describe("photos", () => {
     const size = (id: string) => [{ file_id: id, file_unique_id: `u-${id}`, width: 1280, height: 960 }];
     await handleMessage(env, USER, USER, { message_id: 501, date: 1793000100, photo: size("later") }, defer);
     await handleMessage(env, USER, USER, { message_id: 500, date: 1793000000, photo: size("earlier") }, defer);
+    await settle();
     expect(draft().first_file_id).toBe("earlier");
     expect(draft().first_photo_at).toBe(1793000000000);
     expect(draft().last_photo_id).toBe(501);
@@ -660,6 +667,15 @@ describe("final message buttons", () => {
     await press("road:Pedestrian");
     return finalRow() as { chat_id: number; message_id: number; text: string };
   }
+
+  it("keeps the callback_data of every button of the Were you a screen within 64 bytes", async () => {
+    await toParking();
+    await press("opt:0");
+    await press("done");
+    const data = lastSent().reply_markup.inline_keyboard.flat().map((b: { callback_data: string }) => b.callback_data);
+    expect(data).toHaveLength(7);
+    for (const value of data) expect(Buffer.byteLength(value)).toBeLessThanOrEqual(64);
+  });
 
   it("has Open report, then Cancel and Done, and keeps the report text without the last line", async () => {
     const row = await toFinal();
