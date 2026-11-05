@@ -38,7 +38,26 @@ function respondWith(body: unknown, status = 200) {
 
 const result = (address: Record<string, string>) => ({ lat: "53.405", lon: "-6.16", address });
 
+const deferred: Promise<unknown>[] = [];
+const defer = (work: Promise<unknown>) => void deferred.push(work);
+
 let db: D1Database;
+
+// The cache write goes on in the background, so each call waits for it.
+async function reverse(lat: number, lon: number) {
+  try {
+    return await reverseGeocode(db, area, lat, lon, defer);
+  } finally {
+    await Promise.all(deferred.splice(0));
+  }
+}
+async function search(text: string) {
+  try {
+    return await searchAddress(db, area, text, defer);
+  } finally {
+    await Promise.all(deferred.splice(0));
+  }
+}
 beforeEach(() => {
   db = fakeD1();
 });
@@ -50,15 +69,15 @@ afterEach(() => {
 describe("reverseGeocode", () => {
   it("keeps a full Eircode", async () => {
     respondWith(result({ house_number: "12", road: "Main Street", suburb: "Clongriffin", postcode: "d13x1y2" }));
-    expect(await reverseGeocode(db, area, 53.405, -6.16)).toBe("12 Main Street, Clongriffin, D13 X1Y2");
+    expect(await reverse(53.405, -6.16)).toBe("12 Main Street, Clongriffin, D13 X1Y2");
   });
   it("falls back to the postal district", async () => {
     respondWith(result({ road: "Main Street", suburb: "Clongriffin", postcode: "Dublin 13" }));
-    expect(await reverseGeocode(db, area, 53.405, -6.16)).toBe("Main Street, Clongriffin, D13");
+    expect(await reverse(53.405, -6.16)).toBe("Main Street, Clongriffin, D13");
   });
   it("sends the User-Agent and rounded coordinates", async () => {
     const mock = respondWith(result({ road: "Main Street" }));
-    await reverseGeocode(db, area, 53.405123, -6.160123);
+    await reverse(53.405123, -6.160123);
     const [url, init] = mock.mock.calls[0];
     expect(url.searchParams.get("lat")).toBe("53.4051");
     expect(url.searchParams.get("lon")).toBe("-6.1601");
@@ -66,26 +85,26 @@ describe("reverseGeocode", () => {
   });
   it("serves nearby points from the cache", async () => {
     const mock = respondWith(result({ road: "Main Street" }));
-    await reverseGeocode(db, area, 53.40512, -6.16012);
-    expect(await reverseGeocode(db, area, 53.40514, -6.16014)).toBe("Main Street, D13");
+    await reverse(53.40512, -6.16012);
+    expect(await reverse(53.40514, -6.16014)).toBe("Main Street, D13");
     expect(mock).toHaveBeenCalledTimes(1);
   });
   it("returns null and caches nothing when Nominatim finds nothing", async () => {
     const mock = respondWith({ error: "Unable to geocode" });
-    expect(await reverseGeocode(db, area, 53.405, -6.16)).toBeNull();
+    expect(await reverse(53.405, -6.16)).toBeNull();
     vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 2000 });
-    await reverseGeocode(db, area, 53.405, -6.16);
+    await reverse(53.405, -6.16);
     expect(mock).toHaveBeenCalledTimes(2);
   });
   it("throws when Nominatim fails", async () => {
     respondWith({}, 503);
-    await expect(reverseGeocode(db, area, 53.405, -6.16)).rejects.toThrow("503");
+    await expect(reverse(53.405, -6.16)).rejects.toThrow("503");
   });
   it("keeps one second between requests", async () => {
     const mock = respondWith(result({ road: "Main Street" }));
     const started = Date.now();
-    await reverseGeocode(db, area, 53.405, -6.16);
-    await reverseGeocode(db, area, 53.406, -6.16);
+    await reverse(53.405, -6.16);
+    await reverse(53.406, -6.16);
     expect(mock).toHaveBeenCalledTimes(2);
     expect(Date.now() - started).toBeGreaterThanOrEqual(990);
   });
@@ -94,7 +113,7 @@ describe("reverseGeocode", () => {
 describe("searchAddress", () => {
   it("searches only inside the rectangle around the district", async () => {
     const mock = respondWith([result({ road: "Main Street" })]);
-    const place = await searchAddress(db, area, "  Main   Street ");
+    const place = await search("  Main   Street ");
     const params = mock.mock.calls[0][0].searchParams;
     const { west, south, east, north } = areaBounds(area);
     expect(params.get("q")).toBe("Main Street");
@@ -105,13 +124,13 @@ describe("searchAddress", () => {
   });
   it("ignores case and spacing in the cache", async () => {
     const mock = respondWith([result({ road: "Main Street" })]);
-    await searchAddress(db, area, "Main Street");
-    await searchAddress(db, area, "main  STREET");
+    await search("Main Street");
+    await search("main  STREET");
     expect(mock).toHaveBeenCalledTimes(1);
   });
   it("returns null when nothing is found", async () => {
     respondWith([]);
-    expect(await searchAddress(db, area, "Nowhere")).toBeNull();
+    expect(await search("Nowhere")).toBeNull();
   });
 });
 

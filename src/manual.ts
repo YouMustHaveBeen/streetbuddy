@@ -1,5 +1,5 @@
 // Manual page, served by the Worker.
-import { BASE_STYLE, CHOICE_SCRIPT, INSTALL_PATH } from "./install";
+import { BASE_STYLE, CHOICE_SCRIPT, htmlResponse, INSTALL_PATH } from "./install";
 
 export const MANUAL_PATH = "/manual";
 
@@ -9,7 +9,7 @@ const PAGE_SCRIPT = `(function () {
   bindChoice("os");
 })();`;
 
-// Static page: no user input is ever put into it on the server, so nothing here is escaped.
+// Static page.
 const PAGE = `<!doctype html>
 <html lang="ru">
 <head>
@@ -115,5 +115,5 @@ ${PAGE_SCRIPT}
 `;
 
 export function manualPage(): Response {
-  return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
+  return htmlResponse(PAGE);
 }

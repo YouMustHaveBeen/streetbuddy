@@ -15,7 +15,7 @@ interface ModelReply {
   response?: unknown;
 }
 
-// Chunks keep String.fromCharCode from hitting the argument limit on a large photo.
+// Converts in chunks.
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i += CHUNK_BYTES) {
@@ -39,8 +39,7 @@ function platesFromArray(text: string): string[] {
   return [...new Set(plates)];
 }
 
-// The model may wrap the array in prose or a code block, and the prose may hold other
-// brackets, so each bracketed part is tried on its own.
+// Tries each bracketed part of the reply on its own and takes the first with plates.
 export function parsePlates(reply: unknown): string[] {
   if (typeof reply !== "string") return [];
   for (const [part] of reply.matchAll(/\[[^[\]]*\]/g)) {

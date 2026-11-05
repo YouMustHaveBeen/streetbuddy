@@ -1,5 +1,5 @@
 // The only place that talks to api.telegram.org.
-const REQUEST_TIMEOUT_MS = 10000;
+import { REQUEST_TIMEOUT_MS } from "../core";
 
 interface TelegramResponse<T> {
   ok: boolean;
@@ -41,4 +41,23 @@ export async function callTelegram<T>(
     console.error(`Telegram ${method} request failed`);
     return null;
   }
+}
+
+// Returns the ID of the sent message, or null when sending fails.
+export async function sendMessage(
+  token: string,
+  chatId: number | string,
+  text: string,
+  options: Record<string, unknown> = {},
+): Promise<number | null> {
+  const sent = await callTelegram<{ message_id: number }>(token, "sendMessage", { chat_id: chatId, text, ...options });
+  return sent?.message_id ?? null;
+}
+
+export async function deleteMessage(token: string, chatId: number, messageId: number): Promise<void> {
+  await callTelegram(token, "deleteMessage", { chat_id: chatId, message_id: messageId });
+}
+
+export async function answerButton(token: string, queryId: string, text?: string): Promise<void> {
+  await callTelegram(token, "answerCallbackQuery", { callback_query_id: queryId, ...(text ? { text } : {}) });
 }

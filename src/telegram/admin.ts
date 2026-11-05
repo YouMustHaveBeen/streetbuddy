@@ -3,13 +3,11 @@
 // the feedback and the statistics, which do nothing yet.
 import { disableBot, dublinDateTime, enableBot, getSwitchStatus } from "../core";
 import type { FormCheckOutcome } from "../core";
-import { callTelegram } from "./api";
+import type { Env } from "../env";
+import { answerButton, deleteMessage, sendMessage } from "./api";
 import { stopReport } from "./stop";
 
-export interface AdminEnv {
-  DB: D1Database;
-  TELEGRAM_BOT_TOKEN: string;
-}
+type AdminEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN">;
 
 const SWITCH_ON = "admin_on";
 const SWITCH_OFF = "admin_off";
@@ -38,9 +36,8 @@ async function sendScreen(env: AdminEnv, chatId: number): Promise<number | null>
   const button = status.enabled
     ? { text: "Switch off", callback_data: SWITCH_OFF }
     : { text: "Switch on", callback_data: SWITCH_ON };
-  const sent = await callTelegram<{ message_id: number }>(env.TELEGRAM_BOT_TOKEN, "sendMessage", {
-    chat_id: chatId,
-    text: `Admin console\nBot: ${status.enabled ? "on" : "off"}\nLast form check: ${lastCheck}`,
+  const text = `Admin console\nBot: ${status.enabled ? "on" : "off"}\nLast form check: ${lastCheck}`;
+  return sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, text, {
     reply_markup: {
       inline_keyboard: [
         [button],
@@ -51,7 +48,6 @@ async function sendScreen(env: AdminEnv, chatId: number): Promise<number | null>
       ],
     },
   });
-  return sent?.message_id ?? null;
 }
 
 // The caller has already checked that the sender is an administrator of the group.
@@ -61,26 +57,21 @@ export async function handleAdminCommand(env: AdminEnv, userId: number, chatId: 
   await sendScreen(env, chatId);
 }
 
-// The button sets the state it names, so a button of an old screen cannot flip the bot the
-// wrong way; the screen is sent again with the real state and the old one is removed.
+// Sets the state the button names, sends the screen again and removes the old one.
 export async function handleAdminButton(
   env: AdminEnv,
   chatId: number,
   query: { id: string; data?: string; messageId?: number },
 ): Promise<void> {
-  await callTelegram(env.TELEGRAM_BOT_TOKEN, "answerCallbackQuery", { callback_query_id: query.id });
+  const answered = answerButton(env.TELEGRAM_BOT_TOKEN, query.id);
   // These two buttons only get their answer for now.
-  if (query.data === FEEDBACK || query.data === STATISTICS) return;
-  if (query.data === SWITCH_ON) {
-    await enableBot(env.DB);
-  } else {
-    await disableBot(env.DB);
+  if (query.data === FEEDBACK || query.data === STATISTICS) {
+    await answered;
+    return;
   }
-  const messageId = await sendScreen(env, chatId);
+  await (query.data === SWITCH_ON ? enableBot(env.DB) : disableBot(env.DB));
+  const [messageId] = await Promise.all([sendScreen(env, chatId), answered]);
   if (messageId !== null && query.messageId !== undefined) {
-    await callTelegram(env.TELEGRAM_BOT_TOKEN, "deleteMessage", {
-      chat_id: chatId,
-      message_id: query.messageId,
-    });
+    await deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, query.messageId);
   }
 }

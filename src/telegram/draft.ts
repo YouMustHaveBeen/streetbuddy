@@ -1,12 +1,11 @@
-// The report draft in D1. An album arrives as separate updates handled at the same time,
-// so everything that can change concurrently is written by single atomic statements.
+// The report draft in D1. Everything that can change concurrently is written by single atomic statements.
+import { DAY_MS } from "../core";
 
-// Lifetime of drafts and of the recognition cache. The scheduled cleanup also removes processed
-// update IDs at this age, although the webhook does not check their age when it filters repeats.
-export const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+// Lifetime of drafts and of the recognition cache.
+const DRAFT_TTL_MS = DAY_MS;
 
 // Lifetime of the stored text of a final message, which Done needs to rewrite the message.
-export const FINAL_MESSAGE_TTL_MS = 48 * 60 * 60 * 1000;
+export const FINAL_MESSAGE_TTL_MS = 2 * DAY_MS;
 
 export interface Draft {
   user_id: number;
@@ -65,9 +64,7 @@ export async function loadDraft(db: D1Database, userId: number): Promise<Draft |
     .first<Draft>();
 }
 
-// Every draft gets its own ID. A slow handler of a report that has been cancelled or replaced
-// still holds the ID of its own draft, so its writes find nothing and cannot touch the new one.
-// Returns the ID of the new draft.
+// Creates a draft with a random ID of its own and returns that ID.
 export async function createDraft(
   db: D1Database,
   userId: number,
@@ -133,7 +130,7 @@ export async function swapScreen(
   const select = db
     .prepare("SELECT buttons_message_id FROM drafts WHERE user_id = ?1 AND draft_id = ?2 AND step = ?3")
     .bind(userId, draftId, expectedStep);
-  // A batch is one transaction, so no other screen can slip in between the two statements.
+  // One transaction: reads the previous message and writes the new one.
   const [previous, updated] = await db.batch<{ buttons_message_id: number }>([select, update]);
   return updated.meta.changes > 0 ? (previous.results[0]?.buttons_message_id ?? null) : null;
 }
@@ -156,8 +153,7 @@ export async function recordPhoto(
   draftId: number,
   photo: { fileId: string; fileUniqueId: string; sentAt: number; messageId: number },
 ): Promise<{ photoCount: number; isFirst: boolean } | null> {
-  // Album photos can reach the database in any order, so the first photo is the one with
-  // the lowest message ID. When it changes, the plates of the previous one no longer count.
+  // The first photo is the one with the lowest message ID; when it changes, the plates are cleared.
   const earlier = "first_message_id IS NULL OR ?6 < first_message_id";
   const row = await db
     .prepare(
@@ -178,8 +174,7 @@ export async function recordPhoto(
   return { photoCount: row.photo_count, isFirst: row.first_message_id === photo.messageId };
 }
 
-// The result counts only for the photo the draft is waiting for: recognition can finish
-// after a cancel, or after an earlier album photo has taken over as the first one.
+// Stores the result only if this photo is still the first one of this draft.
 export async function setPlates(
   db: D1Database,
   userId: number,
@@ -208,9 +203,8 @@ export async function moveStep(
   return result.meta.changes > 0;
 }
 
-// Takes the report for giving the link and returns the parking options as they are at that
-// moment: a tap on an option can land after the draft was loaded. Null means someone else
-// got there first.
+// Takes the report for giving the link and returns the parking options as they are now.
+// Null means someone else got there first.
 export async function startFinishing(
   db: D1Database,
   userId: number,
@@ -226,7 +220,7 @@ export async function startFinishing(
   return row?.parking ?? null;
 }
 
-// Flips one bit in a single statement: quick taps must not overwrite each other.
+// Flips one bit in a single statement.
 export async function toggleParking(
   db: D1Database,
   userId: number,
@@ -247,8 +241,8 @@ export async function deleteDraft(db: D1Database, userId: number, draftId: numbe
   await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2").bind(userId, draftId).run();
 }
 
-// Stops a report that has buttons on screen and returns the message with them. One statement, so
-// a report that has just reached the link step is left alone and is not lost in between.
+// Stops a report that has buttons on screen and returns the message with them; a report on
+// the step that gives the link stays.
 export async function deleteDraftWithButtons(db: D1Database, userId: number): Promise<number | null> {
   const row = await db
     .prepare("DELETE FROM drafts WHERE user_id = ?1 AND step != 'finishing' RETURNING buttons_message_id")
@@ -257,12 +251,14 @@ export async function deleteDraftWithButtons(db: D1Database, userId: number): Pr
   return row?.buttons_message_id ?? null;
 }
 
-// A cancel during this step may already have made room for a new report, which must stay.
-export async function deleteFinishedDraft(db: D1Database, userId: number, draftId: number): Promise<void> {
-  await db
-    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2 AND step = 'finishing'")
+// Removes the draft only if it is still on the step that gives the link, and returns its list
+// of messages to delete as it is now; null when the draft is already gone.
+export async function deleteFinishedDraft(db: D1Database, userId: number, draftId: number): Promise<number[] | null> {
+  const row = await db
+    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2 AND step = 'finishing' RETURNING cleanup")
     .bind(userId, draftId)
-    .run();
+    .first<{ cleanup: string }>();
+  return row ? (JSON.parse(row.cleanup) as number[]) : null;
 }
 
 // logId is the line of the report log written for this report, or null when there is none;
@@ -297,8 +293,10 @@ export async function readFinalMessage(
   return row?.text ?? null;
 }
 
-// Cancel under the final message: the report does not count, so its line of the log goes too.
-// One batch, the log line first because it is found through the final message.
+const deleteFinalStatement = (db: D1Database, chatId: number, messageId: number) =>
+  db.prepare("DELETE FROM final_messages WHERE chat_id = ?1 AND message_id = ?2").bind(chatId, messageId);
+
+// Cancel under the final message: removes the line of the report log and then the stored text.
 export async function cancelFinalMessage(db: D1Database, chatId: number, messageId: number): Promise<void> {
   await db.batch([
     db
@@ -307,15 +305,12 @@ export async function cancelFinalMessage(db: D1Database, chatId: number, message
            (SELECT log_id FROM final_messages WHERE chat_id = ?1 AND message_id = ?2)`,
       )
       .bind(chatId, messageId),
-    db.prepare("DELETE FROM final_messages WHERE chat_id = ?1 AND message_id = ?2").bind(chatId, messageId),
+    deleteFinalStatement(db, chatId, messageId),
   ]);
 }
 
 export async function deleteFinalMessage(db: D1Database, chatId: number, messageId: number): Promise<void> {
-  await db
-    .prepare("DELETE FROM final_messages WHERE chat_id = ?1 AND message_id = ?2")
-    .bind(chatId, messageId)
-    .run();
+  await deleteFinalStatement(db, chatId, messageId).run();
 }
 
 export async function cachedPlates(db: D1Database, fileUniqueId: string): Promise<string[] | null> {
