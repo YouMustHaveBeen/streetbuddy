@@ -47,8 +47,7 @@ describe("userscript file", () => {
     const file = await userscriptFile().text();
     expect(file).toMatch(/^\/\/ @version\s+\d+\.\d+\.\d+$/m);
     for (const key of ["@updateURL", "@downloadURL"]) {
-      const line = file.split("\n").find((text) => text.startsWith(`// ${key}`));
-      expect(line?.endsWith(SCRIPT_PATH)).toBe(true);
+      expect(file).toMatch(new RegExp(`^// ${key}\\s+https://\\S+${SCRIPT_PATH}$`, "m"));
     }
   });
 
