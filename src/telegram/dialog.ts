@@ -44,7 +44,6 @@ import {
   toggleParking,
 } from "./draft";
 import { saveFeedback } from "./feedback";
-import { closeChatFinalMessages } from "./final";
 import { countReport, PHONES, readPhone, savePhone } from "./phone";
 import type { Phone, UserPhone } from "./phone";
 import { stopReport } from "./stop";
@@ -149,6 +148,9 @@ const REPORTS_WITH_STEPS = 10;
 // The buttons of the final message.
 const FINAL_CANCEL = "final_cancel";
 const FINAL_DONE = "final_done";
+
+// Latin letters, digits, hyphens and spaces.
+const PLATE_TEXT = /^[A-Z0-9][A-Z0-9 -]*$/;
 
 const ADDRESS_MAX_LENGTH = 100;
 const FEEDBACK_MAX_LENGTH = 1000;
@@ -292,7 +294,6 @@ async function show(
   if (messageId === null) return;
   if (!draft) {
     await createDraft(c.env.DB, c.userId, messageId, text, changes, cleanupIds);
-    if (step !== "feedback_input" && step !== "phone_choice") await closeOpenFinalMessages(c);
     return;
   }
   const previous = await swapScreen(
@@ -306,15 +307,6 @@ async function show(
     cleanupIds,
   );
   await remove(c, previous ?? messageId);
-}
-
-// A new report closes the final messages left open. A failure is only logged.
-async function closeOpenFinalMessages(c: Context): Promise<void> {
-  try {
-    await closeChatFinalMessages(c.env, c.chatId);
-  } catch {
-    console.error("Closing final messages failed");
-  }
 }
 
 // Shows the current screen again below whatever the user has just sent. A photo stays
@@ -583,6 +575,15 @@ async function handlePlateInput(
   await showPlateTime(c, { ...draft, ...firstPlate }, { plate, ...firstPlate }, cleanupIds);
 }
 
+// Before the first photo, a text counts as the plate only if it looks like one.
+async function handlePhotosStepText(c: Context, draft: Draft, message: Message, text: string): Promise<void> {
+  if (PLATE_TEXT.test(text.trim().toUpperCase())) {
+    await handlePlateInput(c, draft, message, text);
+    return;
+  }
+  await show(c, draft, WRITE_PLATE, {}, [message.message_id]);
+}
+
 async function handleTimeInput(
   c: Context,
   draft: Draft,
@@ -658,7 +659,9 @@ export async function handleMessage(
     await handlePhoto(c, draft, message);
   } else if (text !== undefined && (draft.step === "address_text" || draft.step === "address_edit")) {
     await handleManualAddress(c, draft, message, text);
-  } else if (text !== undefined && (draft.step === "plate_input" || (draft.step === "photos" && draft.photo_count === 0))) {
+  } else if (text !== undefined && draft.step === "photos" && draft.photo_count === 0) {
+    await handlePhotosStepText(c, draft, message, text);
+  } else if (text !== undefined && draft.step === "plate_input") {
     await handlePlateInput(c, draft, message, text);
   } else if (text !== undefined && draft.step === "time_input") {
     await handleTimeInput(c, draft, message, text);
@@ -717,6 +720,15 @@ async function keepReport(c: Context, report: LoggedReport, messageId: number, b
     await saveFinalMessage(c.env.DB, c.chatId, messageId, body, logId);
   } catch {
     console.error("Saving the final message failed");
+  }
+}
+
+// Counts the link for the phone steps. A failure is only logged.
+async function keepCount(c: Context): Promise<void> {
+  try {
+    await countReport(c.env.DB, c.userId);
+  } catch {
+    console.error("Counting the report failed");
   }
 }
 
@@ -780,7 +792,7 @@ async function finish(c: Context, draft: Draft, from: Step, phone: UserPhone): P
   const cleanup = JSON.parse(draft.cleanup) as number[];
   await Promise.all([
     keepReport(c, report, sentId, body),
-    countReport(c.env.DB, c.userId),
+    keepCount(c),
     deleteMessages(c, [...cleanup, draft.buttons_message_id]),
   ]);
   // Deletes the messages added to the list after it was read.
@@ -818,9 +830,8 @@ async function handleFinalButton(c: Context, done: boolean, messageId: number): 
   if (edited !== null) await deleteFinalMessage(c.env.DB, c.chatId, messageId);
 }
 
-// The buttons that lead to the link: membership of the group is checked before them.
-export const checksMembership = (data: string | undefined): boolean =>
-  data === REVIEW_OK || data?.startsWith(PHONE_PREFIX) === true;
+// The button that leads to the link: membership of the group is checked before it.
+export const checksMembership = (data: string | undefined): boolean => data === REVIEW_OK;
 
 // Moves on from the review, asking for the phone when there is no answer yet.
 async function confirmReport(c: Context, draft: Draft): Promise<void> {

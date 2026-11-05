@@ -421,6 +421,8 @@ describe("which buttons check membership", () => {
       "map:month_before",
       "final_cancel",
       "final_done",
+      "phone:android",
+      "road:Pedestrian",
     ])(
     "does not check on %s",
     async (data) => {
@@ -429,7 +431,7 @@ describe("which buttons check membership", () => {
       expect(methods(mock)).not.toContain("getChatMember");
     },
   );
-  it.each(["admin_on", "admin_off", "admin_feedback", "admin_statistics", "review_ok", "phone:android"])(
+  it.each(["admin_on", "admin_off", "admin_feedback", "admin_statistics", "review_ok"])(
     "checks on %s",
     async (data) => {
       const mock = telegram(memberOf("left"));

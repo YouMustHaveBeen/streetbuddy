@@ -261,11 +261,11 @@ ${BASE_STYLE}
 <p>Затем бот запросит фото машины. Для тестового репорта вы можете прислать любое фото, например, своей машины.</p>
 <p>Далее бот запустит процесс подготовки репорта, пройдите его по шагам.</p>
 <div data-for="android">
-<p>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». В первый раз бот спросит «Your phone?»: нажмите «Android». Затем нажмите кнопку «Open report» под описанием, затем «⋮» вверху справа и «Open in browser» (форма должна открыться в Chrome, см. шаг 1).</p>
+<p>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш телефон (в первый раз), он спросит «Your phone?»: нажмите «Android». Затем нажмите кнопку «Open report» под описанием, затем «⋮» вверху справа и «Open in browser» (форма должна открыться в Chrome, см. шаг 1).</p>
 <p>Когда форма откроется, нажмите на адресную строку вверху, наберите qqqwww и выберите в подсказках закладку qqqwww (со значком звезды).</p>
 </div>
-<p data-for="iphone-bookmark" hidden>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». В первый раз бот спросит «Your phone?»: нажмите «iPhone bookmark».</p>
-<p data-for="iphone-script" hidden>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». В первый раз бот спросит «Your phone?»: нажмите «iPhone Userscripts».</p>
+<p data-for="iphone-bookmark" hidden>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш телефон (в первый раз), он спросит «Your phone?»: нажмите «iPhone bookmark».</p>
+<p data-for="iphone-script" hidden>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш телефон (в первый раз), он спросит «Your phone?»: нажмите «iPhone Userscripts».</p>
 <p data-for="iphone-bookmark iphone-script" hidden>Нажмите кнопку «Open report» под описанием. Если форма открылась внутри Telegram, нажмите «⋯» вверху и «Open in Safari».</p>
 <p data-for="iphone-bookmark" hidden>Когда форма откроется, нажмите «⋯» внизу, «Bookmarks» и qqqwww.</p>
 <p data-for="iphone-script" hidden>Когда форма откроется, вверху страницы появится панель с полями. Она появляется только в первый раз: введите ваши данные и нажмите «Save». Если панели нет, откройте меню расширений Safari и проверьте, что Userscripts разрешено работать на этой странице.</p>

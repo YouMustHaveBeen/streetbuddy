@@ -1121,6 +1121,21 @@ describe("review, Edit and the phone", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it.each(["05KE123", "181 d 12345", "12-D-3456"])("takes %s as the plate before the first photo", async (value) => {
+    await toPhotos();
+    await text(value);
+    expect(draft().step).toBe("plate_time");
+    expect(draft().plate).toBe(value.toUpperCase());
+  });
+
+  it.each(["ок", "сейчас пришлю фото", "hello!", "- 1"])("does not take %s as the plate", async (value) => {
+    await toPhotos();
+    await text(value);
+    expect(draft().step).toBe("photos");
+    expect(draft().plate).toBeNull();
+    expect(lastSent().text).toBe("Write the plate number");
+  });
+
   it("refuses a plate that is too long and stays on the step", async () => {
     await toPhotos();
     await text("1234567890123456");
@@ -1136,27 +1151,16 @@ describe("review, Edit and the phone", () => {
     expect(draft().plate).toBeNull();
   });
 
-  it("closes an open final message when a new report starts", async () => {
+  it("keeps an open final message when a new report starts, so that its Cancel still works", async () => {
     await toReview();
     await press("review_ok");
-    const finalId = (sqlite.prepare("SELECT message_id FROM final_messages").get() as { message_id: number }).message_id;
+    const row = sqlite.prepare("SELECT message_id FROM final_messages").get() as { message_id: number };
     await location();
-    expect(called("editMessageText").at(-1)?.body).toEqual({
-      chat_id: USER,
-      message_id: finalId,
-      text: REPORT,
-      reply_markup: { inline_keyboard: [] },
-    });
-    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM final_messages").get()).toEqual({ n: 0 });
-    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM report_log").get()).toEqual({ n: 1 });
-  });
-
-  it("does not close a final message on /phone or /feedback", async () => {
-    await toReview();
-    await press("review_ok");
-    await text("/phone");
-    await text("/feedback");
     expect(called("editMessageText")).toEqual([]);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM final_messages").get()).toEqual({ n: 1 });
+    await press("final_cancel", row.message_id);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM report_log").get()).toEqual({ n: 0 });
+    expect(draft().step).toBe("address");
   });
 
   it("closes the final messages older than 48 hours", async () => {
@@ -1164,8 +1168,38 @@ describe("review, Edit and the phone", () => {
     await press("review_ok");
     sqlite.exec("UPDATE final_messages SET created_at = 0");
     await closeExpiredFinalMessages(env);
-    expect(called("editMessageText").at(-1)?.body.text).toBe(REPORT);
+    expect(called("editMessageText").at(-1)?.body).toMatchObject({ text: REPORT, reply_markup: { inline_keyboard: [] } });
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM final_messages").get()).toEqual({ n: 0 });
+  });
+
+  it("keeps the stored text of a message that Telegram could not change", async () => {
+    await toReview();
+    await press("review_ok");
+    sqlite.exec("UPDATE final_messages SET created_at = 0");
+    failEdit = true;
+    await closeExpiredFinalMessages(env);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM final_messages").get()).toEqual({ n: 1 });
+    failEdit = false;
+    await closeExpiredFinalMessages(env);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM final_messages").get()).toEqual({ n: 0 });
+  });
+
+  it("closes at most 30 messages per run, the oldest first", async () => {
+    for (let i = 0; i < 35; i++) {
+      sqlite.prepare("INSERT INTO final_messages (chat_id, message_id, text, created_at) VALUES (1, ?, 'x', ?)").run(i, i);
+    }
+    await closeExpiredFinalMessages(env);
+    expect(called("editMessageText")).toHaveLength(30);
+    expect(sqlite.prepare("SELECT MIN(message_id) AS first FROM final_messages").get()).toEqual({ first: 30 });
+  });
+
+  it("still gives the link and clears the report when the count of reports cannot be written", async () => {
+    sqlite.exec("CREATE TRIGGER fail_count BEFORE UPDATE ON user_phones BEGIN SELECT RAISE(ABORT, 'down'); END");
+    await toReview();
+    await press("review_ok");
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM final_messages").get()).toEqual({ n: 1 });
+    expect(draft()).toBeUndefined();
+    expect(console.error).toHaveBeenCalledWith("Counting the report failed");
   });
 
   it("leaves a fresh final message open", async () => {

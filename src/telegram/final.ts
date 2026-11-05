@@ -2,13 +2,17 @@
 // the description stays.
 import type { Env } from "../env";
 import { callTelegram } from "./api";
-import { FINAL_MESSAGE_TTL_MS, takeChatFinalMessages, takeExpiredFinalMessages } from "./draft";
-import type { OpenFinalMessage } from "./draft";
+import { deleteFinalMessages, FINAL_MESSAGE_TTL_MS, listExpiredFinalMessages } from "./draft";
 
 type FinalEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN">;
 
-async function closeMessages(env: FinalEnv, messages: OpenFinalMessage[]): Promise<void> {
-  await Promise.all(
+// How many messages one run closes, to stay within the limit of requests of a Worker.
+const CLOSE_BATCH = 30;
+
+// A stored text is removed only after Telegram has changed its message.
+export async function closeExpiredFinalMessages(env: FinalEnv, now: number = Date.now()): Promise<void> {
+  const messages = await listExpiredFinalMessages(env.DB, now - FINAL_MESSAGE_TTL_MS, CLOSE_BATCH);
+  const edited = await Promise.all(
     messages.map((message) =>
       callTelegram(env.TELEGRAM_BOT_TOKEN, "editMessageText", {
         chat_id: message.chat_id,
@@ -18,12 +22,8 @@ async function closeMessages(env: FinalEnv, messages: OpenFinalMessage[]): Promi
       }),
     ),
   );
-}
-
-export async function closeChatFinalMessages(env: FinalEnv, chatId: number): Promise<void> {
-  await closeMessages(env, await takeChatFinalMessages(env.DB, chatId));
-}
-
-export async function closeExpiredFinalMessages(env: FinalEnv, now: number = Date.now()): Promise<void> {
-  await closeMessages(env, await takeExpiredFinalMessages(env.DB, now - FINAL_MESSAGE_TTL_MS));
+  await deleteFinalMessages(
+    env.DB,
+    messages.filter((_, i) => edited[i] !== null),
+  );
 }

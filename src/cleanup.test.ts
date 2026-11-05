@@ -142,6 +142,36 @@ describe("scheduled", () => {
     expect(rows(sqlite, "SELECT update_id FROM processed_updates")).toEqual([]);
   });
 
+  it("closes the final messages past 48 hours before the cleanup removes their texts", async () => {
+    const { db, sqlite } = fakeD1();
+    const calls: { method: string; body: Record<string, unknown> }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ method: String(url).split("/").pop() as string, body: JSON.parse(String(init?.body)) });
+        return new Response(JSON.stringify({ ok: true, result: {} }));
+      }),
+    );
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(SCHEDULED.scheduledTime);
+    try {
+      sqlite
+        .prepare("INSERT INTO final_messages (chat_id, message_id, text, created_at) VALUES (7, 9, 'Vehicle 12-D-3456', 0)")
+        .run();
+      await worker.scheduled(SCHEDULED, { DB: db, TELEGRAM_BOT_TOKEN: "token" } as Env, {} as ExecutionContext);
+      expect(calls).toEqual([
+        {
+          method: "editMessageText",
+          body: { chat_id: 7, message_id: 9, text: "Vehicle 12-D-3456", reply_markup: { inline_keyboard: [] } },
+        },
+      ]);
+      expect(rows(sqlite, "SELECT message_id FROM final_messages")).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("does not throw when the cleanup fails", async () => {
     const db = {
       prepare: () => ({ bind: () => ({}) }),

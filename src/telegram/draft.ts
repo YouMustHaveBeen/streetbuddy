@@ -329,22 +329,25 @@ export interface OpenFinalMessage {
   text: string;
 }
 
-// Removes the stored texts of a chat and returns them.
-export async function takeChatFinalMessages(db: D1Database, chatId: number): Promise<OpenFinalMessage[]> {
+// The stored texts written at or before the cutoff, oldest first.
+export async function listExpiredFinalMessages(
+  db: D1Database,
+  cutoff: number,
+  limit: number,
+): Promise<OpenFinalMessage[]> {
   const rows = await db
-    .prepare("DELETE FROM final_messages WHERE chat_id = ?1 RETURNING chat_id, message_id, text")
-    .bind(chatId)
+    .prepare(
+      "SELECT chat_id, message_id, text FROM final_messages WHERE created_at <= ?1 ORDER BY created_at LIMIT ?2",
+    )
+    .bind(cutoff, limit)
     .all<OpenFinalMessage>();
   return rows.results;
 }
 
-// Removes the stored texts written at or before the cutoff and returns them.
-export async function takeExpiredFinalMessages(db: D1Database, cutoff: number): Promise<OpenFinalMessage[]> {
-  const rows = await db
-    .prepare("DELETE FROM final_messages WHERE created_at <= ?1 RETURNING chat_id, message_id, text")
-    .bind(cutoff)
-    .all<OpenFinalMessage>();
-  return rows.results;
+// Removes the stored texts of the messages whose buttons are gone, in one batch.
+export async function deleteFinalMessages(db: D1Database, messages: OpenFinalMessage[]): Promise<void> {
+  if (messages.length === 0) return;
+  await db.batch(messages.map((message) => deleteFinalStatement(db, message.chat_id, message.message_id)));
 }
 
 export async function cachedPlates(db: D1Database, fileUniqueId: string): Promise<string[] | null> {
