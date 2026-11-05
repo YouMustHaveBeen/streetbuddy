@@ -6,7 +6,7 @@ import { deleteFinalMessages, FINAL_MESSAGE_TTL_MS, listExpiredFinalMessages } f
 
 type FinalEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN">;
 
-// How many messages one run closes, to stay within the limit of requests of a Worker.
+// Maximum number of messages closed per run.
 const CLOSE_BATCH = 30;
 
 // A stored text is removed only after Telegram has changed its message.

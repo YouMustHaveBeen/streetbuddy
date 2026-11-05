@@ -195,7 +195,7 @@ describe("membership", () => {
     press.callback_query.data = "address_ok";
     press.callback_query.message.message_id = 5;
     await send(press);
-    expect(bodyOf(mock, "sendMessage").text).toBe("Now send photos, the first one with the number plate, or write the plate number");
+    expect(bodyOf(mock, "sendMessage").text).toBe("Send photos, the first one with the number plate, or write the plate number");
   });
   it("lets nobody in and says nothing when Telegram fails the check", async () => {
     const mock = telegram({ ok: false, error_code: 400 });

@@ -101,7 +101,7 @@ const WRITE_ADDRESS = "Could not get the address. Please write it";
 const SEND_LOCATION = "Please send the location";
 const EDIT_ADDRESS = "Write the correct address";
 const ADDRESS_TOO_LONG = "The address must be 100 characters or less";
-export const SEND_PHOTOS = "Now send photos, the first one with the number plate, or write the plate number";
+export const SEND_PHOTOS = "Send photos, the first one with the number plate, or write the plate number";
 export const PHOTO_RECEIVED = "Photo received. Send more photos or press Create report";
 export const SEVERAL_PLATES = "Several plates found. Choose one";
 const WRITE_PLATE = "Write the plate number";
@@ -150,7 +150,7 @@ const FINAL_CANCEL = "final_cancel";
 const FINAL_DONE = "final_done";
 
 // Latin letters, digits, hyphens and spaces.
-const PLATE_TEXT = /^[A-Z0-9][A-Z0-9 -]*$/;
+const PLATE_TEXT = /^(?=.*[A-Z])(?=.*[0-9])[A-Z0-9][A-Z0-9 -]*$/;
 
 const ADDRESS_MAX_LENGTH = 100;
 const FEEDBACK_MAX_LENGTH = 1000;
@@ -581,7 +581,7 @@ async function handlePhotosStepText(c: Context, draft: Draft, message: Message, 
     await handlePlateInput(c, draft, message, text);
     return;
   }
-  await show(c, draft, WRITE_PLATE, {}, [message.message_id]);
+  await redraw(c, draft, message);
 }
 
 async function handleTimeInput(

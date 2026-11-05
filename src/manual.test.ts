@@ -29,7 +29,7 @@ describe("manual page", () => {
     expect(html).toContain('aria-pressed="false" data-os="iphone">iPhone</button>');
     expect(html).toContain('<section data-os-section="iphone" hidden>');
     expect(html).not.toContain("скоро появится");
-    expect(html).toContain("в приложении Userscripts");
+    expect(html).toContain("Если вы пользуетесь приложением Userscripts, этот шаг не нужен");
     expect(html).toContain('bindChoice("os")');
   });
 

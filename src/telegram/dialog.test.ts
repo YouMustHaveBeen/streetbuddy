@@ -899,7 +899,7 @@ describe("cancel and old buttons", () => {
     await toPhotos();
     sqlite.prepare("UPDATE drafts SET created_at = 0").run();
     await photo();
-    expect(sentTexts().at(-1)).toBe("Now send photos, the first one with the number plate, or write the plate number");
+    expect(sentTexts().at(-1)).toBe("Send photos, the first one with the number plate, or write the plate number");
     expect(draft().photo_count).toBe(0);
   });
 });
@@ -935,7 +935,7 @@ describe("bot switched off", () => {
     await text("hello");
     expect(sentTexts().at(-1)).toBe("12 Main Street, Clongriffin, D13");
     await press("address_ok");
-    expect(sentTexts().at(-1)).toBe("Now send photos, the first one with the number plate, or write the plate number");
+    expect(sentTexts().at(-1)).toBe("Send photos, the first one with the number plate, or write the plate number");
     expect(sentTexts()).not.toContain(FORM_CHANGED);
   });
   it("starts reports again when the bot is switched on", async () => {
@@ -1128,17 +1128,17 @@ describe("review, Edit and the phone", () => {
     expect(draft().plate).toBe(value.toUpperCase());
   });
 
-  it.each(["ок", "сейчас пришлю фото", "hello!", "- 1"])("does not take %s as the plate", async (value) => {
+  it.each(["ок", "сейчас пришлю фото", "hello!", "- 1", "ok", "test", "12345"])("does not take %s as the plate", async (value) => {
     await toPhotos();
     await text(value);
     expect(draft().step).toBe("photos");
     expect(draft().plate).toBeNull();
-    expect(lastSent().text).toBe("Write the plate number");
+    expect(lastSent().text).toBe("Send photos, the first one with the number plate, or write the plate number");
   });
 
   it("refuses a plate that is too long and stays on the step", async () => {
     await toPhotos();
-    await text("1234567890123456");
+    await text("123456789012345D");
     expect(draft().step).toBe("photos");
     expect(lastSent().text).toBe("The plate number is too long. Please write it again");
   });
