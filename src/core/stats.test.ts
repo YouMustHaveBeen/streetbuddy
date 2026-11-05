@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fakeD1 } from "../../test/fakeD1";
 import { distanceM, M_PER_DEG } from "./area";
-import { dublinDay, getHotspots, groupPlaces, HOTSPOT_MIN_REPORTS, logReport, runNightlyStats, topHotspots } from "./stats";
+import { getHotspots, groupPlaces, HOTSPOT_MIN_REPORTS, logReport, runNightlyStats, topHotspots } from "./stats";
 
 const HOUR = 60 * 60 * 1000;
 // Around 53.4, -6.1: 0.0001 degrees of latitude are about 11 m.
@@ -154,26 +154,27 @@ describe("topHotspots", () => {
 describe("runNightlyStats", () => {
   // 3:00 in Dublin on 15 December 2026 (GMT).
   const NOW = Date.UTC(2026, 11, 15, 3, 0);
-  const line = (sqlite: ReturnType<typeof fakeD1>["sqlite"], createdAt: number, parking: number, address = "A") =>
+  const line = (sqlite: ReturnType<typeof fakeD1>["sqlite"], createdAt: number, day: string, parking: number, address = "A") =>
     sqlite
       .prepare("INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?, ?, ?, ?, ?, 53.4, -6.1)")
-      .run(createdAt, dublinDay(createdAt), `P${createdAt}`, parking, address);
+      .run(createdAt, day, `P${createdAt}`, parking, address);
 
   it("counts the reports of yesterday in Dublin and how often each option was chosen", async () => {
     const { db, sqlite } = fakeD1();
-    line(sqlite, NOW - 25 * HOUR, 1); // 14 December 02:00 - yesterday
-    line(sqlite, NOW - 4 * HOUR, 1 | 4); // 14 December 23:00 - yesterday
-    line(sqlite, NOW - 30 * 60 * 1000, 2); // today
-    line(sqlite, NOW - 50 * HOUR, 64); // the day before yesterday
+    line(sqlite, NOW - 25 * HOUR, "2026-12-14", 1); // 14 December 02:00 - yesterday
+    line(sqlite, NOW - 4 * HOUR, "2026-12-14", 1 | 4); // 14 December 23:00 - yesterday
+    line(sqlite, NOW - 30 * 60 * 1000, "2026-12-15", 2); // today
+    line(sqlite, NOW - 50 * HOUR, "2026-12-13", 64); // the day before yesterday
+    line(sqlite, NOW - 90 * 60 * 1000, "2026-12-14", 8); // stored day wins over the time
     await runNightlyStats(db, NOW);
     expect(sqlite.prepare("SELECT * FROM daily_stats").all()).toEqual([
-      { day: "2026-12-14", reports: 2, option_0: 2, option_1: 0, option_2: 1, option_3: 0, option_4: 0, option_5: 0, option_6: 0 },
+      { day: "2026-12-14", reports: 3, option_0: 2, option_1: 0, option_2: 1, option_3: 1, option_4: 0, option_5: 0, option_6: 0 },
     ]);
   });
 
   it("replaces the hotspots every night and gives the same rows when repeated", async () => {
     const { db, sqlite } = fakeD1();
-    for (let i = 0; i < HOTSPOT_MIN_REPORTS; i++) line(sqlite, NOW - 25 * HOUR + i, 1, "A");
+    for (let i = 0; i < HOTSPOT_MIN_REPORTS; i++) line(sqlite, NOW - 25 * HOUR + i, "2026-12-14", 1, "A");
     await runNightlyStats(db, NOW);
     await runNightlyStats(db, NOW);
     expect(await getHotspots(db)).toEqual([{ address: "A", plates: HOTSPOT_MIN_REPORTS }]);
@@ -185,7 +186,7 @@ describe("runNightlyStats", () => {
 
   it("counts a row that has no day yet by its time", async () => {
     const { db, sqlite } = fakeD1();
-    line(sqlite, NOW - 4 * HOUR, 1);
+    line(sqlite, NOW - 4 * HOUR, "2026-12-14", 1);
     sqlite
       .prepare("INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?, '', 'P', 2, 'A', 53.4, -6.1)")
       .run(NOW - 5 * HOUR);
@@ -203,13 +204,24 @@ describe("runNightlyStats", () => {
 });
 
 describe("logReport", () => {
+  it("stores the Dublin date of the moment, also when it is already the next day there", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 6, 15, 23, 30)); // 00:30 on 16 July in Dublin (summer time)
+    try {
+      const { db, sqlite } = fakeD1();
+      await logReport(db, { plate: "12-D-3456", parking: 1, address: "A", lat: 53.4, lon: -6.1 });
+      expect(sqlite.prepare("SELECT day FROM report_log").all()).toEqual([{ day: "2026-07-16" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("writes one line with no Telegram ID", async () => {
     const { db, sqlite } = fakeD1();
     const id = await logReport(db, { plate: "12-D-3456", parking: 3, address: "A", lat: 53.4, lon: -6.1 });
     const rows = sqlite.prepare("SELECT * FROM report_log").all() as Record<string, unknown>[];
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(id);
-    expect(rows[0].day).toBe(dublinDay(rows[0].created_at as number));
     expect(Object.keys(rows[0]).sort()).toEqual(["address", "created_at", "day", "id", "lat", "lon", "parking", "plate"]);
   });
 });

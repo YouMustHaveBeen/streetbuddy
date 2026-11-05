@@ -403,7 +403,25 @@ describe("which buttons check membership", () => {
     update.callback_query.data = data;
     return update;
   };
-  it.each(["cancel", "address_ok", "opt:0", "done", "create", "pick:0", "plate_add", "map:today", "final_cancel", "final_done"])(
+  it.each([
+      "cancel",
+      "address_ok",
+      "address_edit",
+      "opt:0",
+      "done",
+      "create",
+      "pick:0",
+      "plate_add",
+      "plate_ok",
+      "plate_edit",
+      "time_edit",
+      "map:today",
+      "map:week",
+      "map:last_month",
+      "map:month_before",
+      "final_cancel",
+      "final_done",
+    ])(
     "does not check on %s",
     async (data) => {
       const mock = telegram(memberOf("left"));

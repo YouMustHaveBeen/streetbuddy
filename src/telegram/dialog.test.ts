@@ -851,6 +851,35 @@ describe("cancel and old buttons", () => {
     await finishing;
     expect(draft().step).toBe("address");
   });
+  it("also deletes a message sent while the link is being given", async () => {
+    await toPhotos();
+    await photo();
+    await press("create");
+    await press("plate_ok");
+    await press("opt:0");
+    await press("done");
+    const screen = buttonId();
+    const realFetch = globalThis.fetch;
+    let blocked = false;
+    let release = () => {};
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/deleteMessages") && !blocked) {
+        blocked = true;
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      return realFetch(url, init);
+    });
+    const finishing = press("road:Pedestrian", screen);
+    await vi.waitFor(() => expect(blocked).toBe(true));
+    nextMessage += 1;
+    const lateId = nextMessage;
+    await handleMessage(env, USER, USER, { message_id: lateId, date: 1793000000, text: "late" }, defer);
+    release();
+    await finishing;
+    const deleted = called("deleteMessages").flatMap((call) => call.body.message_ids as number[]);
+    expect(deleted).toContain(lateId);
+    expect(draft()).toBeUndefined();
+  });
   it("only stops the spinner on a button of a replaced screen", async () => {
     await location();
     const old = buttonId();

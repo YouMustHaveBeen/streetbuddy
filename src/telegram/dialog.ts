@@ -603,9 +603,8 @@ async function keepReport(c: Context, report: LoggedReport, messageId: number, b
   }
 }
 
-// Deletes the messages of the dialog and the screen with its buttons.
-async function clearDialog(c: Context, draft: Draft): Promise<void> {
-  const ids = [...(JSON.parse(draft.cleanup) as number[]), draft.buttons_message_id];
+// Deletes messages of the chat in batches.
+async function deleteMessages(c: Context, ids: number[]): Promise<void> {
   for (let i = 0; i < ids.length; i += DELETE_BATCH) {
     await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "deleteMessages", {
       chat_id: c.chatId,
@@ -660,8 +659,12 @@ async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPE
     return;
   }
   const report = { plate, parking: chosen, address, lat: draft.lat as number, lon: draft.lon as number };
-  await Promise.all([keepReport(c, report, sentId, body), clearDialog(c, draft)]);
-  await deleteFinishedDraft(c.env.DB, c.userId, draft.draft_id);
+  const cleanup = JSON.parse(draft.cleanup) as number[];
+  await Promise.all([keepReport(c, report, sentId, body), deleteMessages(c, [...cleanup, draft.buttons_message_id])]);
+  // Messages sent while the link was being given joined the list after it was read.
+  const final = await deleteFinishedDraft(c.env.DB, c.userId, draft.draft_id);
+  const late = (final ?? []).filter((id) => !cleanup.includes(id));
+  if (late.length > 0) await deleteMessages(c, late);
 }
 
 // The buttons of a final message work with no draft.

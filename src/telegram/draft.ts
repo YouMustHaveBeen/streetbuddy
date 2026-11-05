@@ -251,12 +251,14 @@ export async function deleteDraftWithButtons(db: D1Database, userId: number): Pr
   return row?.buttons_message_id ?? null;
 }
 
-// Removes the draft only if it is still on the step that gives the link.
-export async function deleteFinishedDraft(db: D1Database, userId: number, draftId: number): Promise<void> {
-  await db
-    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2 AND step = 'finishing'")
+// Removes the draft only if it is still on the step that gives the link, and returns its list
+// of messages to delete as it is now; null when the draft is already gone.
+export async function deleteFinishedDraft(db: D1Database, userId: number, draftId: number): Promise<number[] | null> {
+  const row = await db
+    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2 AND step = 'finishing' RETURNING cleanup")
     .bind(userId, draftId)
-    .run();
+    .first<{ cleanup: string }>();
+  return row ? (JSON.parse(row.cleanup) as number[]) : null;
 }
 
 // logId is the line of the report log written for this report, or null when there is none;
