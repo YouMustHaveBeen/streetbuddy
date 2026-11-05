@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import worker from "./index";
-import type { Env } from "./index";
+import type { Env } from "./env";
 import { PARKING_OPTIONS, ROAD_USER_TYPES } from "./core";
 import { INSTALL_PATH } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";

@@ -4,13 +4,10 @@ import userscript from "../userscript/streetbuddy.user.js";
 export const INSTALL_PATH = "/install";
 export const SCRIPT_PATH = "/streetbuddy.user.js";
 
-// The page builds the bookmarklet in the browser and does not send the personal data typed in to
-// this Worker. The bookmarklet holds the data and loads the form-filling script from this same Worker
-// each time it is run, so it stays short and needs no rebuilding when the script is updated.
-// A bookmarklet can only be added by hand in Chrome on Android, so the page gives the code to
-// copy and also as a link (to copy with a long press, or to drag to the bookmarks bar on a
-// computer). The data is checked by the same rules as validateProfile in the userscript: the
-// script stays silent on data it does not accept.
+export function htmlResponse(page: string): Response {
+  return new Response(page, { headers: { "content-type": "text/html; charset=utf-8" } });
+}
+
 // Shared with the manual page. A row of choice buttons: the pressed one shows its sections
 // (data-<key>-section) and hides the others.
 export const CHOICE_SCRIPT = `function select(button, key) {
@@ -49,7 +46,7 @@ const PAGE_SCRIPT = `(function () {
   bindChoice("variant");
 
   function validProfile(form) {
-    // form.elements, not the form itself: form.name is the name of the form.
+    // Reads the fields through form.elements.
     var fields = form.elements;
     var profile = {
       name: fields.name.value.trim(),
@@ -82,7 +79,7 @@ const PAGE_SCRIPT = `(function () {
     copied.hidden = true;
     copyFailed.hidden = true;
     if (!profile) return;
-    // void: a bookmarklet that returns a value replaces the page with that value.
+    // The bookmarklet holds the data and the address of the script.
     bookmark = "javascript:" + encodeURIComponent(
       "void function () {globalThis.STREETBUDDY_PROFILE = " + JSON.stringify(profile) + ";" +
       "var s = document.createElement('script'); s.src = " + JSON.stringify(SCRIPT_URL) + ";" +
@@ -91,7 +88,7 @@ const PAGE_SCRIPT = `(function () {
     link.href = bookmark;
   });
 
-  // A plain tap on the bookmarklet link would only run it on this page, where it does nothing.
+  // A plain tap on the bookmarklet link does nothing.
   link.addEventListener("click", function (event) { event.preventDefault(); });
 
   document.getElementById("bookmark-copy").addEventListener("click", function () {
@@ -104,7 +101,7 @@ const PAGE_SCRIPT = `(function () {
   });
 })();`;
 
-// Static page: no user input is ever put into it on the server, so nothing here is escaped.
+// Static page.
 const PAGE = `<!doctype html>
 <html lang="ru">
 <head>
@@ -114,7 +111,7 @@ const PAGE = `<!doctype html>
 <style>
 ${BASE_STYLE}
   .install { display: inline-block; padding: 10px 20px; border: 2px solid; border-radius: 6px; font: inherit; font-weight: bold; text-decoration: none; }
-  /* The bookmark is a link, which would otherwise be blue unlike the real buttons. */
+  /* Colors the bookmark link like the real buttons. */
   #bookmark-link { color: ButtonText; background-color: ButtonFace; }
   .ok { color: #1a7f37; }
   @media (prefers-color-scheme: dark) { .ok { color: #3fb950; } }
@@ -211,10 +208,9 @@ ${PAGE_SCRIPT}
 `;
 
 export function installPage(): Response {
-  return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
+  return htmlResponse(PAGE);
 }
 
-// Userscript managers offer to install a script when it is opened from an address ending in .user.js.
 export function userscriptFile(): Response {
   return new Response(userscript, { headers: { "content-type": "text/javascript; charset=utf-8" } });
 }

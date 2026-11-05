@@ -1,8 +1,9 @@
+import { dublinDateTime } from "./core";
 import { describe, expect, it, vi } from "vitest";
 import { fakeD1 } from "../test/fakeD1";
 import { cleanupExpired } from "./cleanup";
 import worker from "./index";
-import type { Env } from "./index";
+import type { Env } from "./env";
 
 const NOW = 10_000_000_000_000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -98,8 +99,8 @@ describe("scheduled", () => {
   const OTHER_RUN = { scheduledTime: Date.UTC(2026, 11, 15, 2, 0) } as ScheduledController;
   const logLine = (sqlite: ReturnType<typeof fakeD1>["sqlite"], createdAt: number) =>
     sqlite
-      .prepare("INSERT INTO report_log (created_at, plate, parking, address, lat, lon) VALUES (?, 'p', 1, 'a', 53.4, -6.1)")
-      .run(createdAt);
+      .prepare("INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?, ?, 'p', 1, 'a', 53.4, -6.1)")
+      .run(createdAt, dublinDateTime(createdAt).date.split("/").reverse().join("-"));
 
   it("counts the statistics in the run that is 3:00 in Dublin, winter or summer", async () => {
     for (const run of [NIGHT_WINTER, NIGHT_SUMMER]) {

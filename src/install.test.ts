@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import worker from "./index";
-import type { Env } from "./index";
+import type { Env } from "./env";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 
 describe("installation guide page", () => {

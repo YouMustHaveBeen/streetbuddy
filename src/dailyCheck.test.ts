@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeD1 } from "../test/fakeD1";
 import { runFormCheck } from "./dailyCheck";
 import worker from "./index";
-import type { Env } from "./index";
+import type { Env } from "./env";
 
 const PAGE_URL = "https://www.garda.ie/en/trafficwatchreport/";
 const FORM = readFileSync("test/userscript/form.html", "utf8");

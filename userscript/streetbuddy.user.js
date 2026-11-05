@@ -24,13 +24,13 @@
   const REPORT_KEY = "streetbuddy-report";
   const PANEL_ID = "streetbuddy-profile";
   const PROFILE_KEY = "profile";
-  // How long to wait for the fields to appear after the person pressed "Click Here to Start".
+  // How long to wait for all the fields once the first one is visible.
   const FIELDS_TIMEOUT_MS = 10000;
 
   const MESSAGE_FORM_CHANGED = "The Garda form has changed. Please fill in the fields manually.";
   const MESSAGE_LINK_INVALID = "The link is not valid. Please fill in the fields manually.";
 
-  // Same texts as on the form: the options are found by their visible text.
+  // Same texts as on the form.
   const CRIME_TYPE = "Parking Offences";
   const CONTACT_METHODS = ["Email", "Phone Call", "Text Message"];
   const ROAD_USER_TYPES = [
@@ -42,12 +42,12 @@
     "Pedestrian",
   ];
 
-  // The form states this limit for the description in its own text; it has no other limits.
+  // The longest description.
   const DESCRIPTION_LIMIT = 300;
 
   // ---------------------------------------------------------------- link data
 
-  // Link data is base64url of UTF-8 JSON, so it is decoded back byte by byte.
+  // Decodes base64url of UTF-8 JSON.
   function decodeLinkData(encoded) {
     if (!/^[A-Za-z0-9_-]+$/.test(encoded)) return null;
     try {
@@ -84,8 +84,8 @@
     return { l: data.l, c: data.c, d: data.d, t: data.t, r: data.r };
   }
 
-  // The data after "#" is removed from the address bar at once. It is kept in sessionStorage
-  // so that a reload of the form does not lose it. Returns { report } or { invalid: true }.
+  // Removes the data after "#" from the address bar and keeps it in sessionStorage.
+  // Returns { report } or { invalid: true }.
   function readLink() {
     if (location.hash.startsWith(LINK_PREFIX)) {
       const report = validateReport(decodeLinkData(location.hash.slice(LINK_PREFIX.length)));
@@ -94,7 +94,7 @@
         if (report) sessionStorage.setItem(REPORT_KEY, JSON.stringify(report));
         else sessionStorage.removeItem(REPORT_KEY);
       } catch {
-        // Storage can be blocked; the data is then used from memory for this page only.
+        // With storage blocked, the data stays in memory.
       }
       return report ? { report } : { invalid: true };
     }
@@ -107,7 +107,7 @@
     }
   }
 
-  // The panel for personal data is a form too; saving it must not drop the link data.
+  // Drops the link data when a form is sent, except the panel for personal data.
   function forgetReport(event) {
     if (event.target && event.target.id === PANEL_ID) return;
     try {
@@ -119,7 +119,7 @@
 
   // ------------------------------------------------------------ personal data
 
-  // Extension storage on the phone; the bookmarklet carries the data inside its own code.
+  // Extension storage on the phone.
   function pickStorage() {
     if (typeof GM !== "undefined" && GM && typeof GM.getValue === "function") {
       return { get: (key) => GM.getValue(key), set: (key, value) => GM.setValue(key, value) };
@@ -134,7 +134,6 @@
   }
 
   // Returns the cleaned personal data, or null when anything is missing or not allowed.
-  // The page that builds the bookmarklet checks the data by the same rules.
   function validateProfile(data) {
     if (!data || typeof data !== "object") return null;
     if (!isText(data.name) || !isText(data.phone) || !isText(data.address)) return null;
@@ -162,7 +161,7 @@
 
   // ---------------------------------------------------------------- page parts
 
-  // Everything shown by the script is built from elements and plain text, never from HTML.
+  // Builds what the script shows from elements and plain text.
   function showMessage(text) {
     const box = document.createElement("div");
     box.setAttribute("role", "alert");
@@ -195,7 +194,7 @@
     return select;
   }
 
-  // Asks for the personal data once; the form checks use the browser's own validation.
+  // Asks for the personal data.
   function showProfilePanel(onSave) {
     const panel = document.createElement("form");
     panel.id = PANEL_ID;
@@ -239,15 +238,13 @@
     return element.getClientRects().length > 0;
   }
 
-  // Sets a value the way typing does, so the page's own checks run: the native setter is
-  // used because the page may have replaced the "value" property of the element.
+  // Sets a value the way typing does: through the native setter, then with the same events.
   function setValue(element, value) {
     element.focus();
     const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), "value").set;
     setter.call(element, value);
     element.dispatchEvent(new Event("input", { bubbles: true }));
-    // The date picker of the form takes the date from the field only on a key press; without
-    // it the picker empties the field as soon as it closes.
+    // Sends a key press to every field but a list.
     if (!(element instanceof HTMLSelectElement)) {
       element.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
     }
@@ -285,8 +282,7 @@
 
   function fillForm(report, profile) {
     const values = formValues(report, profile);
-    // Nothing is written until every field and option is there, so the form is never left
-    // half filled while the message says to fill it in by hand.
+    // Writes nothing until every field and option is there.
     const ready = values.every(([id, value]) => canSet(document.getElementById(id), value));
     if (!ready) return false;
     for (const [id, value] of values) {
@@ -297,10 +293,9 @@
     return true;
   }
 
-  // The fields appear only after the person ticked the boxes and pressed "Click Here to
-  // Start", so the page is watched until a field is visible, then all fields are
-  // given a limited time to show up. When the start button goes out of view but no field
-  // shows up at all, the same time counts from the button, so the message still appears.
+  // Watches the page until a field is visible, then gives all fields a limited time to show
+  // up. If the start button goes out of view and no field shows up, the same time counts from
+  // the button.
   function waitAndFill(report, profile) {
     let fieldSeen = false;
     let startSeen = false;
@@ -315,7 +310,7 @@
       if (!filled) showMessage(MESSAGE_FORM_CHANGED);
     }
 
-    // A timer of its own, so the message appears even when the page stops changing.
+    // Fills the form or shows the message when the time is up.
     function armTimer() {
       clearTimeout(timer);
       timer = setTimeout(() => {
@@ -326,8 +321,7 @@
     function check() {
       if (finished) return;
       if (!fieldSeen) {
-        // Any visible field counts, not one particular field: looking only at one field would
-        // leave the person without a message when exactly that field is gone from the form.
+        // Any visible field counts.
         const anyField = formValues(report, profile).some(([id]) => {
           const element = document.getElementById(id);
           return element && isVisible(element);
@@ -351,7 +345,7 @@
 
   // ---------------------------------------------------------------------- start
 
-  // The link is read before anything else: the address bar must be cleaned at once.
+  // Reads the link first of all.
   const link = readLink();
 
   function onReady(callback) {
@@ -363,8 +357,7 @@
     const storage = pickStorage();
     let profile = await loadProfile(storage);
     onReady(() => {
-      // The saved link data is dropped when the form fires a submit event. This form may send
-      // itself without one, then the data stays until the tab is closed.
+      // Drops the saved link data on a submit event.
       document.addEventListener("submit", forgetReport, true);
       if (link.invalid) showMessage(MESSAGE_LINK_INVALID);
       const start = () => {

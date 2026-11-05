@@ -5,6 +5,7 @@ import { handleButton, handleMessage } from "./dialog";
 import type { DialogEnv, Message } from "./dialog";
 
 const USER = 42;
+const defer = (work: Promise<unknown>) => void work;
 const [lonInside, latInside] = (() => {
   const lons = district.ring.map(([lon]) => lon);
   const lats = district.ring.map(([, lat]) => lat);
@@ -31,7 +32,7 @@ const labels = () => lastSent().reply_markup.inline_keyboard.flat().map((b: { te
 
 const message = (fields: Partial<Message>) => {
   nextMessage += 1;
-  return handleMessage(env, USER, USER, { message_id: nextMessage, date: 1793000000, ...fields });
+  return handleMessage(env, USER, USER, { message_id: nextMessage, date: 1793000000, ...fields }, defer);
 };
 const location = (latitude = latInside, longitude = lonInside) => message({ location: { latitude, longitude } });
 const text = (value: string) => message({ text: value });
@@ -349,8 +350,8 @@ describe("photos", () => {
   it("takes the earliest album photo as the first, whatever reaches D1 first", async () => {
     await toPhotos();
     const size = (id: string) => [{ file_id: id, file_unique_id: `u-${id}`, width: 1280, height: 960 }];
-    await handleMessage(env, USER, USER, { message_id: 501, date: 1793000100, photo: size("later") });
-    await handleMessage(env, USER, USER, { message_id: 500, date: 1793000000, photo: size("earlier") });
+    await handleMessage(env, USER, USER, { message_id: 501, date: 1793000100, photo: size("later") }, defer);
+    await handleMessage(env, USER, USER, { message_id: 500, date: 1793000000, photo: size("earlier") }, defer);
     expect(draft().first_file_id).toBe("earlier");
     expect(draft().first_photo_at).toBe(1793000000000);
     expect(draft().last_photo_id).toBe(501);

@@ -5,16 +5,7 @@ import { runFormCheck } from "./dailyCheck";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
 import { handleWebhook } from "./telegram";
-
-export interface Env {
-  AI: Ai;
-  DB: D1Database;
-  TELEGRAM_BOT_TOKEN: string;
-  WEBHOOK_SECRET: string;
-  OWNER_TELEGRAM_ID: string;
-  GROUP_ID: string;
-  SITE_URL: string;
-}
+import type { Env } from "./env";
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -22,7 +13,7 @@ export default {
     if (request.method === "POST" && url.pathname === "/webhook") {
       return handleWebhook(request, env, ctx);
     }
-    // HEAD is answered like GET: link checkers and previews ask for the headers only.
+    // HEAD is answered like GET.
     const reads = request.method === "GET" || request.method === "HEAD";
     if (reads && url.pathname === INSTALL_PATH) return installPage();
     if (reads && url.pathname === MANUAL_PATH) return manualPage();
@@ -31,16 +22,13 @@ export default {
   },
 
   async scheduled(event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
-    // Runs on both cron triggers; repeating it is harmless. A failure is only logged, so
-    // that the form check below is not blocked by it.
+    // Runs on every cron trigger. A failure of any job here is only logged and the next job still runs.
     try {
       await cleanupExpired(env.DB);
     } catch (error) {
       console.error("scheduled: cleanup failed", error);
     }
-    // The cron runs at 2:00, 3:00, 5:00 and 6:00 UTC (Cloudflare cron is UTC only); the
-    // statistics are counted in the one of the first two that is 3:00 in Dublin and the form
-    // check in the one of the last two that is 6:00 in Dublin, whatever the season.
+    // The statistics run in the trigger that is 3:00 in Dublin, the form check in the one that is 6:00.
     const dublinTime = dublinDateTime(event.scheduledTime).time;
     if (dublinTime.startsWith("03:")) {
       try {

@@ -114,7 +114,7 @@ describe("failures in the background", () => {
       },
     } as unknown as D1Database;
     expect((await send(privateMessage(9))).status).toBe(200);
-    expect(log).toHaveBeenCalledWith("Update 9 failed at repeat filter: D1 is down");
+    expect(log).toHaveBeenCalledWith("Update 9 failed at repeat filter and membership check: D1 is down");
     expect(mock).not.toHaveBeenCalled();
     log.mockRestore();
   });
@@ -125,7 +125,7 @@ describe("repeats", () => {
     const mock = telegram(memberOf("member"));
     await send(privateMessage(7));
     await send(privateMessage(7));
-    expect(methods(mock)).toEqual(["getChatMember"]);
+    expect(methods(mock)).toEqual(["getChatMember", "getChatMember"]);
     expect(rows()).toBe(1);
   });
 });
@@ -159,10 +159,26 @@ describe("membership", () => {
       });
     },
   );
-  it("answers a button press from a non-member with a pop-up", async () => {
+  it("does not check membership on an ordinary button", async () => {
     const mock = telegram(memberOf("left"));
-    await send(privateButton());
+    const press = privateButton() as any;
+    press.callback_query.data = "cancel";
+    await send(press);
+    expect(methods(mock)).toEqual(["answerCallbackQuery"]);
+  });
+  it("gives a non-member a pop-up instead of the link and keeps the draft", async () => {
+    const mock = telegram(memberOf("left"));
+    sqlite
+      .prepare(
+        "INSERT INTO drafts (user_id, step, prompt, buttons_message_id, created_at) VALUES (42, 'road_user', 'x', 5, ?)",
+      )
+      .run(Date.now());
+    const press = privateButton() as any;
+    press.callback_query.data = "road:Pedestrian";
+    press.callback_query.message.message_id = 5;
+    await send(press);
     expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery"]);
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "road_user" }]);
     expect(bodyOf(mock, "answerCallbackQuery")).toEqual({
       callback_query_id: "cb1",
       text: "This bot is only for members of the group",

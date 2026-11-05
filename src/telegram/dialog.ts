@@ -10,6 +10,7 @@ import {
   isBotEnabled,
   logReport,
   isInArea,
+  sleep,
   PARKING_OPTIONS,
   PLATE_MAX_LENGTH,
   recognizePlates,
@@ -17,9 +18,11 @@ import {
   reverseGeocode,
   searchAddress,
 } from "../core";
+import type { Defer, LoggedReport } from "../core";
+import type { Env } from "../env";
 import { INSTALL_PATH } from "../install";
 import { MANUAL_PATH } from "../manual";
-import { callTelegram, downloadFile } from "./api";
+import { answerButton, callTelegram, deleteMessage, downloadFile, sendMessage } from "./api";
 import {
   addCleanup,
   cachedPlates,
@@ -44,14 +47,9 @@ import { stopReport } from "./stop";
 import type { Draft, DraftChanges, Step } from "./draft";
 import { FORM_CHANGED_TEXT } from "./notify";
 
-export interface DialogEnv {
-  AI: Ai;
-  DB: D1Database;
-  TELEGRAM_BOT_TOKEN: string;
-  SITE_URL: string;
-}
+export type DialogEnv = Pick<Env, "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL">;
 
-export interface PhotoSize {
+interface PhotoSize {
   file_id: string;
   file_unique_id: string;
   width: number;
@@ -77,10 +75,10 @@ interface Context {
   env: DialogEnv;
   userId: number;
   chatId: number;
+  defer: Defer;
 }
 
-// Sent as HTML so that the words "manual" and "Installation guide" are the links; the text has no
-// characters that HTML treats specially, and SITE_URL (see wrangler.toml) goes into the links as it is.
+// Sent as HTML: the words "manual" and "Installation guide" are links.
 const startText = (siteUrl: string) => `StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
 ***
@@ -119,25 +117,25 @@ const NO_HOTSPOTS = "No hotspots yet";
 const MAP_STUB = "The map will be here";
 const REPORT_MAP = "Report map";
 
-// The buttons of the final message live on after the draft is gone, so they have their own names.
+// The buttons of the final message.
 const FINAL_CANCEL = "final_cancel";
 const FINAL_DONE = "final_done";
 
 const ADDRESS_MAX_LENGTH = 100;
 const FEEDBACK_MAX_LENGTH = 1000;
-// A plate must stay readable, but a smaller download uses less CPU time on the free plan.
+// The shortest longer side of the photo size taken from Telegram.
 const MIN_PHOTO_SIDE = 1280;
-// Telegram does not mark the last photo of an album.
+// How long the bot waits after a photo of an album before it answers.
 const ALBUM_WAIT_MS = 2000;
 const PLATES_POLL_MS = 1000;
 const PLATES_POLL_LIMIT = 20;
 const DELETE_BATCH = 100;
 
-const CANCEL: Button = { text: "Cancel", callback_data: "cancel" };
-// Takes away the "Location" button that earlier versions of /start put under the input line.
-const REMOVE_KEYBOARD = { remove_keyboard: true };
+const ROAD_USER_PREFIX = "road:";
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const CANCEL: Button = { text: "Cancel", callback_data: "cancel" };
+// Removes the keyboard with the "Location" button from under the input line.
+const REMOVE_KEYBOARD = { remove_keyboard: true };
 
 function parsePlateList(draft: Pick<Draft, "plates">): string[] {
   return draft.plates ? (JSON.parse(draft.plates) as string[]) : [];
@@ -186,7 +184,7 @@ function buttonsFor(
         [{ text: "Done", callback_data: "done" }, CANCEL],
       ];
     case "road_user":
-      return [...ROAD_USER_TYPES.map((type) => [{ text: type, callback_data: `road:${type}` }]), [CANCEL]];
+      return [...ROAD_USER_TYPES.map((type) => [{ text: type, callback_data: `${ROAD_USER_PREFIX}${type}` }]), [CANCEL]];
     default:
       return [[CANCEL]];
   }
@@ -198,25 +196,22 @@ async function send(
   replyMarkup?: unknown,
   html = false,
 ): Promise<number | null> {
-  const sent = await callTelegram<{ message_id: number }>(c.env.TELEGRAM_BOT_TOKEN, "sendMessage", {
-    chat_id: c.chatId,
-    text,
-    // Two links in one message would otherwise open a preview of the first page.
+  return sendMessage(c.env.TELEGRAM_BOT_TOKEN, c.chatId, text, {
+    // HTML messages go with the link preview off.
     ...(html ? { parse_mode: "HTML", link_preview_options: { is_disabled: true } } : {}),
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   });
-  return sent?.message_id ?? null;
 }
 
-async function deleteMessage(c: Context, messageId: number): Promise<void> {
-  await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "deleteMessage", {
-    chat_id: c.chatId,
-    message_id: messageId,
-  });
+const remove = (c: Context, messageId: number) => deleteMessage(c.env.TELEGRAM_BOT_TOKEN, c.chatId, messageId);
+
+// Removes the draft and the screen with its buttons.
+async function dropDraft(c: Context, draft: Draft): Promise<void> {
+  await deleteDraft(c.env.DB, c.userId, draft.draft_id);
+  await remove(c, draft.buttons_message_id);
 }
 
-// Sends the new screen and removes the previous one: buttons never stay behind in the middle
-// of the conversation. With no draft yet, this creates it.
+// Sends the new screen and removes the previous one. With no draft yet, this creates it.
 async function show(
   c: Context,
   draft: Draft | null,
@@ -246,15 +241,14 @@ async function show(
     changes,
     cleanupIds,
   );
-  await deleteMessage(c, previous ?? messageId);
+  await remove(c, previous ?? messageId);
 }
 
 // Shows the current screen again below whatever the user has just sent. A photo stays
 // in the chat, any other message is removed along with the dialog.
 async function redraw(c: Context, draft: Draft, message: Message): Promise<void> {
   const cleanupIds = message.photo ? [] : [message.message_id];
-  // While the link is being given the list of messages to delete is already read, so a
-  // new screen would stay behind.
+  // While the link is being given, the message only joins the list to delete.
   if (draft.step === "finishing") {
     if (cleanupIds.length > 0) await addCleanup(c.env.DB, c.userId, draft.draft_id, cleanupIds);
     return;
@@ -262,8 +256,7 @@ async function redraw(c: Context, draft: Draft, message: Message): Promise<void>
   await show(c, draft, draft.prompt, {}, cleanupIds);
 }
 
-// The commands of the menu, and /start. Each of them stops a report in progress without a word,
-// so that no report buttons stay in the middle of the conversation.
+// The commands of the menu, and /start. Each of them stops a report in progress without a word.
 const COMMAND = /^\/(start|manual|setup|hotspots|reportmap|feedback)(@\S+)?(\s|$)/;
 
 const REPORT_MAP_BUTTONS: Button[][] = [
@@ -277,7 +270,7 @@ const REPORT_MAP_BUTTONS: Button[][] = [
   ],
 ];
 
-// The links go out as HTML, with the link preview off, like the links of /start.
+// A link to a page of the Worker, for a message sent as HTML.
 const pageLink = (siteUrl: string, path: string, name: string) => `<a href="${siteUrl}${path}">${name}</a>`;
 
 async function handleCommand(c: Context, command: string): Promise<void> {
@@ -300,10 +293,7 @@ async function handleCommand(c: Context, command: string): Promise<void> {
 }
 
 async function refuseArea(c: Context, draft: Draft | null): Promise<void> {
-  if (draft) {
-    await deleteDraft(c.env.DB, c.userId, draft.draft_id);
-    await deleteMessage(c, draft.buttons_message_id);
-  }
+  if (draft) await dropDraft(c, draft);
   await send(c, OUT_OF_AREA);
 }
 
@@ -321,14 +311,14 @@ async function handleLocation(
   const cleanupIds = [message.message_id];
   let address: string | null;
   try {
-    address = await reverseGeocode(c.env.DB, district, lat, lon);
+    address = await reverseGeocode(c.env.DB, district, lat, lon, c.defer);
   } catch {
     console.error("Nominatim failed on coordinates");
     const failures = (draft?.failures ?? 0) + 1;
     if (failures === 1) {
       await show(c, draft, TRY_AGAIN, { step: "location", failures }, cleanupIds);
     } else {
-      // The area has already been checked by the coordinates, so the text is taken as it is.
+      // Asks for the address as text and keeps the coordinates.
       await show(c, draft, WRITE_ADDRESS, { step: "address_text", failures, lat, lon }, cleanupIds);
     }
     return;
@@ -349,7 +339,7 @@ async function handleAddressText(
   const cleanupIds = [message.message_id];
   let place;
   try {
-    place = await searchAddress(c.env.DB, district, text);
+    place = await searchAddress(c.env.DB, district, text, c.defer);
   } catch {
     console.error("Nominatim failed on a typed address");
     const failures = (draft?.failures ?? 0) + 1;
@@ -394,10 +384,8 @@ function pickPhoto(sizes: PhotoSize[]): PhotoSize {
   );
 }
 
-// Runs next to the dialog. Any failure ends in an empty list: the bot then asks for the
-// plate by hand, which also covers the used-up daily Workers AI limit.
-// QUERY BUDGET EXCEPTION: up to three statements (cache read, cache write, result write):
-// the recognition runs next to the dialog and shares only D1 with it.
+// Runs next to the dialog. Any failure ends in an empty list.
+// QUERY BUDGET EXCEPTION: cache read, cache write, result write.
 async function recognize(c: Context, draftId: number, photo: PhotoSize): Promise<void> {
   let plates: string[] = [];
   try {
@@ -408,7 +396,7 @@ async function recognize(c: Context, draftId: number, photo: PhotoSize): Promise
       const image = await downloadFile(c.env.TELEGRAM_BOT_TOKEN, photo.file_id);
       const startedAt = Date.now();
       plates = await recognizePlates(c.env.AI, image);
-      // Only the duration: plates and photos never go to the logs.
+      // Logs the duration only.
       console.log(`Plate recognition took ${Date.now() - startedAt} ms`);
       await cachePlates(c.env.DB, photo.file_unique_id, plates);
     }
@@ -419,20 +407,17 @@ async function recognize(c: Context, draftId: number, photo: PhotoSize): Promise
 }
 
 async function answerPhoto(c: Context, draft: Draft, message: Message, count: number): Promise<void> {
-  let photoCount = count;
   if (message.media_group_id) {
     await sleep(ALBUM_WAIT_MS);
     const latest = await loadDraft(c.env.DB, c.userId);
     // Another photo has arrived since: its own wait will answer for the whole album.
     if (latest?.draft_id !== draft.draft_id || latest.step !== "photos" || latest.photo_count !== count) return;
-    photoCount = latest.photo_count;
   }
-  await show(c, { ...draft, photo_count: photoCount }, PHOTO_RECEIVED, {});
+  await show(c, { ...draft, photo_count: count }, PHOTO_RECEIVED, {});
 }
 
-// QUERY BUDGET EXCEPTION: a photo costs the draft read, the photo record and the screen swap;
-// an album adds one more read so that only one reply is sent, and the first photo adds the
-// statements of the recognition (see recognize).
+// QUERY BUDGET EXCEPTION: draft read, photo record, screen swap; one more read for an album,
+// and the statements of recognize for the first photo.
 async function handlePhoto(c: Context, draft: Draft, message: Message): Promise<void> {
   const photo = pickPhoto(message.photo as PhotoSize[]);
   const recorded = await recordPhoto(c.env.DB, c.userId, draft.draft_id, {
@@ -448,14 +433,10 @@ async function handlePhoto(c: Context, draft: Draft, message: Message): Promise<
   ]);
 }
 
-function plateTimeChanges(draft: Draft, changes: DraftChanges): { text: string; changes: DraftChanges } {
+// Date of the first photo, and the time written by the user or else the time of that photo.
+function reportMoment(draft: Pick<Draft, "first_photo_at" | "time">): { date: string; time: string } {
   const moment = dublinDateTime(draft.first_photo_at as number);
-  const plate = changes.plate ?? draft.plate;
-  const time = changes.time ?? draft.time ?? moment.time;
-  return {
-    text: `Plate: ${plate}\nTime: ${moment.date} ${time}`,
-    changes: { ...changes, step: "plate_time" },
-  };
+  return { date: moment.date, time: draft.time ?? moment.time };
 }
 
 async function showPlateTime(
@@ -464,8 +445,10 @@ async function showPlateTime(
   changes: DraftChanges,
   cleanupIds: number[] = [],
 ): Promise<void> {
-  const screen = plateTimeChanges(draft, changes);
-  await show(c, draft, screen.text, screen.changes, cleanupIds);
+  const next = { ...draft, ...changes };
+  const moment = reportMoment(next);
+  const text = `Plate: ${next.plate}\nTime: ${moment.date} ${moment.time}`;
+  await show(c, draft, text, { ...changes, step: "plate_time" }, cleanupIds);
 }
 
 async function handlePlateInput(
@@ -496,9 +479,8 @@ async function handleTimeInput(
   const cleanupIds = [message.message_id];
   const time = text.trim();
   const now = dublinDateTime(Date.now());
-  const reportDate = dublinDateTime(draft.first_photo_at as number).date;
-  // hh:mm strings compare as times. A report begun yesterday has no future times.
-  const inFuture = reportDate === now.date && time > now.time;
+  // Compares hh:mm strings; a later time is refused only for a report of today.
+  const inFuture = reportMoment(draft).date === now.date && time > now.time;
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time) || inFuture) {
     await show(c, draft, WRONG_TIME, {}, cleanupIds);
     return;
@@ -513,14 +495,18 @@ async function handleFeedback(c: Context, draft: Draft, text: string): Promise<v
     return;
   }
   await saveFeedback(c.env.DB, c.userId, text);
-  await deleteDraft(c.env.DB, c.userId, draft.draft_id);
-  await deleteMessage(c, draft.buttons_message_id);
+  await dropDraft(c, draft);
   await send(c, FEEDBACK_SENT);
 }
 
-export async function handleMessage(env: DialogEnv, userId: number, chatId: number, message: Message): Promise<void> {
-  const c: Context = { env, userId, chatId };
-  const draft = await loadDraft(env.DB, userId);
+export async function handleMessage(
+  env: DialogEnv,
+  userId: number,
+  chatId: number,
+  message: Message,
+  defer: Defer,
+): Promise<void> {
+  const c: Context = { env, userId, chatId, defer };
   const text = message.text;
 
   const command = text === undefined ? undefined : COMMAND.exec(text)?.[1];
@@ -529,12 +515,12 @@ export async function handleMessage(env: DialogEnv, userId: number, chatId: numb
     return;
   }
 
-  // A new location on any step starts the report over; only the step that gives the link has
-  // no buttons and is left to finish.
+  const draft = await loadDraft(env.DB, userId);
+
+  // A new location on any step but the one that gives the link starts the report over.
   const restart = Boolean(message.location && draft && draft.step !== "location" && draft.step !== "finishing");
   if (!draft || draft.step === "location" || restart) {
-    // A report is started only while the bot is on; one already begun is carried on, and the
-    // script on the form page tells the user if the form really has changed.
+    // A report is started only while the bot is on; one already begun is carried on.
     if ((!draft || restart) && (message.location || text !== undefined) && !(await isBotEnabled(env.DB))) {
       await send(c, FORM_CHANGED_TEXT);
       return;
@@ -567,15 +553,14 @@ export async function handleMessage(env: DialogEnv, userId: number, chatId: numb
 }
 
 async function cancel(c: Context, draft: Draft): Promise<void> {
-  await deleteDraft(c.env.DB, c.userId, draft.draft_id);
-  await deleteMessage(c, draft.buttons_message_id);
+  await dropDraft(c, draft);
   // Feedback is not a report: its Cancel only removes the screen.
   if (draft.step !== "feedback_input") await send(c, CANCELLED);
 }
 
-// Waits for the recognition started by the first photo.
-// QUERY BUDGET EXCEPTION: one read per second until the background recognition writes its
-// result; the two steps share only D1. Returns null when the user has cancelled meanwhile.
+// Waits for the recognition started by the first photo. Returns null when the user has
+// cancelled meanwhile.
+// QUERY BUDGET EXCEPTION: one read per second until the recognition writes its result.
 async function waitForPlates(c: Context, draft: Draft): Promise<string[] | null> {
   if (draft.plates !== null) return parsePlateList(draft);
   for (let i = 0; i < PLATES_POLL_LIMIT; i++) {
@@ -602,40 +587,63 @@ async function createReport(c: Context, draft: Draft): Promise<void> {
   }
 }
 
-// QUERY BUDGET EXCEPTION: the step is moved first so that a second tap cannot give a second
-// link, and is moved back if Telegram fails, so the report is not lost; the text of the final
-// message and the line of the report log are saved once the link is out.
+// Writes the line of the report log and then the text of the final message, which refers to
+// that line. A failure is only logged.
+async function keepReport(c: Context, report: LoggedReport, messageId: number, body: string): Promise<void> {
+  let logId: number | null = null;
+  try {
+    logId = await logReport(c.env.DB, report);
+  } catch {
+    console.error("Writing the report log failed");
+  }
+  try {
+    await saveFinalMessage(c.env.DB, c.chatId, messageId, body, logId);
+  } catch {
+    console.error("Saving the final message failed");
+  }
+}
+
+// Deletes the messages of the dialog and the screen with its buttons.
+async function clearDialog(c: Context, draft: Draft): Promise<void> {
+  const ids = [...(JSON.parse(draft.cleanup) as number[]), draft.buttons_message_id];
+  for (let i = 0; i < ids.length; i += DELETE_BATCH) {
+    await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "deleteMessages", {
+      chat_id: c.chatId,
+      message_ids: ids.slice(i, i + DELETE_BATCH),
+    });
+  }
+}
+
+// Moves the step first and moves it back if Telegram fails; the report is saved and the
+// dialog is cleared at the same time once the link is out.
+// QUERY BUDGET EXCEPTION: step, report log, final message, draft removal.
 async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPES)[number]): Promise<void> {
   const chosen = await startFinishing(c.env.DB, c.userId, draft.draft_id);
   if (chosen === null) return;
   if (chosen === 0) {
-    // The last option was switched off after Done had loaded the draft; a report needs one.
-    // The button has already been answered, so a pop-up is out of reach: the options are drawn again.
+    // No option is left chosen: the options are shown again.
     if (await moveStep(c.env.DB, c.userId, draft.draft_id, "finishing", "parking")) {
       await show(c, { ...draft, step: "parking", parking: 0 }, CHOOSE_PARKING, {});
     }
     return;
   }
 
-  const parking =PARKING_OPTIONS.filter((_, i) => chosen & (1 << i));
-  const moment = dublinDateTime(draft.first_photo_at as number);
-  const time = draft.time ?? moment.time;
+  const parking = PARKING_OPTIONS.filter((_, i) => chosen & (1 << i));
+  const { date, time } = reportMoment(draft);
   const address = draft.address as string;
   const plate = draft.plate as string;
-  const description = buildDescription({ plate, parking, address, date: moment.date, time });
+  const description = buildDescription({ plate, parking, address, date, time });
   const link = buildReportLink({
     location: buildLocation(address, draft.lat as number, draft.lon as number),
     county: district.county,
     description,
-    date: moment.date,
+    date,
     roadUser,
   });
   // The report text without its last line: Done puts "Report sent ..." in place of that line.
-  const body = buildDescriptionLines({ plate, parking, address, date: moment.date, time });
+  const body = buildDescriptionLines({ plate, parking, address, date, time });
 
-  const sent = await callTelegram<{ message_id: number }>(c.env.TELEGRAM_BOT_TOKEN, "sendMessage", {
-    chat_id: c.chatId,
-    text: `${body}\n\n${OPEN_EXTERNALLY}`,
+  const sentId = await sendMessage(c.env.TELEGRAM_BOT_TOKEN, c.chatId, `${body}\n\n${OPEN_EXTERNALLY}`, {
     reply_parameters: { message_id: draft.last_photo_id, allow_sending_without_reply: true },
     reply_markup: {
       inline_keyboard: [
@@ -647,48 +655,20 @@ async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPE
       ],
     },
   });
-  if (!sent) {
+  if (sentId === null) {
     await moveStep(c.env.DB, c.userId, draft.draft_id, "finishing", "road_user");
     return;
   }
-  // The link is already out, so a failure to write the log or to keep the text must not
-  // leave the report in "finishing": Done then only removes the buttons. The log goes first
-  // because the stored final message remembers its line.
-  let logId: number | null = null;
-  try {
-    logId = await logReport(c.env.DB, { plate, parking: chosen, address, lat: draft.lat as number, lon: draft.lon as number });
-  } catch {
-    console.error("Writing the report log failed");
-  }
-  try {
-    await saveFinalMessage(c.env.DB, c.chatId, sent.message_id, body, logId);
-  } catch {
-    console.error("Saving the final message failed");
-  }
-
-  const ids = [...(JSON.parse(draft.cleanup) as number[]), draft.buttons_message_id];
-  for (let i = 0; i < ids.length; i += DELETE_BATCH) {
-    await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "deleteMessages", {
-      chat_id: c.chatId,
-      message_ids: ids.slice(i, i + DELETE_BATCH),
-    });
-  }
+  const report = { plate, parking: chosen, address, lat: draft.lat as number, lon: draft.lon as number };
+  await Promise.all([keepReport(c, report, sentId, body), clearDialog(c, draft)]);
   await deleteFinishedDraft(c.env.DB, c.userId, draft.draft_id);
 }
 
-async function answerButton(c: Context, queryId: string, text?: string): Promise<void> {
-  await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "answerCallbackQuery", {
-    callback_query_id: queryId,
-    ...(text ? { text } : {}),
-  });
-}
-
-// The buttons of a final message work with no draft: the report is finished and its draft is
-// gone, and a new report may already be under way, which these buttons must not touch.
+// The buttons of a final message work with no draft.
 async function handleFinalButton(c: Context, done: boolean, messageId: number): Promise<void> {
   if (!done) {
     await cancelFinalMessage(c.env.DB, c.chatId, messageId);
-    await deleteMessage(c, messageId);
+    await remove(c, messageId);
     return;
   }
   const body = await readFinalMessage(c.env.DB, c.chatId, messageId);
@@ -709,9 +689,12 @@ async function handleFinalButton(c: Context, done: boolean, messageId: number): 
     text: `${body}\n\n${REPORT_SENT} ${moment.date} ${moment.time}`,
     reply_markup: noButtons,
   });
-  // The text stays until the message is really changed, so that a failed edit can be repeated.
+  // The text is removed only after the message has changed.
   if (edited !== null) await deleteFinalMessage(c.env.DB, c.chatId, messageId);
 }
+
+// The button that gives the link: membership of the group is checked before it.
+export const givesLink = (data: string | undefined): boolean => data?.startsWith(ROAD_USER_PREFIX) === true;
 
 export async function handleButton(
   env: DialogEnv,
@@ -719,26 +702,28 @@ export async function handleButton(
   chatId: number,
   query: { id: string; data?: string; messageId?: number },
 ): Promise<void> {
-  const c: Context = { env, userId, chatId };
+  const c: Context = { env, userId, chatId, defer: () => {} };
   const data = query.data ?? "";
-  // Done may need a pop-up, which goes in this same answer; everything else is answered
-  // first, so the button does not keep spinning.
-  if (data !== "done") await answerButton(c, query.id);
+  const token = env.TELEGRAM_BOT_TOKEN;
+  // Done gets its answer below, with a pop-up when needed; every other button is answered
+  // here, at the same time as the work starts.
+  const answered = data === "done" ? Promise.resolve() : answerButton(token, query.id);
 
   if (data.startsWith("map:")) {
-    await send(c, MAP_STUB);
+    await Promise.all([answered, send(c, MAP_STUB)]);
     return;
   }
 
   if (data === FINAL_CANCEL || data === FINAL_DONE) {
-    if (query.messageId !== undefined) await handleFinalButton(c, data === FINAL_DONE, query.messageId);
+    const final = query.messageId === undefined ? undefined : handleFinalButton(c, data === FINAL_DONE, query.messageId);
+    await Promise.all([answered, final]);
     return;
   }
 
-  const draft = await loadDraft(env.DB, userId);
+  const [draft] = await Promise.all([loadDraft(env.DB, userId), answered]);
   // A button of a finished report or of a replaced screen does nothing.
   if (!draft || draft.buttons_message_id !== query.messageId) {
-    if (data === "done") await answerButton(c, query.id);
+    if (data === "done") await answerButton(token, query.id);
     return;
   }
 
@@ -762,8 +747,7 @@ export async function handleButton(
   } else if (action === "plate_edit" && step === "plate_time") {
     await show(c, draft, `${draft.plate}\n\n${WRITE_PLATE}`, { step: "plate_input" });
   } else if (action === "time_edit" && step === "plate_time") {
-    const time = draft.time ?? dublinDateTime(draft.first_photo_at as number).time;
-    await show(c, draft, `${time}\n\n${WRITE_TIME}`, { step: "time_input" });
+    await show(c, draft, `${reportMoment(draft).time}\n\n${WRITE_TIME}`, { step: "time_input" });
   } else if (action === "opt" && step === "parking") {
     const parking = await toggleParking(env.DB, userId, draft.draft_id, 1 << Number(argument));
     if (parking !== null) {
@@ -774,12 +758,12 @@ export async function handleButton(
       });
     }
   } else if (action === "done" && step === "parking") {
-    await answerButton(c, query.id, draft.parking === 0 ? CHOOSE_ONE : undefined);
+    await answerButton(token, query.id, draft.parking === 0 ? CHOOSE_ONE : undefined);
     if (draft.parking !== 0) await show(c, draft, CHOOSE_ROAD_USER, { step: "road_user" });
   } else if (action === "road" && step === "road_user") {
     const roadUser = ROAD_USER_TYPES.find((type) => type === argument);
     if (roadUser !== undefined) await finish(c, draft, roadUser);
   } else if (action === "done") {
-    await answerButton(c, query.id);
+    await answerButton(token, query.id);
   }
 }

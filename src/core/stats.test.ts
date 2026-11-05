@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fakeD1 } from "../../test/fakeD1";
+import { distanceM } from "./area";
+import { dublinDateTime } from "./report";
 import { getHotspots, HOTSPOT_MIN_REPORTS, logReport, runNightlyStats, topHotspots } from "./stats";
 
 const HOUR = 60 * 60 * 1000;
@@ -65,6 +67,29 @@ describe("topHotspots", () => {
     const rows = [...many(HOTSPOT_MIN_REPORTS - 1, "Few"), ...many(HOTSPOT_MIN_REPORTS, "Enough", 0.002)];
     expect(topHotspots(rows)).toEqual([{ address: "Enough", plates: HOTSPOT_MIN_REPORTS }]);
   });
+  it("finds the same places as comparing every row with every other", () => {
+    const rows = Array.from({ length: 400 }, (_, i) => ({
+      plate: `P${i}`,
+      address: `A${i % 7}`,
+      lat: 53.4 + ((i * 7919) % 400) * 0.00002,
+      lon: -6.15 + ((i * 104729) % 400) * 0.00003,
+      created_at: i,
+    }));
+    const groups: (typeof rows)[] = [];
+    for (const point of rows) {
+      const near = groups.filter((g) => g.some((r) => distanceM(r.lat, r.lon, point.lat, point.lon) <= 50));
+      for (const g of near) groups.splice(groups.indexOf(g), 1);
+      groups.push([...near.flat(), point]);
+    }
+    const sizes = groups.map((g) => g.length).sort((a, b) => b - a);
+    const expected = groups
+      .map((g) => g.length)
+      .filter((n) => n >= HOTSPOT_MIN_REPORTS)
+      .sort((a, b) => b - a)
+      .slice(0, 5);
+    expect(topHotspots(rows).map((spot) => spot.plates)).toEqual(expected);
+    expect(sizes.length).toBeGreaterThan(1);
+  });
   it("gives nothing for an empty log", () => {
     expect(topHotspots([])).toEqual([]);
   });
@@ -75,8 +100,8 @@ describe("runNightlyStats", () => {
   const NOW = Date.UTC(2026, 11, 15, 3, 0);
   const line = (sqlite: ReturnType<typeof fakeD1>["sqlite"], createdAt: number, parking: number, address = "A") =>
     sqlite
-      .prepare("INSERT INTO report_log (created_at, plate, parking, address, lat, lon) VALUES (?, ?, ?, ?, 53.4, -6.1)")
-      .run(createdAt, `P${createdAt}`, parking, address);
+      .prepare("INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?, ?, ?, ?, ?, 53.4, -6.1)")
+      .run(createdAt, dublinDateTime(createdAt).date.split("/").reverse().join("-"), `P${createdAt}`, parking, address);
 
   it("counts the reports of yesterday in Dublin and how often each option was chosen", async () => {
     const { db, sqlite } = fakeD1();
@@ -116,6 +141,7 @@ describe("logReport", () => {
     const rows = sqlite.prepare("SELECT * FROM report_log").all() as Record<string, unknown>[];
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(id);
-    expect(Object.keys(rows[0]).sort()).toEqual(["address", "created_at", "id", "lat", "lon", "parking", "plate"]);
+    expect(rows[0].day).toBe(dublinDateTime(rows[0].created_at as number).date.split("/").reverse().join("-"));
+    expect(Object.keys(rows[0]).sort()).toEqual(["address", "created_at", "day", "id", "lat", "lon", "parking", "plate"]);
   });
 });

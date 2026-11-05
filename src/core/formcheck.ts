@@ -2,15 +2,12 @@
 // fields the script fills, the option lists it picks from, and the code of the site's own
 // script that creates the date field after "Click Here to Start".
 import reference from "../../config/form.json";
+import { REQUEST_TIMEOUT_MS } from "./shared";
 
-// "unloaded" marks a failure that is a page or script that could not be fetched, as opposed to
-// a form that has really changed; the /admin screen tells the two apart.
+// "unloaded" marks a page or script that could not be fetched.
 export type FormCheck = { ok: true } | { ok: false; reason: string; unloaded?: true };
 
-const REQUEST_TIMEOUT_MS = 10000;
-
-// A failed request is repeated once; a page that still cannot be loaded fails the check, and
-// is reported as "unloaded" so that it can be told from a form that has really changed.
+// A failed request is repeated once; throws when it fails again.
 async function fetchText(url: string): Promise<string> {
   let failure: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -28,8 +25,7 @@ async function fetchText(url: string): Promise<string> {
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // An id attribute with this exact value: the attribute name in any case, the value in double
-// quotes, single quotes or none, as HTML allows. The name must stand alone: `data-id` and
-// `aria-id` are other attributes.
+// quotes, single quotes or none, and not part of a longer name such as `data-id`.
 function idAttribute(id: string): string {
   const value = escapeRegExp(id);
   return `(?<![\\w-])[iI][dD]\\s*=\\s*(?:"${value}"|'${value}'|${value}(?=[\\s>]|/>))`;
@@ -48,7 +44,7 @@ function optionText(markup: string): string {
     .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (match, code: string) => {
       if (code[0] === "#") {
         const value = code[1].toLowerCase() === "x" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
-        // String.fromCodePoint throws above the last Unicode code point; such a reference is left as is.
+        // A reference above the last Unicode code point is left as is.
         return Number.isFinite(value) && value <= 0x10ffff ? String.fromCodePoint(value) : match;
       }
       return ENTITIES[code.toLowerCase()] ?? match;
@@ -97,10 +93,9 @@ export async function checkForm(): Promise<FormCheck> {
     if (!actual || !sameItems(actual, expected)) return { ok: false, reason: `options of ${id} changed` };
   }
 
-  // The date id is built by the page script from a prefix and a number, so the prefix is
-  // what is looked for: in the page itself and in the site's script files.
+  // Looks for the prefix of the date id in the page and then in the site's script files.
   if (html.includes(reference.datePrefix)) return { ok: true };
-  // A script that cannot be loaded does not end the search: the prefix may be in a later one.
+  // A script that cannot be loaded is skipped and the search goes on.
   let unloaded = false;
   for (const url of sameHostScripts(html, reference.url)) {
     try {

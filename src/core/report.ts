@@ -1,7 +1,7 @@
 // Report texts: description template, Location field value and the link to the form.
+import reference from "../../config/form.json";
 
 const DESCRIPTION_LIMIT = 300;
-const FORM_URL = "https://www.garda.ie/en/trafficwatchreport/";
 
 export const PARKING_OPTIONS = [
   "on a cycle track",
@@ -13,10 +13,9 @@ export const PARKING_OPTIONS = [
   "obstructing and endangering traffic",
 ] as const;
 
-export type ParkingOption = (typeof PARKING_OPTIONS)[number];
+type ParkingOption = (typeof PARKING_OPTIONS)[number];
 
-// The "Were you a" options exactly as the form words them (the script finds them by this text),
-// in the order the bot shows its buttons.
+// The "Were you a" options as the form words them, in the order of the bot's buttons.
 export const ROAD_USER_TYPES = [
   "Pedestrian",
   "Passenger",
@@ -26,19 +25,21 @@ export const ROAD_USER_TYPES = [
   "E-Scooter User, E-Moped User, E-Cyclist",
 ] as const;
 
-export type RoadUserType = (typeof ROAD_USER_TYPES)[number];
+type RoadUserType = (typeof ROAD_USER_TYPES)[number];
+
+const DUBLIN_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Dublin",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
 // Date as the form expects it (dd/mm/yyyy) and 24-hour time, both in Dublin time.
 export function dublinDateTime(timestampMs: number): { date: string; time: string } {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Dublin",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(timestampMs));
+  const parts = DUBLIN_FORMAT.formatToParts(new Date(timestampMs));
   const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
   return {
     date: `${get("day")}/${get("month")}/${get("year")}`,
@@ -62,8 +63,7 @@ interface ReportText {
 const sentence = (report: ReportText, address: string) =>
   `Vehicle ${report.plate} parked ${joinOptions(report.parking)} at ${address} on ${report.date} at ${report.time}.`;
 
-// The form states a 300-character limit but does not enforce it. Only the address
-// here is shortened: the full one stays in the Location field.
+// Shortens the address so that the description fits the limit.
 function fitAddress(report: ReportText): string {
   const parts = report.address.split(", ");
   while (parts.length > 1 && sentence(report, parts.join(", ")).length > DESCRIPTION_LIMIT) {
@@ -104,8 +104,7 @@ function base64url(text: string): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-// The form ignores everything after "#", and the fragment is never sent to its server.
-// One-letter keys keep the link short.
+// The link to the form with the report data after "#", under one-letter keys.
 export function buildReportLink(fields: {
   location: string;
   county: string;
@@ -120,5 +119,5 @@ export function buildReportLink(fields: {
     t: fields.date,
     r: fields.roadUser,
   });
-  return `${FORM_URL}#sb=${base64url(data)}`;
+  return `${reference.url}#sb=${base64url(data)}`;
 }

@@ -1,17 +1,11 @@
 // Bot entry point: webhook secret check, repeat filter, group membership check.
+import type { Env } from "../env";
 import { handleAdminButton, handleAdminCommand, isAdminButton, isAdminCommand } from "./admin";
-import { callTelegram } from "./api";
-import { handleButton, handleMessage } from "./dialog";
+import { answerButton, callTelegram, sendMessage } from "./api";
+import { givesLink, handleButton, handleMessage } from "./dialog";
 import type { Message } from "./dialog";
 
-export interface WebhookEnv {
-  AI: Ai;
-  DB: D1Database;
-  TELEGRAM_BOT_TOKEN: string;
-  WEBHOOK_SECRET: string;
-  GROUP_ID: string;
-  SITE_URL: string;
-}
+export type WebhookEnv = Pick<Env, "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "WEBHOOK_SECRET" | "GROUP_ID" | "SITE_URL">;
 
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 const NOT_MEMBER_TEXT = "This bot is only for members of the group";
@@ -51,7 +45,7 @@ interface Incoming {
   callbackQueryId?: string;
 }
 
-// Compares in constant time so the secret cannot be guessed from response timing.
+// Compares in constant time.
 function secretMatches(received: string | null, expected: string): boolean {
   if (!received || !expected || received.length !== expected.length) return false;
   let diff = 0;
@@ -61,8 +55,7 @@ function secretMatches(received: string | null, expected: string): boolean {
   return diff === 0;
 }
 
-// Keeps only messages and button presses from private chats; the bot also receives
-// everything written in the group it is an administrator of, and ignores all of it.
+// Keeps only messages and button presses from private chats.
 function parseUpdate(update: Update): Incoming | null {
   if (!Number.isSafeInteger(update.update_id)) return null;
   const updateId = update.update_id as number;
@@ -75,9 +68,7 @@ function parseUpdate(update: Update): Incoming | null {
   return { updateId, userId, chatId: chat.id, callbackQueryId: query?.id };
 }
 
-// "restricted" is still a member of the group unless the user has left it. The same answer
-// tells whether the user is an administrator, so /admin needs no second request.
-// Returns null when Telegram does not answer, so a failed check is not taken for "not a member".
+// "restricted" counts as a member while is_member is true. Returns null when Telegram does not answer.
 async function groupAccess(env: WebhookEnv, userId: number): Promise<GroupAccess | null> {
   const member = await callTelegram<ChatMember>(env.TELEGRAM_BOT_TOKEN, "getChatMember", {
     chat_id: env.GROUP_ID,
@@ -90,34 +81,33 @@ async function groupAccess(env: WebhookEnv, userId: number): Promise<GroupAccess
   };
 }
 
-// Runs after the response has gone out, so nobody is waiting for it: a failure is only
-// logged, with the update_id and the step, instead of surfacing as a bare runtime error.
-async function processUpdate(env: WebhookEnv, update: Update): Promise<void> {
+// Runs after the response has gone out; a failure is logged with the update_id and the step.
+// Membership is checked for messages, the buttons of /admin and the button that gives the link.
+async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionContext): Promise<void> {
   let step = "parse";
   try {
     const incoming = parseUpdate(update);
     if (!incoming) return;
 
-    // A repeat is recognized by the row already being there.
-    step = "repeat filter";
-    const stored = await env.DB.prepare(
-      "INSERT OR IGNORE INTO processed_updates (update_id, created_at) VALUES (?1, ?2)",
-    )
-      .bind(incoming.updateId, Date.now())
-      .run();
-    if (stored.meta.changes === 0) return;
-
-    step = "membership check";
-    const access = await groupAccess(env, incoming.userId);
-    if (access === null) return; // No answer from Telegram: not let in, and nothing is said.
     const data = update.callback_query?.data;
     const messageId = update.callback_query?.message?.message_id;
-    // /admin and its button belong to the administrators only: anyone else, in the group or
-    // not, gets no answer at all (not even the members-only text), and the command never
-    // reaches the report dialog. An administrator is always a member, so this comes first.
+    const checked = !incoming.callbackQueryId || isAdminButton(data) || givesLink(data);
+
+    // A repeat is recognized by the row already being there.
+    step = "repeat filter and membership check";
+    const [stored, access] = await Promise.all([
+      env.DB.prepare("INSERT OR IGNORE INTO processed_updates (update_id, created_at) VALUES (?1, ?2)")
+        .bind(incoming.updateId, Date.now())
+        .run(),
+      checked ? groupAccess(env, incoming.userId) : null,
+    ]);
+    if (stored.meta.changes === 0) return;
+    if (checked && access === null) return; // No answer from Telegram: not let in, and nothing is said.
+
+    // /admin and its buttons: only administrators get an answer of any kind.
     if (isAdminCommand(update.message?.text) || isAdminButton(data)) {
       step = "admin";
-      if (!access.admin) return;
+      if (!access?.admin) return;
       if (incoming.callbackQueryId) {
         await handleAdminButton(env, incoming.chatId, { id: incoming.callbackQueryId, data, messageId });
       } else {
@@ -125,31 +115,25 @@ async function processUpdate(env: WebhookEnv, update: Update): Promise<void> {
       }
       return;
     }
-    if (access.member) {
-      step = "dialog";
+    if (access && !access.member) {
+      step = "not-member reply";
       if (incoming.callbackQueryId) {
-        await handleButton(env, incoming.userId, incoming.chatId, {
-          id: incoming.callbackQueryId,
-          data,
-          messageId,
-        });
+        await answerButton(env.TELEGRAM_BOT_TOKEN, incoming.callbackQueryId, NOT_MEMBER_TEXT);
       } else {
-        await handleMessage(env, incoming.userId, incoming.chatId, update.message as Message);
+        await sendMessage(env.TELEGRAM_BOT_TOKEN, incoming.chatId, NOT_MEMBER_TEXT);
       }
       return;
     }
 
-    step = "not-member reply";
+    step = "dialog";
     if (incoming.callbackQueryId) {
-      await callTelegram(env.TELEGRAM_BOT_TOKEN, "answerCallbackQuery", {
-        callback_query_id: incoming.callbackQueryId,
-        text: NOT_MEMBER_TEXT,
+      await handleButton(env, incoming.userId, incoming.chatId, {
+        id: incoming.callbackQueryId,
+        data,
+        messageId,
       });
     } else {
-      await callTelegram(env.TELEGRAM_BOT_TOKEN, "sendMessage", {
-        chat_id: incoming.chatId,
-        text: NOT_MEMBER_TEXT,
-      });
+      await handleMessage(env, incoming.userId, incoming.chatId, update.message as Message, (work) => ctx.waitUntil(work));
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown error";
@@ -157,8 +141,7 @@ async function processUpdate(env: WebhookEnv, update: Update): Promise<void> {
   }
 }
 
-// Answers Telegram at once; the work runs in the background so a slow step never makes
-// Telegram resend the update.
+// Answers Telegram at once; the work runs in the background.
 export async function handleWebhook(
   request: Request,
   env: WebhookEnv,
@@ -170,7 +153,7 @@ export async function handleWebhook(
   let update: Update;
   try {
     const body: unknown = await request.json();
-    // Valid JSON is not always an object (null, a number, a list).
+    // The body must be a JSON object.
     if (typeof body !== "object" || body === null || Array.isArray(body)) {
       return new Response("Bad Request", { status: 400 });
     }
@@ -178,6 +161,6 @@ export async function handleWebhook(
   } catch {
     return new Response("Bad Request", { status: 400 });
   }
-  ctx.waitUntil(processUpdate(env, update));
+  ctx.waitUntil(processUpdate(env, update, ctx));
   return new Response("OK");
 }

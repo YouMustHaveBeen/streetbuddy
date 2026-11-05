@@ -1,18 +1,16 @@
 // The report log, the nightly statistics and the hotspots, all in D1.
+import { distanceM, M_PER_DEG } from "./area";
 import { dublinDateTime, PARKING_OPTIONS } from "./report";
+import { DAY_MS, TWO_MONTHS_MS } from "./shared";
 
-// How long a row of the log stays: 2 months.
-export const REPORT_LOG_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+// How long a row of the log stays.
+export const REPORT_LOG_TTL_MS = TWO_MONTHS_MS;
 
-// Places of the log closer to each other than this count as one place, like in the rule of
-// one report per plate and place.
-export const HOTSPOT_RADIUS_M = 50;
-export const HOTSPOT_COUNT = 5;
-// A place with fewer different plates is not shown: a few reports could point at one person's home.
+// Places of the log closer to each other than this count as one place.
+const HOTSPOT_RADIUS_M = 50;
+const HOTSPOT_COUNT = 5;
+// The least number of different plates of a place that is shown.
 export const HOTSPOT_MIN_REPORTS = 10;
-
-const M_PER_DEG = 111_320;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface LoggedReport {
   plate: string;
@@ -22,18 +20,22 @@ export interface LoggedReport {
   lon: number;
 }
 
-export interface Hotspot {
+interface Hotspot {
   address: string;
   plates: number;
 }
 
+// "dd/mm/yyyy" of the Dublin date becomes the key of daily_stats and of report_log.day.
+const dayKey = (date: string) => date.split("/").reverse().join("-");
+
 // One row for every link given; there is no Telegram ID in it. Returns the ID of the row.
 export async function logReport(db: D1Database, report: LoggedReport): Promise<number> {
+  const now = Date.now();
   const result = await db
     .prepare(
-      "INSERT INTO report_log (created_at, plate, parking, address, lat, lon) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+      "INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )
-    .bind(Date.now(), report.plate, report.parking, report.address, report.lat, report.lon)
+    .bind(now, dayKey(dublinDateTime(now).date), report.plate, report.parking, report.address, report.lat, report.lon)
     .run();
   return result.meta.last_row_id;
 }
@@ -45,14 +47,6 @@ export async function getHotspots(db: D1Database): Promise<Hotspot[]> {
   return results;
 }
 
-// Distance in metres between two points, flat-earth like the rest of the area checks:
-// the area is far smaller than a degree.
-function distanceM(aLat: number, aLon: number, bLat: number, bLon: number): number {
-  const dLat = (bLat - aLat) * M_PER_DEG;
-  const dLon = (bLon - aLon) * M_PER_DEG * Math.cos((aLat * Math.PI) / 180);
-  return Math.hypot(dLat, dLon);
-}
-
 interface PlaceRow {
   plate: string;
   address: string;
@@ -61,21 +55,56 @@ interface PlaceRow {
   created_at: number;
 }
 
-// Rows are in time order. A row joins the group that has a point within HOTSPOT_RADIUS_M of it,
-// so a chain of close points is one place, and starts a group of its own otherwise; a group is shown by the address
-// that occurs in it most often, and by the latest of those when they are equal. Groups of fewer
-// than HOTSPOT_MIN_REPORTS different plates are left out: the count of a place is the number of
-// different plates, so that one plate reported again and again does not make a place visible.
+// Joins rows within HOTSPOT_RADIUS_M of each other into groups, including chains of close
+// points. Rows are put into a grid of cells at least the radius wide, and a row is compared
+// only with the rows of its own and the eight neighbouring cells. A group is a tree of row
+// numbers, with parent[i] pointing towards its root. Groups come in the order of their last rows.
+function groupPlaces(rows: readonly PlaceRow[]): PlaceRow[][] {
+  const parent = rows.map((_, i) => i);
+  const find = (start: number): number => {
+    let i = start;
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
+    return i;
+  };
+
+  const latStep = HOTSPOT_RADIUS_M / M_PER_DEG;
+  const lonStep = latStep / rows.reduce((least, row) => Math.min(least, Math.cos((row.lat * Math.PI) / 180)), 1);
+  const cells = new Map<string, number[]>();
+  rows.forEach((row, i) => {
+    const x = Math.floor(row.lon / lonStep);
+    const y = Math.floor(row.lat / latStep);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (const other of cells.get(`${x + dx},${y + dy}`) ?? []) {
+          const near = find(other) !== find(i) && distanceM(rows[other].lat, rows[other].lon, row.lat, row.lon) <= HOTSPOT_RADIUS_M;
+          if (near) parent[find(other)] = find(i);
+        }
+      }
+    }
+    const key = `${x},${y}`;
+    const cell = cells.get(key);
+    if (cell) cell.push(i);
+    else cells.set(key, [i]);
+  });
+
+  const groups = new Map<number, { rows: PlaceRow[]; last: number }>();
+  rows.forEach((row, i) => {
+    const group = groups.get(find(i)) ?? { rows: [], last: i };
+    group.rows.push(row);
+    group.last = i;
+    groups.set(find(i), group);
+  });
+  return [...groups.values()].sort((a, b) => a.last - b.last).map((group) => group.rows);
+}
+
+// Rows are in time order. A group is shown by the address that occurs in it most often, and by
+// the latest of those when they are equal; its count is the number of different plates, and
+// groups below HOTSPOT_MIN_REPORTS are left out.
 export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
-  const groups: PlaceRow[][] = [];
-  for (const row of rows) {
-    // A row within the radius of any row of a group belongs to it; when it touches several
-    // groups, they become one.
-    const near = groups.filter((g) => g.some((r) => distanceM(r.lat, r.lon, row.lat, row.lon) <= HOTSPOT_RADIUS_M));
-    for (const g of near) groups.splice(groups.indexOf(g), 1);
-    groups.push([...near.flat(), row]);
-  }
-  return groups
+  return groupPlaces(rows)
     .map((group) => {
       const counts = new Map<string, { count: number; latest: number }>();
       for (const row of group) {
@@ -92,19 +121,15 @@ export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
     .slice(0, HOTSPOT_COUNT);
 }
 
-// "dd/mm/yyyy" of the Dublin date becomes the key of daily_stats.
-const dayKey = (date: string) => date.split("/").reverse().join("-");
-
-// The nightly count: the statistics of the day before and the new hotspots. Everything is
-// written by one batch and repeating it gives the same rows.
-// One read of the whole log (2 months of a small district) and one batch of writes.
+// The nightly count: the statistics of the day before and the new hotspots. One read of the
+// whole log and one batch of writes; repeating it gives the same rows.
 export async function runNightlyStats(db: D1Database, now: number): Promise<void> {
   const { results } = await db
-    .prepare("SELECT plate, address, lat, lon, parking, created_at FROM report_log ORDER BY created_at")
-    .all<PlaceRow & { parking: number }>();
+    .prepare("SELECT plate, address, lat, lon, parking, day, created_at FROM report_log ORDER BY created_at")
+    .all<PlaceRow & { parking: number; day: string }>();
 
-  const yesterday = dublinDateTime(now - DAY_MS).date;
-  const ofYesterday = results.filter((row) => dublinDateTime(row.created_at).date === yesterday);
+  const yesterday = dayKey(dublinDateTime(now - DAY_MS).date);
+  const ofYesterday = results.filter((row) => row.day === yesterday);
   const perOption = PARKING_OPTIONS.map((_, i) => ofYesterday.filter((row) => row.parking & (1 << i)).length);
 
   await db.batch([
@@ -114,7 +139,7 @@ export async function runNightlyStats(db: D1Database, now: number): Promise<void
          (day, reports, option_0, option_1, option_2, option_3, option_4, option_5, option_6)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
       )
-      .bind(dayKey(yesterday), ofYesterday.length, ...perOption),
+      .bind(yesterday, ofYesterday.length, ...perOption),
     db.prepare("DELETE FROM hotspots"),
     ...topHotspots(results).map((spot, i) =>
       db.prepare("INSERT INTO hotspots (rank, address, plates) VALUES (?1, ?2, ?3)").bind(i + 1, spot.address, spot.plates),

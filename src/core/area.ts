@@ -1,10 +1,10 @@
 // Area check: is a point inside the working district (polygon from
 // config/area.geojson) or within the 50 m margin around its border.
 
-export const AREA_MARGIN_M = 50;
+const AREA_MARGIN_M = 50;
 
 const EARTH_RADIUS_M = 6371008.8;
-const M_PER_DEG = (Math.PI / 180) * EARTH_RADIUS_M;
+export const M_PER_DEG = (Math.PI / 180) * EARTH_RADIUS_M;
 
 export interface Area {
   county: string;
@@ -78,6 +78,13 @@ export function areaBounds(area: Area): { west: number; south: number; east: num
     east: Math.max(...lons) + marginLon,
     north: north + marginLat,
   };
+}
+
+// Distance in metres between two points, on a flat local map.
+export function distanceM(aLat: number, aLon: number, bLat: number, bLon: number): number {
+  const dLat = (bLat - aLat) * M_PER_DEG;
+  const dLon = (bLon - aLon) * M_PER_DEG * Math.cos((aLat * Math.PI) / 180);
+  return Math.hypot(dLat, dLon);
 }
 
 // Distance in metres from the origin (0, 0) to the segment (ax, ay)-(bx, by).
