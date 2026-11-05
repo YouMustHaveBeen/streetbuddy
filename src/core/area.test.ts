@@ -117,8 +117,7 @@ describe("parseArea", () => {
   });
 });
 
-// Checks config/area.geojson itself, not a fixture, so a bad redraw on geojson.io
-// (unclosed ring, self-intersection, flipped lat/lon) does not pass silently.
+// Checks the real config/area.geojson, not a fixture.
 describe("config/area.geojson", () => {
   const raw = JSON.parse(readFileSync("config/area.geojson", "utf8"));
   const rawRing = raw.features[0].geometry.coordinates[0] as [number, number][];
