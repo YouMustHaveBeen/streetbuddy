@@ -661,7 +661,7 @@ async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPE
   const report = { plate, parking: chosen, address, lat: draft.lat as number, lon: draft.lon as number };
   const cleanup = JSON.parse(draft.cleanup) as number[];
   await Promise.all([keepReport(c, report, sentId, body), deleteMessages(c, [...cleanup, draft.buttons_message_id])]);
-  // Messages sent while the link was being given joined the list after it was read.
+  // Deletes the messages added to the list after it was read.
   const final = await deleteFinishedDraft(c.env.DB, c.userId, draft.draft_id);
   const late = (final ?? []).filter((id) => !cleanup.includes(id));
   if (late.length > 0) await deleteMessages(c, late);
