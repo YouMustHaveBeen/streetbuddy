@@ -8,6 +8,7 @@ export { PLATE_MAX_LENGTH, recognizePlates } from "./plate";
 export {
   buildDescription,
   buildDescriptionLines,
+  buildRoadUserLine,
   buildLocation,
   buildReportLink,
   dublinDateTime,

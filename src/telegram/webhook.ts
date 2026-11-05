@@ -2,7 +2,7 @@
 import type { Env } from "../env";
 import { handleAdminButton, handleAdminCommand, isAdminButton, isAdminCommand } from "./admin";
 import { answerButton, callTelegram, sendMessage } from "./api";
-import { givesLink, handleButton, handleMessage } from "./dialog";
+import { checksMembership, handleButton, handleMessage } from "./dialog";
 import type { Message } from "./dialog";
 
 export type WebhookEnv = Pick<Env, "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "WEBHOOK_SECRET" | "GROUP_ID" | "SITE_URL">;
@@ -82,7 +82,7 @@ async function groupAccess(env: WebhookEnv, userId: number): Promise<GroupAccess
 }
 
 // Runs after the response has gone out; a failure is logged with the update_id and the step.
-// Membership is checked for messages, the buttons of /admin and the button that gives the link.
+// Membership is checked for messages, the buttons of /admin and the buttons that lead to the link.
 async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionContext): Promise<void> {
   let step = "parse";
   try {
@@ -91,7 +91,7 @@ async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionCont
 
     const data = update.callback_query?.data;
     const messageId = update.callback_query?.message?.message_id;
-    const checked = !incoming.callbackQueryId || isAdminButton(data) || givesLink(data);
+    const checked = !incoming.callbackQueryId || isAdminButton(data) || checksMembership(data);
 
     // A repeat is recognized by the row already being there.
     step = "repeat filter and membership check";

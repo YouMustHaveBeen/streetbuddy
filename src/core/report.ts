@@ -94,6 +94,12 @@ export function buildDescriptionLines(report: ReportText): string {
   ].join("\n");
 }
 
+// The "Were you a" answer for the messages of the bot; the form keeps its own wording.
+export function buildRoadUserLine(roadUser: RoadUserType): string {
+  const [main, ...others] = roadUser.toLowerCase().split(", ");
+  return `I was a ${others.length > 0 ? `${main} (${others.join(", ")})` : main}.`;
+}
+
 export function buildLocation(address: string, lat: number, lon: number): string {
   return `${address} (${lat.toFixed(5)}, ${lon.toFixed(5)})`;
 }

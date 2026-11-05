@@ -4,6 +4,7 @@ import {
   buildDescriptionLines,
   buildLocation,
   buildReportLink,
+  buildRoadUserLine,
   district,
   dublinDateTime,
   getHotspots,
@@ -43,9 +44,13 @@ import {
   toggleParking,
 } from "./draft";
 import { saveFeedback } from "./feedback";
+import { countReport, PHONES, readPhone, savePhone } from "./phone";
+import type { Phone, UserPhone } from "./phone";
 import { stopReport } from "./stop";
 import type { Draft, DraftChanges, Step } from "./draft";
 import { FORM_CHANGED_TEXT } from "./notify";
+
+type RoadUser = (typeof ROAD_USER_TYPES)[number];
 
 export type DialogEnv = Pick<Env, "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL">;
 
@@ -96,7 +101,7 @@ const WRITE_ADDRESS = "Could not get the address. Please write it";
 const SEND_LOCATION = "Please send the location";
 const EDIT_ADDRESS = "Write the correct address";
 const ADDRESS_TOO_LONG = "The address must be 100 characters or less";
-export const SEND_PHOTOS = "Now send photos, the first one with the number plate";
+export const SEND_PHOTOS = "Send photos, the first one with the number plate, or write the plate number";
 export const PHOTO_RECEIVED = "Photo received. Send more photos or press Create report";
 export const SEVERAL_PLATES = "Several plates found. Choose one";
 const WRITE_PLATE = "Write the plate number";
@@ -108,7 +113,8 @@ export const CHOOSE_PARKING = "Choose one or more options, then press Done";
 const CHOOSE_ONE = "Choose at least one option";
 export const CHOOSE_ROAD_USER = "Were you a:";
 export const CANCELLED = "Report cancelled";
-const OPEN_EXTERNALLY = "Open the link in an external browser.";
+export const IS_CORRECT = "Is everything correct?";
+export const YOUR_PHONE = "Your phone?";
 const REPORT_SENT = "Report sent";
 const WRITE_FEEDBACK = "Write your feedback";
 const FEEDBACK_SENT = "Thank you for your feedback";
@@ -117,9 +123,34 @@ const NO_HOTSPOTS = "No hotspots yet";
 const MAP_STUB = "The map will be here";
 const REPORT_MAP = "Report map";
 
+// The steps under the description in the final message.
+const REPORT_STEPS: Record<Phone, string> = {
+  iphone_bookmark: `-> Press “Open report”,
+-> «⋯» on the top and “Open in Safari”,
+-> «⋯» on the bottom and “Bookmarks”,
+-> press qqqwww,
+-> fill and send the report,
+-> press “Done” to close the form.`,
+  iphone_userscripts: `-> Press “Open report”,
+-> «⋯» on the top and “Open in Safari”,
+-> fill and send the report,
+-> press “Done” to close the form.`,
+  android: `-> Press “Open report”,
+-> «⋮» on the top and “Open in browser”,
+-> tap the address bar and type qqqwww,
+-> choose qqqwww in the suggestions,
+-> fill and send the report,
+-> press “Done” to close the form.`,
+};
+// How many links are given with the steps after the phone is chosen.
+const REPORTS_WITH_STEPS = 10;
+
 // The buttons of the final message.
 const FINAL_CANCEL = "final_cancel";
 const FINAL_DONE = "final_done";
+
+// Latin letters, digits, hyphens and spaces.
+const PLATE_TEXT = /^(?=.*[A-Z])(?=.*[0-9])[A-Z0-9][A-Z0-9 -]*$/;
 
 const ADDRESS_MAX_LENGTH = 100;
 const FEEDBACK_MAX_LENGTH = 1000;
@@ -132,10 +163,19 @@ const PLATES_POLL_LIMIT = 20;
 const DELETE_BATCH = 100;
 
 const ROAD_USER_PREFIX = "road:";
+const PHONE_PREFIX = "phone:";
+const REVIEW_OK = "review_ok";
 
 const CANCEL: Button = { text: "Cancel", callback_data: "cancel" };
 // Removes the keyboard with the "Location" button from under the input line.
 const REMOVE_KEYBOARD = { remove_keyboard: true };
+
+const PHONE_BUTTONS: Button[][] = [
+  [{ text: "iPhone bookmark", callback_data: `${PHONE_PREFIX}iphone_bookmark` }],
+  [{ text: "iPhone Userscripts", callback_data: `${PHONE_PREFIX}iphone_userscripts` }],
+  [{ text: "Android", callback_data: `${PHONE_PREFIX}android` }],
+  [CANCEL],
+];
 
 function parsePlateList(draft: Pick<Draft, "plates">): string[] {
   return draft.plates ? (JSON.parse(draft.plates) as string[]) : [];
@@ -185,6 +225,24 @@ function buttonsFor(
       ];
     case "road_user":
       return [...ROAD_USER_TYPES.map((type) => [{ text: type, callback_data: `${ROAD_USER_PREFIX}${type}` }]), [CANCEL]];
+    case "review":
+      return [
+        [{ text: "Yes, it’s correct", callback_data: REVIEW_OK }],
+        [{ text: "Edit", callback_data: "review_edit" }, CANCEL],
+      ];
+    case "edit":
+      return [
+        [{ text: "Edit plate", callback_data: "edit_plate" }],
+        [{ text: "Edit description", callback_data: "edit_parking" }],
+        [{ text: "Edit address", callback_data: "edit_address" }],
+        [{ text: "Edit time", callback_data: "edit_time" }],
+        [{ text: 'Edit "I was a"', callback_data: "edit_road_user" }],
+        [{ text: "Save", callback_data: "edit_save" }],
+        [CANCEL],
+      ];
+    case "phone":
+    case "phone_choice":
+      return PHONE_BUTTONS;
     default:
       return [[CANCEL]];
   }
@@ -195,12 +253,18 @@ async function send(
   text: string,
   replyMarkup?: unknown,
   html = false,
+  replyTo: number | null = null,
 ): Promise<number | null> {
   return sendMessage(c.env.TELEGRAM_BOT_TOKEN, c.chatId, text, {
     // HTML messages go with the link preview off.
     ...(html ? { parse_mode: "HTML", link_preview_options: { is_disabled: true } } : {}),
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    ...replyToPhoto(replyTo),
   });
+}
+
+function replyToPhoto(messageId: number | null): Record<string, unknown> {
+  return messageId === null ? {} : { reply_parameters: { message_id: messageId, allow_sending_without_reply: true } };
 }
 
 const remove = (c: Context, messageId: number) => deleteMessage(c.env.TELEGRAM_BOT_TOKEN, c.chatId, messageId);
@@ -225,7 +289,8 @@ async function show(
     plates: draft?.plates ?? null,
     parking: draft?.parking ?? 0,
   };
-  const messageId = await send(c, text, { inline_keyboard: buttonsFor(step, view) });
+  const replyTo = step === "review" || step === "edit" ? (draft?.last_photo_id ?? null) : null;
+  const messageId = await send(c, text, { inline_keyboard: buttonsFor(step, view) }, false, replyTo);
   if (messageId === null) return;
   if (!draft) {
     await createDraft(c.env.DB, c.userId, messageId, text, changes, cleanupIds);
@@ -257,7 +322,7 @@ async function redraw(c: Context, draft: Draft, message: Message): Promise<void>
 }
 
 // The commands of the menu, and /start. Each of them stops a report in progress without a word.
-const COMMAND = /^\/(start|manual|setup|hotspots|reportmap|feedback)(@\S+)?(\s|$)/;
+const COMMAND = /^\/(start|manual|setup|hotspots|reportmap|feedback|phone)(@\S+)?(\s|$)/;
 
 const REPORT_MAP_BUTTONS: Button[][] = [
   [
@@ -280,13 +345,15 @@ async function handleCommand(c: Context, command: string): Promise<void> {
   } else if (command === "manual") {
     await send(c, pageLink(c.env.SITE_URL, MANUAL_PATH, "User manual"), undefined, true);
   } else if (command === "setup") {
-    await send(c, pageLink(c.env.SITE_URL, INSTALL_PATH, "Set up guide"), undefined, true);
+    await send(c, pageLink(c.env.SITE_URL, INSTALL_PATH, "Setup guide"), undefined, true);
   } else if (command === "hotspots") {
     const hotspots = await getHotspots(c.env.DB);
     const lines = hotspots.map((spot, i) => `${i + 1}. ${spot.address.replace(/\s+/g, " ")} (${spot.plates})`);
     await send(c, hotspots.length === 0 ? NO_HOTSPOTS : `Hotspots\n${lines.join("\n")}`);
   } else if (command === "reportmap") {
     await send(c, REPORT_MAP, { inline_keyboard: REPORT_MAP_BUTTONS });
+  } else if (command === "phone") {
+    await show(c, null, YOUR_PHONE, { step: "phone_choice" });
   } else {
     await show(c, null, WRITE_FEEDBACK, { step: "feedback_input" });
   }
@@ -372,6 +439,10 @@ async function handleManualAddress(
     await show(c, draft, ADDRESS_TOO_LONG, {}, cleanupIds);
     return;
   }
+  if (draft.editing) {
+    await showReport(c, draft, "edit", { address: text }, cleanupIds);
+    return;
+  }
   await show(c, draft, text, { step: "address", address: text }, cleanupIds);
 }
 
@@ -439,6 +510,34 @@ function reportMoment(draft: Pick<Draft, "first_photo_at" | "time">): { date: st
   return { date: moment.date, time: draft.time ?? moment.time };
 }
 
+// The report as the final message shows it, with the "Were you a" line.
+function reportBody(draft: Draft, parkingBits: number): string {
+  const { date, time } = reportMoment(draft);
+  const lines = buildDescriptionLines({
+    plate: draft.plate as string,
+    parking: chosenParking(parkingBits),
+    address: draft.address as string,
+    date,
+    time,
+  });
+  return `${lines}\n${buildRoadUserLine(draft.road_user as RoadUser)}`;
+}
+
+const chosenParking = (bits: number) => PARKING_OPTIONS.filter((_, i) => bits & (1 << i));
+
+// The review screen or the Edit screen with the report as it is after the changes.
+async function showReport(
+  c: Context,
+  draft: Draft,
+  step: "review" | "edit",
+  changes: DraftChanges,
+  cleanupIds: number[] = [],
+): Promise<void> {
+  const body = reportBody({ ...draft, ...changes }, draft.parking);
+  const text = step === "review" ? `${body}\n\n${IS_CORRECT}` : body;
+  await show(c, draft, text, { ...changes, step }, cleanupIds);
+}
+
 async function showPlateTime(
   c: Context,
   draft: Draft,
@@ -467,7 +566,22 @@ async function handlePlateInput(
     await show(c, draft, PLATE_TOO_LONG, {}, cleanupIds);
     return;
   }
-  await showPlateTime(c, draft, { plate }, cleanupIds);
+  if (draft.editing) {
+    await showReport(c, draft, "edit", { plate }, cleanupIds);
+    return;
+  }
+  // With no photo, the time of the report is the time of this message.
+  const firstPlate = draft.step === "photos" ? { first_photo_at: message.date * 1000 } : {};
+  await showPlateTime(c, { ...draft, ...firstPlate }, { plate, ...firstPlate }, cleanupIds);
+}
+
+// Before the first photo, a text counts as the plate only if it looks like one.
+async function handlePhotosStepText(c: Context, draft: Draft, message: Message, text: string): Promise<void> {
+  if (PLATE_TEXT.test(text.trim().toUpperCase())) {
+    await handlePlateInput(c, draft, message, text);
+    return;
+  }
+  await redraw(c, draft, message);
 }
 
 async function handleTimeInput(
@@ -483,6 +597,10 @@ async function handleTimeInput(
   const inFuture = reportMoment(draft).date === now.date && time > now.time;
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time) || inFuture) {
     await show(c, draft, WRONG_TIME, {}, cleanupIds);
+    return;
+  }
+  if (draft.editing) {
+    await showReport(c, draft, "edit", { time }, cleanupIds);
     return;
   }
   await showPlateTime(c, draft, { time }, cleanupIds);
@@ -541,6 +659,8 @@ export async function handleMessage(
     await handlePhoto(c, draft, message);
   } else if (text !== undefined && (draft.step === "address_text" || draft.step === "address_edit")) {
     await handleManualAddress(c, draft, message, text);
+  } else if (text !== undefined && draft.step === "photos" && draft.photo_count === 0) {
+    await handlePhotosStepText(c, draft, message, text);
   } else if (text !== undefined && draft.step === "plate_input") {
     await handlePlateInput(c, draft, message, text);
   } else if (text !== undefined && draft.step === "time_input") {
@@ -554,8 +674,8 @@ export async function handleMessage(
 
 async function cancel(c: Context, draft: Draft): Promise<void> {
   await dropDraft(c, draft);
-  // Feedback is not a report: its Cancel only removes the screen.
-  if (draft.step !== "feedback_input") await send(c, CANCELLED);
+  // Feedback and /phone are not a report: their Cancel only removes the screen.
+  if (draft.step !== "feedback_input" && draft.step !== "phone_choice") await send(c, CANCELLED);
 }
 
 // Waits for the recognition started by the first photo. Returns null when the user has
@@ -603,6 +723,15 @@ async function keepReport(c: Context, report: LoggedReport, messageId: number, b
   }
 }
 
+// Counts the link for the phone steps. A failure is only logged.
+async function keepCount(c: Context): Promise<void> {
+  try {
+    await countReport(c.env.DB, c.userId);
+  } catch {
+    console.error("Counting the report failed");
+  }
+}
+
 // Deletes messages of the chat in batches.
 async function deleteMessages(c: Context, ids: number[]): Promise<void> {
   for (let i = 0; i < ids.length; i += DELETE_BATCH) {
@@ -615,9 +744,9 @@ async function deleteMessages(c: Context, ids: number[]): Promise<void> {
 
 // Moves the step first and moves it back if Telegram fails; the report is saved and the
 // dialog is cleared at the same time once the link is out.
-// QUERY BUDGET EXCEPTION: step, report log, final message, draft removal.
-async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPES)[number]): Promise<void> {
-  const chosen = await startFinishing(c.env.DB, c.userId, draft.draft_id);
+// QUERY BUDGET EXCEPTION: step, report log, final message, count of reports, draft removal.
+async function finish(c: Context, draft: Draft, from: Step, phone: UserPhone): Promise<void> {
+  const chosen = await startFinishing(c.env.DB, c.userId, draft.draft_id, from);
   if (chosen === null) return;
   if (chosen === 0) {
     // No option is left chosen: the options are shown again.
@@ -627,7 +756,7 @@ async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPE
     return;
   }
 
-  const parking = PARKING_OPTIONS.filter((_, i) => chosen & (1 << i));
+  const parking = chosenParking(chosen);
   const { date, time } = reportMoment(draft);
   const address = draft.address as string;
   const plate = draft.plate as string;
@@ -637,30 +766,35 @@ async function finish(c: Context, draft: Draft, roadUser: (typeof ROAD_USER_TYPE
     county: district.county,
     description,
     date,
-    roadUser,
+    roadUser: draft.road_user as RoadUser,
   });
-  // The report text without its last line: Done puts "Report sent ..." in place of that line.
-  const body = buildDescriptionLines({ plate, parking, address, date, time });
+  // The report text without the steps: Done puts "Report sent ..." in their place.
+  const body = reportBody(draft, chosen);
+  const text = phone.reports < REPORTS_WITH_STEPS ? `${body}\n\n${REPORT_STEPS[phone.phone]}` : body;
 
-  const sentId = await sendMessage(c.env.TELEGRAM_BOT_TOKEN, c.chatId, `${body}\n\n${OPEN_EXTERNALLY}`, {
-    reply_parameters: { message_id: draft.last_photo_id, allow_sending_without_reply: true },
+  const sentId = await sendMessage(c.env.TELEGRAM_BOT_TOKEN, c.chatId, text, {
+    ...replyToPhoto(draft.last_photo_id),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Open report", url: link }],
         [
-          { text: "Cancel", callback_data: FINAL_CANCEL },
           { text: "Done", callback_data: FINAL_DONE },
+          { text: "Cancel", callback_data: FINAL_CANCEL },
         ],
       ],
     },
   });
   if (sentId === null) {
-    await moveStep(c.env.DB, c.userId, draft.draft_id, "finishing", "road_user");
+    await moveStep(c.env.DB, c.userId, draft.draft_id, "finishing", from);
     return;
   }
   const report = { plate, parking: chosen, address, lat: draft.lat as number, lon: draft.lon as number };
   const cleanup = JSON.parse(draft.cleanup) as number[];
-  await Promise.all([keepReport(c, report, sentId, body), deleteMessages(c, [...cleanup, draft.buttons_message_id])]);
+  await Promise.all([
+    keepReport(c, report, sentId, body),
+    keepCount(c),
+    deleteMessages(c, [...cleanup, draft.buttons_message_id]),
+  ]);
   // Deletes the messages added to the list after it was read.
   const final = await deleteFinishedDraft(c.env.DB, c.userId, draft.draft_id);
   const late = (final ?? []).filter((id) => !cleanup.includes(id));
@@ -696,8 +830,21 @@ async function handleFinalButton(c: Context, done: boolean, messageId: number): 
   if (edited !== null) await deleteFinalMessage(c.env.DB, c.chatId, messageId);
 }
 
-// The button that gives the link: membership of the group is checked before it.
-export const givesLink = (data: string | undefined): boolean => data?.startsWith(ROAD_USER_PREFIX) === true;
+// The button that leads to the link: membership of the group is checked before it.
+export const checksMembership = (data: string | undefined): boolean => data === REVIEW_OK;
+
+// Moves on from the review, asking for the phone when there is no answer yet.
+async function confirmReport(c: Context, draft: Draft): Promise<void> {
+  const phone = await readPhone(c.env.DB, c.userId);
+  if (phone) await finish(c, draft, "review", phone);
+  else await show(c, draft, YOUR_PHONE, { step: "phone" });
+}
+
+async function choosePhone(c: Context, draft: Draft, phone: Phone): Promise<void> {
+  await savePhone(c.env.DB, c.userId, phone);
+  if (draft.step === "phone") await finish(c, draft, "phone", { phone, reports: 0 });
+  else await dropDraft(c, draft);
+}
 
 export async function handleButton(
   env: DialogEnv,
@@ -763,10 +910,30 @@ export async function handleButton(
     }
   } else if (action === "done" && step === "parking") {
     await answerButton(token, query.id, draft.parking === 0 ? CHOOSE_ONE : undefined);
-    if (draft.parking !== 0) await show(c, draft, CHOOSE_ROAD_USER, { step: "road_user" });
+    if (draft.parking !== 0 && draft.editing) await showReport(c, draft, "edit", {});
+    else if (draft.parking !== 0) await show(c, draft, CHOOSE_ROAD_USER, { step: "road_user" });
   } else if (action === "road" && step === "road_user") {
     const roadUser = ROAD_USER_TYPES.find((type) => type === argument);
-    if (roadUser !== undefined) await finish(c, draft, roadUser);
+    if (roadUser !== undefined) await showReport(c, draft, draft.editing ? "edit" : "review", { road_user: roadUser });
+  } else if (action === REVIEW_OK && step === "review") {
+    await confirmReport(c, draft);
+  } else if (action === "review_edit" && step === "review") {
+    await showReport(c, draft, "edit", { editing: 1 });
+  } else if (action === "edit_save" && step === "edit") {
+    await showReport(c, draft, "review", { editing: 0 });
+  } else if (action === "edit_plate" && step === "edit") {
+    await show(c, draft, `${draft.plate}\n\n${WRITE_PLATE}`, { step: "plate_input" });
+  } else if (action === "edit_parking" && step === "edit") {
+    await show(c, draft, CHOOSE_PARKING, { step: "parking" });
+  } else if (action === "edit_address" && step === "edit") {
+    await show(c, draft, `${draft.address}\n\n${EDIT_ADDRESS}`, { step: "address_edit" });
+  } else if (action === "edit_time" && step === "edit") {
+    await show(c, draft, `${reportMoment(draft).time}\n\n${WRITE_TIME}`, { step: "time_input" });
+  } else if (action === "edit_road_user" && step === "edit") {
+    await show(c, draft, CHOOSE_ROAD_USER, { step: "road_user" });
+  } else if (action === "phone" && (step === "phone" || step === "phone_choice")) {
+    const phone = PHONES.find((value) => value === argument);
+    if (phone !== undefined) await choosePhone(c, draft, phone);
   } else if (action === "done") {
     await answerButton(token, query.id);
   }
