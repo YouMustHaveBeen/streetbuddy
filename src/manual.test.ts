@@ -23,12 +23,13 @@ describe("manual page", () => {
     expect(await response.text()).toContain("<title>Руководство по использованию StreetBuddy</title>");
   });
 
-  it("offers Android and iPhone, with only the Android steps written", async () => {
+  it("offers Android and iPhone, with the steps written for both", async () => {
     const html = await manualPage().text();
     expect(html).toContain('aria-pressed="true" data-os="android">Android</button>');
     expect(html).toContain('aria-pressed="false" data-os="iphone">iPhone</button>');
     expect(html).toContain('<section data-os-section="iphone" hidden>');
-    expect(html).toContain("Инструкция для iPhone скоро появится.");
+    expect(html).not.toContain("скоро появится");
+    expect(html).toContain("в приложении Userscripts");
     expect(html).toContain('bindChoice("os")');
   });
 

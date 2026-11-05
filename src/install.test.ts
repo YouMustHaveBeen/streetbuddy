@@ -15,10 +15,13 @@ describe("installation guide page", () => {
     expect(html).toContain("<title>Руководство по установке StreetBuddy</title>");
   });
 
-  it("offers Android with Chrome only, and no iPhone yet", async () => {
+  it("offers Android and iPhone, and two ways of setting up the iPhone", async () => {
     const html = await installPage().text();
-    expect(html).toContain('aria-pressed="true">Android</button>');
-    expect(html).toContain("disabled>iPhone</button>");
+    expect(html).toContain('aria-pressed="true" data-os="android">Android</button>');
+    expect(html).toContain('aria-pressed="false" data-os="iphone">iPhone</button>');
+    expect(html).toContain('aria-pressed="true" data-method="bookmark">Закладка</button>');
+    expect(html).toContain('aria-pressed="false" data-method="script">Приложение Userscripts</button>');
+    expect(html).toContain(`id="script-link" href="${SCRIPT_PATH}"`);
     expect(html).toContain('<button class="install" type="submit">Создать закладку</button>');
     expect(html).not.toMatch(/firefox|violentmonkey/i);
     expect(html).not.toContain("data-browser");

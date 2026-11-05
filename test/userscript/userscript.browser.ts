@@ -553,6 +553,33 @@ describe("bookmarklet built on the installation page", () => {
   });
 });
 
+describe("installation guide choices", () => {
+  it("shows the blocks of the chosen phone and way of setting it up", async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(origin + INSTALL_PATH);
+    const form = "#bookmark-form";
+    const scriptLink = "#script-link";
+    expect(await page.isVisible(form)).toBe(true);
+    expect(await page.isVisible(scriptLink)).toBe(false);
+    expect(await page.isVisible("[data-method=bookmark]")).toBe(false);
+
+    await page.getByRole("button", { name: "iPhone" }).click();
+    expect(await page.isVisible("[data-method=bookmark]")).toBe(true);
+    expect(await page.isVisible(form)).toBe(true);
+    expect(await page.isVisible(scriptLink)).toBe(false);
+
+    await page.getByRole("button", { name: "Приложение Userscripts" }).click();
+    expect(await page.isVisible(form)).toBe(false);
+    expect(await page.isVisible(scriptLink)).toBe(true);
+
+    await page.getByRole("button", { name: "Android" }).click();
+    expect(await page.isVisible(form)).toBe(true);
+    expect(await page.isVisible(scriptLink)).toBe(false);
+    await context.close();
+  });
+});
+
 describe("manual page", () => {
   it("switches between the Android and iPhone instructions", async () => {
     const context = await browser.newContext();
@@ -564,7 +591,7 @@ describe("manual page", () => {
     await page.getByRole("button", { name: "iPhone" }).click();
     expect(await page.isVisible("[data-os-section=android]")).toBe(false);
     expect(await page.isVisible("[data-os-section=iphone]")).toBe(true);
-    expect(await page.textContent("[data-os-section=iphone]")).toContain("Инструкция для iPhone скоро появится.");
+    expect(await page.textContent("[data-os-section=iphone]")).toContain("Safari");
     expect(await page.getAttribute("[data-os=iphone]", "aria-pressed")).toBe("true");
     expect(await page.getAttribute("[data-os=android]", "aria-pressed")).toBe("false");
 

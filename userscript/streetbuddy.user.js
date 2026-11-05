@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         StreetBuddy
 // @namespace    streetbuddy
-// @version      1.1.0
+// @version      1.2.0
 // @description  Fills in the Garda Traffic Watch form from a StreetBuddy link
 // @match        https://www.garda.ie/en/trafficwatchreport*
 // @match        https://garda.ie/en/trafficwatchreport*
 // @run-at       document-start
+// @updateURL    https://streetbuddy.youmusthavebeen.workers.dev/streetbuddy.user.js
+// @downloadURL  https://streetbuddy.youmusthavebeen.workers.dev/streetbuddy.user.js
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM_getValue
