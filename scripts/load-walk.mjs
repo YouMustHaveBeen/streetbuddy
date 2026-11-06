@@ -1,13 +1,18 @@
-// Loads the walk file config/addresses.geojson into the incoming addresses of the D1 database
-// streetbuddy, without a decision. A feature whose text and shape are already among the incoming
-// addresses is skipped. If any feature is wrong, nothing is loaded.
-// Run from the project folder: node scripts/load-walk.mjs
+// Loads one walk file into the incoming addresses of the D1 database streetbuddy, without a
+// decision. A file is loaded once: its name is kept in walk_files, and a file with a name already
+// there is refused. If any feature is wrong, nothing is loaded.
+// Run from the project folder: node scripts/load-walk.mjs config/walks/walk-1.geojson
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
-const FILE = "config/addresses.geojson";
+const FILE = process.argv[2];
+if (!FILE) {
+  console.error("Name the walk file, for example: node scripts/load-walk.mjs config/walks/walk-1.geojson");
+  process.exit(1);
+}
+const NAME = basename(FILE);
 const MAX_LENGTH = 100;
 const KINDS = { Point: "point", LineString: "line", MultiLineString: "line", Polygon: "area" };
 
@@ -65,21 +70,43 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
+const wrangler = (args, options) =>
+  spawnSync("npx", ["wrangler", "d1", "execute", "streetbuddy", "--remote", ...args], {
+    shell: process.platform === "win32",
+    ...options,
+  });
+
+// Asks the database whether the file has been loaded before.
+const check = wrangler(["--json", `--command=SELECT name FROM walk_files WHERE name = ${quote(NAME)}`], {
+  encoding: "utf8",
+  stdio: ["inherit", "pipe", "inherit"],
+});
+let loaded;
+try {
+  loaded = JSON.parse(check.stdout)[0].results.length > 0;
+} catch {
+  console.error(`Could not check whether ${NAME} was loaded before:\n${check.stdout ?? ""}`);
+  process.exit(1);
+}
+if (loaded) {
+  console.error(`${NAME} is already loaded, nothing to do`);
+  process.exit(1);
+}
+
+// Every statement checks the file name again, so a second run at the same moment adds nothing.
 const now = Date.now();
-const sql = rows
-  .map(
+const notLoaded = `NOT EXISTS (SELECT 1 FROM walk_files WHERE name = ${quote(NAME)})`;
+const sql = [
+  ...rows.map(
     ({ text, kind, geometry }) =>
       `INSERT INTO incoming_addresses (source, text, kind, geometry, created_at)
-SELECT 'walk', ${quote(text)}, ${quote(kind)}, ${quote(geometry)}, ${now}
-WHERE NOT EXISTS (SELECT 1 FROM incoming_addresses WHERE text = ${quote(text)} AND geometry = ${quote(geometry)});`,
-  )
-  .join("\n");
+SELECT 'walk', ${quote(text)}, ${quote(kind)}, ${quote(geometry)}, ${now} WHERE ${notLoaded};`,
+  ),
+  `INSERT OR IGNORE INTO walk_files (name, loaded_at) VALUES (${quote(NAME)}, ${now});`,
+].join("\n");
 const sqlFile = join(tmpdir(), `streetbuddy-walk-${now}.sql`);
 writeFileSync(sqlFile, `${sql}\n`);
 
 console.log(`${rows.length} addresses in ${FILE}`);
-const result = spawnSync("npx", ["wrangler", "d1", "execute", "streetbuddy", "--remote", `--file=${sqlFile}`], {
-  stdio: "inherit",
-  shell: process.platform === "win32",
-});
+const result = wrangler([`--file=${sqlFile}`], { stdio: "inherit" });
 process.exit(result.status ?? 1);

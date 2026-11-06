@@ -3,6 +3,7 @@ import { fakeD1 } from "../../test/fakeD1";
 import { M_PER_DEG } from "./area";
 import {
   addUserAddress,
+  sameTextDistance,
   approveAllWalk,
   decideIncoming,
   moveIncomingAddresses,
@@ -38,15 +39,14 @@ function addIncoming(
   geometry: object,
   decision: string | null,
   source = "walk",
-  duplicateM: number | null = null,
 ): number {
   const kind = (shapeFromGeometry(geometry) as Shape).kind;
   const result = sqlite
     .prepare(
-      `INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, decision, duplicate_m, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+      `INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, decision, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
     )
-    .run(source, text, kind, JSON.stringify(geometry), source === "user" ? 42 : null, decision, duplicateM);
+    .run(source, text, kind, JSON.stringify(geometry), source === "user" ? 42 : null, decision);
   return Number(result.lastInsertRowid);
 }
 
@@ -106,17 +106,29 @@ describe("incoming addresses", () => {
     await decideIncoming(db, id, "approved");
     expect(all(sqlite, "SELECT decision, user_id FROM incoming_addresses")).toEqual([{ decision: "rejected", user_id: null }]);
   });
-  it("approves all walk addresses except possible duplicates and addresses of users", async () => {
+  it("approves all walk addresses except those whose text is in the directory and addresses of users", async () => {
     const { db, sqlite } = fakeD1();
+    addDirectory(sqlite, "Duplicate", point(40, 0));
     addIncoming(sqlite, "Walk", point(0, 0), null);
-    addIncoming(sqlite, "Duplicate", point(0, 0), null, "walk", 12);
+    addIncoming(sqlite, " duplicate", point(0, 0), null, "walk");
     addIncoming(sqlite, "User", point(0, 0), null, "user");
     await approveAllWalk(db);
     expect(all(sqlite, "SELECT text, decision FROM incoming_addresses ORDER BY id")).toEqual([
       { text: "Walk", decision: "approved" },
-      { text: "Duplicate", decision: null },
+      { text: " duplicate", decision: null },
       { text: "User", decision: null },
     ]);
+  });
+});
+
+describe("sameTextDistance", () => {
+  it("gives the distance to the nearest directory address with the same text, ignoring case and spaces", async () => {
+    const { db, sqlite } = fakeD1();
+    addDirectory(sqlite, "1 Main Street", point(100, 0));
+    addDirectory(sqlite, "1  main street", point(30, 0));
+    addDirectory(sqlite, "2 Main Street", point(1, 0));
+    expect(await sameTextDistance(db, " 1 Main  Street", JSON.stringify(point(0, 0)))).toBeCloseTo(30, 1);
+    expect(await sameTextDistance(db, "3 Main Street", JSON.stringify(point(0, 0)))).toBeNull();
   });
 });
 
@@ -164,15 +176,13 @@ describe("moveIncomingAddresses", () => {
     expect(all(sqlite, "SELECT id FROM incoming_addresses")).toEqual([]);
     expect(all(sqlite, "SELECT id FROM addresses")).toHaveLength(1);
   });
-  it("marks an address with the same text farther away as a possible duplicate and leaves it without a decision", async () => {
+  it("leaves an address with the same text farther away without a decision", async () => {
     const { db, sqlite } = fakeD1();
     addDirectory(sqlite, "1 Main Street", point(0, 0));
     addIncoming(sqlite, "1 Main Street", point(40, 0), "approved");
     addIncoming(sqlite, "2 Main Street", point(1, 0), "approved");
     await moveIncomingAddresses(db);
-    expect(all(sqlite, "SELECT text, decision, duplicate_m FROM incoming_addresses")).toEqual([
-      { text: "1 Main Street", decision: null, duplicate_m: 40 },
-    ]);
+    expect(all(sqlite, "SELECT text, decision FROM incoming_addresses")).toEqual([{ text: "1 Main Street", decision: null }]);
     expect(all(sqlite, "SELECT text FROM addresses ORDER BY id")).toEqual([{ text: "1 Main Street" }, { text: "2 Main Street" }]);
   });
   it("checks addresses moved in the same night against each other", async () => {
@@ -182,7 +192,7 @@ describe("moveIncomingAddresses", () => {
     addIncoming(sqlite, "A", point(50, 0), "approved");
     await moveIncomingAddresses(db);
     expect(all(sqlite, "SELECT text FROM addresses")).toEqual([{ text: "A" }]);
-    expect(all(sqlite, "SELECT duplicate_m FROM incoming_addresses")).toEqual([{ duplicate_m: 50 }]);
+    expect(all(sqlite, "SELECT decision FROM incoming_addresses")).toEqual([{ decision: null }]);
   });
   it("puts a replacement in place of the nearest directory address with the same text, keeping its ID", async () => {
     const { db, sqlite } = fakeD1();

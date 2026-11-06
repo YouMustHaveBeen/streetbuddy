@@ -24,7 +24,6 @@ interface IncomingAddress {
   text: string;
   kind: ShapeKind;
   geometry: string;
-  duplicate_m: number | null;
   position: number;
   total: number;
 }
@@ -35,6 +34,9 @@ const parseShape = (geometry: string): Shape | null => shapeFromGeometry(JSON.pa
 
 // Case and extra spaces do not count when texts are compared.
 const sameTextKey = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
+// The same comparison in SQL, for a column or a parameter.
+const sqlTextKey = (expression: string) =>
+  `lower(trim(replace(replace(replace(${expression}, '    ', ' '), '  ', ' '), '  ', ' ')))`;
 
 // Up to `limit` directory addresses of any kind within ADDRESS_RADIUS_M of the point, nearest first.
 // Only the rows whose rectangle comes within the radius are read.
@@ -86,7 +88,7 @@ export async function addUserAddress(
 export async function nextIncoming(db: D1Database, afterId: number): Promise<IncomingAddress | null> {
   return db
     .prepare(
-      `SELECT i.id, i.source, i.text, i.kind, i.geometry, i.duplicate_m,
+      `SELECT i.id, i.source, i.text, i.kind, i.geometry,
          (SELECT count(*) FROM incoming_addresses WHERE decision IS NULL AND id <= i.id) AS position,
          (SELECT count(*) FROM incoming_addresses WHERE decision IS NULL) AS total
        FROM incoming_addresses i WHERE i.decision IS NULL
@@ -104,12 +106,29 @@ export async function decideIncoming(db: D1Database, id: number, decision: Decis
     .run();
 }
 
-// Approves every walk address without a decision except the possible duplicates.
+// Metres from the shape to the nearest directory address with the same text, or null when there
+// is none.
+export async function sameTextDistance(db: D1Database, text: string, geometry: string): Promise<number | null> {
+  const shape = parseShape(geometry);
+  if (!shape) return null;
+  const { results } = await db
+    .prepare(`SELECT geometry FROM addresses WHERE ${sqlTextKey("text")} = ${sqlTextKey("?1")}`)
+    .bind(text)
+    .all<{ geometry: string }>();
+  const distances = results
+    .map((row) => parseShape(row.geometry))
+    .filter((other): other is Shape => other !== null)
+    .map((other) => distanceBetween(shape, other));
+  return distances.length > 0 ? Math.min(...distances) : null;
+}
+
+// Approves every walk address without a decision, except those whose text is already in the directory.
 export async function approveAllWalk(db: D1Database): Promise<void> {
   await db
     .prepare(
       `UPDATE incoming_addresses SET decision = 'approved'
-       WHERE source = 'walk' AND decision IS NULL AND duplicate_m IS NULL`,
+       WHERE source = 'walk' AND decision IS NULL
+         AND NOT EXISTS (SELECT 1 FROM addresses a WHERE ${sqlTextKey("a.text")} = ${sqlTextKey("incoming_addresses.text")})`,
     )
     .run();
 }
@@ -144,8 +163,8 @@ interface Known {
 }
 
 // The nightly move: approved addresses go into the directory, unless a directory address with the
-// same text is within DUPLICATE_M (then the incoming one is dropped) or farther away (then it stays,
-// marked as a possible duplicate, without a decision); "replace" puts the new shape and text in
+// same text is within DUPLICATE_M (then the incoming one is dropped) or farther away (then it stays
+// without a decision, and its screen offers Keep old and Replace old); "replace" puts the new shape and text in
 // place of the nearest directory address with the same text; rejected addresses are dropped.
 // Two reads and one batch of writes.
 export async function moveIncomingAddresses(db: D1Database): Promise<void> {
@@ -198,11 +217,7 @@ export async function moveIncomingAddresses(db: D1Database): Promise<void> {
     } else if (row.decision === "approved" && nearest && nearest.distance <= DUPLICATE_M) {
       writes.push(drop(row.id));
     } else if (row.decision === "approved" && nearest) {
-      writes.push(
-        db
-          .prepare("UPDATE incoming_addresses SET decision = NULL, duplicate_m = ?2 WHERE id = ?1")
-          .bind(row.id, Math.round(nearest.distance)),
-      );
+      writes.push(db.prepare("UPDATE incoming_addresses SET decision = NULL WHERE id = ?1").bind(row.id));
     } else {
       writes.push(insert(row.text, row.kind, row.geometry, shape), drop(row.id));
       known.push({ id: null, key, shape });

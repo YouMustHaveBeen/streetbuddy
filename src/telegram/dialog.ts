@@ -8,6 +8,7 @@ import {
   buildRoadUserLine,
   district,
   dublinDateTime,
+  formAddress,
   getHotspots,
   isBotEnabled,
   logReport,
@@ -19,6 +20,7 @@ import {
   recognizePlates,
   ROAD_USER_TYPES,
   reverseGeocode,
+  withoutPostalDistrict,
 } from "../core";
 import type { Defer, LoggedReport } from "../core";
 import type { Env } from "../env";
@@ -387,14 +389,11 @@ async function handleLocation(
   }
   const cleanupIds = [message.message_id];
   const nearby = await nearestAddresses(c.env.DB, lat, lon, ADDRESS_CHOICES);
-  const options: AddressOption[] = nearby.map((found) => ({
-    text: `${found.text}, ${district.postalDistrict}`,
-    id: found.id,
-  }));
+  const options: AddressOption[] = nearby.map((found) => ({ text: found.text, id: found.id }));
   if (options.length === 0) {
     let address: string | null;
     try {
-      address = await reverseGeocode(c.env.DB, district, lat, lon, c.defer);
+      address = await reverseGeocode(c.env.DB, lat, lon, c.defer);
     } catch {
       console.error("Nominatim failed on coordinates");
       const failures = (draft?.failures ?? 0) + 1;
@@ -425,7 +424,8 @@ async function chooseAddress(c: Context, draft: Draft, option: AddressOption): P
   else await show(c, draft, SEND_PHOTOS, { ...changes, step: "photos" });
 }
 
-// An address written by hand is kept as it is, with the coordinates already in the draft.
+// An address written by hand is kept as it is, without the postal district at its end, with the
+// coordinates already in the draft.
 async function handleManualAddress(
   c: Context,
   draft: Draft,
@@ -437,7 +437,11 @@ async function handleManualAddress(
     await show(c, draft, ADDRESS_TOO_LONG, {}, cleanupIds);
     return;
   }
-  const changes: DraftChanges = { address: text, address_id: null, address_typed: 1 };
+  const changes: DraftChanges = {
+    address: withoutPostalDistrict(text, district),
+    address_id: null,
+    address_typed: 1,
+  };
   if (draft.editing) {
     await showReport(c, draft, "edit", changes, cleanupIds);
     return;
@@ -781,9 +785,11 @@ async function finish(c: Context, draft: Draft, from: Step, phone: UserPhone): P
   const { date, time } = reportMoment(draft);
   const address = draft.address as string;
   const plate = draft.plate as string;
-  const description = buildDescription({ plate, parking, address, date, time });
+  // Only the fields of the form get the postal district.
+  const inForm = formAddress(address, district);
+  const description = buildDescription({ plate, parking, address: inForm, date, time });
   const link = buildReportLink({
-    location: buildLocation(address, draft.lat as number, draft.lon as number),
+    location: buildLocation(inForm, draft.lat as number, draft.lon as number),
     county: district.county,
     description,
     date,

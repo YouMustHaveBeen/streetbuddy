@@ -2,7 +2,7 @@
 // description templates, link building).
 export { isInArea } from "./area";
 export { district } from "./district";
-export { reverseGeocode } from "./geocode";
+export { formAddress, reverseGeocode, withoutPostalDistrict } from "./geocode";
 export {
   addUserAddress,
   approveAllWalk,
@@ -14,6 +14,7 @@ export {
   nearestAddresses,
   nextIncoming,
   renameAddress,
+  sameTextDistance,
 } from "./directory";
 export type { Decision } from "./directory";
 export { shapeFromGeometry, shapeMiddle } from "./shapes";

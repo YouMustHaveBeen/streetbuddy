@@ -15,6 +15,7 @@ import {
   nearestAddresses,
   nextIncoming,
   renameAddress,
+  sameTextDistance,
   shapeFromGeometry,
   shapeMiddle,
 } from "../core";
@@ -117,9 +118,11 @@ async function sendScreen(env: AdminEnv, chatId: number): Promise<number | null>
 }
 
 // The next incoming address without a decision after afterId, with a pin on the map above it.
+// An address whose text is already in the directory gets Keep old and Replace old.
 async function sendIncoming(env: AdminEnv, chatId: number, afterId: number): Promise<number | null> {
   const item = await nextIncoming(env.DB, afterId);
   if (!item) return send(env, chatId, NO_INCOMING, [[backButton()]]);
+  const duplicateM = await sameTextDistance(env.DB, item.text, item.geometry);
 
   const shape = shapeFromGeometry(JSON.parse(item.geometry));
   const middle = shape ? shapeMiddle(shape) : null;
@@ -142,11 +145,11 @@ async function sendIncoming(env: AdminEnv, chatId: number, afterId: number): Pro
     item.text,
     `${KIND_TEXT[item.kind]}, ${item.source === "walk" ? "from the walk" : "written by a user"}`,
   ];
-  if (item.duplicate_m !== null) {
-    lines.push(`Possible duplicate: the same address is in the directory ${item.duplicate_m} m away`);
+  if (duplicateM !== null) {
+    lines.push(`Possible duplicate: the same address is in the directory ${Math.round(duplicateM)} m away`);
   }
   const decisions =
-    item.duplicate_m === null
+    duplicateM === null
       ? [decide("Approve", "ok"), decide("Reject", "no"), decide("Next", "next")]
       : [decide("Keep old", "keep"), decide("Replace old", "replace"), decide("Next", "next")];
   const sent = await send(env, chatId, lines.join("\n"), [

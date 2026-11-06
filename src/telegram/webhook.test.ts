@@ -498,13 +498,13 @@ describe("/admin: incoming addresses and the directory", () => {
     Object.assign(update.message, { message_id: 500 + updateId, date: 1793000000, ...fields });
     await send(update);
   };
-  const addIncoming = (text: string, source: string, geometry: object, duplicate: number | null = null) =>
+  const addIncoming = (text: string, source: string, geometry: object) =>
     Number(
       sqlite
         .prepare(
-          "INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, duplicate_m, created_at) VALUES (?, ?, ?, ?, ?, ?, 1)",
+          "INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, created_at) VALUES (?, ?, ?, ?, ?, 1)",
         )
-        .run(source, text, (geometry as any).type === "Point" ? "point" : "line", JSON.stringify(geometry), source === "user" ? 7 : null, duplicate)
+        .run(source, text, (geometry as any).type === "Point" ? "point" : "line", JSON.stringify(geometry), source === "user" ? 7 : null)
         .lastInsertRowid,
     );
   const addAddress = (text: string, kind: string, lat: number, lon: number) =>
@@ -565,8 +565,9 @@ describe("/admin: incoming addresses and the directory", () => {
     ]);
     expect(last().text).toContain("Incoming address 1 of 1\nA");
   });
-  it("offers Keep old and Replace old for a possible duplicate", async () => {
-    const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] }, 40);
+  it("offers Keep old and Replace old when the text is already in the directory", async () => {
+    addAddress("a", "point", 53.405 + 40 / 111195, -6.16);
+    const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
     await press("admin_incoming");
     expect(last().text).toBe(
       "Incoming address 1 of 1\nA\nPoint, from the walk\nPossible duplicate: the same address is in the directory 40 m away",
@@ -578,7 +579,7 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(labels()).toEqual(["Back"]);
   });
   it("Keep old drops the new address", async () => {
-    const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] }, 40);
+    const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
     await press(`admin_in:keep:${id}:101`);
     expect(decision()).toEqual([{ decision: "rejected", user_id: null }]);
   });
