@@ -74,7 +74,6 @@ describe("distanceBetween", () => {
   it("is the same both ways", () => {
     const a = line([0, 0], [10, 10]);
     const b = square(20, 20, 5);
-    // The flat map is centred on the first shape, so the two directions differ by hundredths of a millimetre.
     expect(distanceBetween(a, b)).toBeCloseTo(distanceBetween(b, a), 3);
   });
 });
