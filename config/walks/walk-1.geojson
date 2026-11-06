@@ -38,5 +38,10 @@
 {"type":"Feature","properties":{"address":"Main St, New Priory block 8","kind":"appt"},"geometry":{"type":"Point","coordinates":[-6.1650427,53.4027005]}},
 {"type":"Feature","properties":{"address":"Main St, New Priory block 9","kind":"appt"},"geometry":{"type":"Point","coordinates":[-6.1653531,53.4027265]}},
 {"type":"Feature","properties":{"address":"Main St & Walker Grn","kind":"spot"},"geometry":{"type":"LineString","coordinates":[[-6.1661424,53.4028075],[-6.1668154,53.4028881]]}},
-{"type":"Feature","properties":{"address":"Main St btw Block 1b & Block 2a","kind":"spot"},"geometry":{"type":"LineString","coordinates":[[-6.1681919,53.4030532],[-6.1683269,53.4030685],[-6.1684615,53.4031148],[-6.1685966,53.4031184]]}}
+{"type":"Feature","properties":{"address":"Main St btw Block 1b & Block 2a","kind":"spot"},"geometry":{"type":"LineString","coordinates":[[-6.1681919,53.4030532],[-6.1683269,53.4030685],[-6.1684615,53.4031148],[-6.1685966,53.4031184]]}},
+{"type":"Feature","properties":{"address":"Marrsfield ave opposite Vesta appt","kind":"spot"},"geometry":{"type":"LineString","coordinates":[[-6.1612819,53.4080617],[-6.1610466,53.408046]]}},
+{"type":"Feature","properties":{"address":"Fr Collins park entrance, Marrsfield ave","kind":"spot"},"geometry":{"type":"LineString","coordinates":[[-6.1609208,53.4080354],[-6.1606831,53.4080021],[-6.1601254,53.4079936]]}},
+{"type":"Feature","properties":{"address":"Marrsfield ave opposite Griffin appt","kind":"spot"},"geometry":{"type":"LineString","coordinates":[[-6.1593023,53.407934],[-6.1590132,53.4078791],[-6.1587881,53.4078902]]}},
+{"type":"Feature","properties":{"address":"Marrsfield ave & Park ave","kind":"spot"},"geometry":{"type":"LineString","coordinates":[[-6.158318,53.4078335],[-6.1578382,53.4077778]]}},
+{"type":"Feature","properties":{"address":"Mace, Marrsfield ave","kind":"facility"},"geometry":{"type":"Point","coordinates":[-6.1580354,53.4079399]}}
 ]}
