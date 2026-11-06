@@ -45,12 +45,11 @@ const PAGE_SCRIPT = `(function () {
   ${CHOICE_SCRIPT}
   bindChoice("variant");
 
-  // The phone and the way of setting it up decide which blocks (data-for) are shown.
+  // The phone decides which blocks (data-for) are shown.
   var os = "android";
-  var method = "bookmark";
 
   function showBlocks() {
-    var mode = os === "android" ? "android" : "iphone-" + method;
+    var mode = os === "android" ? "android" : "iphone-bookmark";
     var blocks = document.querySelectorAll("[data-for]");
     for (var i = 0; i < blocks.length; i++) {
       blocks[i].hidden = blocks[i].getAttribute("data-for").split(" ").indexOf(mode) === -1;
@@ -71,7 +70,6 @@ const PAGE_SCRIPT = `(function () {
   }
 
   bindBlocks("os", function (value) { os = value; });
-  bindBlocks("method", function (value) { method = value; });
 
   function validProfile(form) {
     // Reads the fields through form.elements.
@@ -175,30 +173,13 @@ ${BASE_STYLE}
 <p>Нажмите «⋮» вверху справа и «Open in browser». Если руководство открылось не в Chrome, сделайте Chrome браузером по умолчанию (настройки телефона, «Apps», «Default apps», «Browser app», Chrome) или нажмите в этом же меню «Copy Link», откройте Chrome и вставьте адрес в адресную строку.</p>
 </div>
 
-<div data-for="iphone-bookmark iphone-script" hidden>
-<p>На iPhone есть два способа, оба работают только в Safari. Выберите один:</p>
-<p class="choice"><button type="button" aria-pressed="true" data-method="bookmark">Закладка</button><button type="button" aria-pressed="false" data-method="script">Приложение Userscripts</button></p>
 <div data-for="iphone-bookmark" hidden>
-<p>Ваши личные данные будут храниться в закладке Safari: при запуске закладка загружает с сайта StreetBuddy скрипт, который добавляет эти данные в форму репорта. Приложение ставить не нужно, но закладку надо запускать на каждом репорте. Для запуска нужен интернет.</p>
-</div>
-<div data-for="iphone-script" hidden>
-<p>Приложение Userscripts запускает скрипт на форме репорта само. Ваши личные данные вы введете один раз, на форме при первом репорте, и они будут храниться в приложении на телефоне. Настройка чуть длиннее, зато закладку запускать не нужно.</p>
-</div>
+<p>На iPhone закладка работает только в Safari.</p>
+<p>Ваши личные данные будут храниться в закладке Safari: при запуске закладка загружает с сайта StreetBuddy скрипт, который добавляет эти данные в форму репорта. Закладку надо запускать на каждом репорте. Для запуска нужен интернет.</p>
 
 <h3>1. Откройте руководство в Safari</h3>
 <p>Если это руководство открылось внутри Telegram, нажмите «⋯» вверху и «Open in Safari».</p>
 <p>Это необязательно, но можно сделать так, чтобы страницы из Telegram сразу открывались в Safari: в Telegram откройте «Settings», «Data and Storage», «Open Links in» и выберите Safari. Настройка действует на все страницы, которые вы открываете из Telegram, а не только на бота.</p>
-</div>
-
-<div data-for="iphone-script" hidden>
-<h3>2. Установите приложение и включите его в Safari</h3>
-<p>Установите бесплатное приложение <a href="https://apps.apple.com/app/userscripts/id1463298887">Userscripts</a> из App Store и откройте его один раз.</p>
-<p>Откройте настройки iPhone, затем «Safari» (на новых версиях iOS «Apps», «Safari»), «Extensions», Userscripts. Включите расширение и разрешите его для всех сайтов («Allow»).</p>
-
-<h3>3. Установите скрипт</h3>
-<p>Нажмите кнопку, откроется страница с кодом скрипта:</p>
-<p><a class="install" id="script-link" href="${SCRIPT_PATH}">Открыть скрипт</a></p>
-<p>На этой странице откройте меню расширений Safari (значок слева в адресной строке, на новых версиях iOS «⋯»), нажмите Userscripts, затем предложение установить скрипт, и подтвердите установку.</p>
 </div>
 
 <div data-for="android iphone-bookmark">
@@ -256,7 +237,7 @@ ${BASE_STYLE}
 <h3>4. Составьте тестовый репорт</h3>
 <p>В Telegram отправьте боту StreetBuddy местоположение. Для тестового репорта выберите место в районе, где работает бот, иначе бот ответит, что в этом районе не работает.</p>
 <p data-for="android">В чате с ботом нажмите скрепку справа в строке ввода, «Location», передвиньте указатель на нужное место и нажмите «Send selected location».</p>
-<p data-for="iphone-bookmark iphone-script" hidden>В чате с ботом нажмите скрепку слева от строки ввода, «Location», передвиньте указатель на нужное место и нажмите «Send selected location».</p>
+<p data-for="iphone-bookmark" hidden>В чате с ботом нажмите скрепку слева от строки ввода, «Location», передвиньте указатель на нужное место и нажмите «Send selected location».</p>
 <p>Бот напишет «Choose the address» и покажет адреса рядом с выбранным местом: нажмите подходящий. Если подходящего нет, нажмите «Other address» и напишите адрес сообщением.</p>
 <p>Затем бот запросит фото машины. Для тестового репорта вы можете прислать любое фото, например, своей машины.</p>
 <p>Далее бот запустит процесс подготовки репорта, пройдите его по шагам.</p>
@@ -265,13 +246,10 @@ ${BASE_STYLE}
 <p>Когда форма откроется, нажмите на адресную строку вверху, наберите qqqwww и выберите в подсказках закладку qqqwww (со значком звезды).</p>
 </div>
 <p data-for="iphone-bookmark" hidden>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш телефон (в первый раз), он спросит «Your phone?»: нажмите «iPhone bookmark».</p>
-<p data-for="iphone-script" hidden>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш телефон (в первый раз), он спросит «Your phone?»: нажмите «iPhone Userscripts».</p>
-<p data-for="iphone-bookmark iphone-script" hidden>Нажмите кнопку «Open report» под описанием. Если форма открылась внутри Telegram, нажмите «⋯» вверху и «Open in Safari».</p>
+<p data-for="iphone-bookmark" hidden>Нажмите кнопку «Open report» под описанием. Если форма открылась внутри Telegram, нажмите «⋯» вверху и «Open in Safari».</p>
 <p data-for="iphone-bookmark" hidden>Когда форма откроется, нажмите «⋯» внизу, «Bookmarks» и qqqwww.</p>
-<p data-for="iphone-script" hidden>Когда форма откроется, вверху страницы появится панель с полями. Она появляется только в первый раз: введите ваши данные и нажмите «Save». Если панели нет, откройте меню расширений Safari и проверьте, что Userscripts разрешено работать на этой странице.</p>
 <p>Затем поставьте две галочки на странице Traffic Watch Online Reporting: об отсутствии emergency и о явке в суд, нажмите «Click Here to Start» и проверьте, как заполнились поля формы. Проходить капчу и нажимать «Submit Report» для тестового репорта не надо.</p>
 <p data-for="android iphone-bookmark">На этом установка закончена, вы можете пользоваться ботом. Для каждого репорта запускайте закладку qqqwww так же: после того как форма откроется.</p>
-<p data-for="iphone-script" hidden>На этом установка закончена, вы можете пользоваться ботом. Скрипт будет запускаться на форме сам.</p>
 <p>Вернитесь в Telegram и под описанием тестового репорта нажмите «Cancel»: бот удалит это сообщение вместе с кнопками. После настоящего репорта нажимайте «Done»: бот уберет кнопки и допишет, когда репорт был отправлен.</p>
 </section>
 

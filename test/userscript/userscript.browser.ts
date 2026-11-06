@@ -554,28 +554,22 @@ describe("bookmarklet built on the installation page", () => {
 });
 
 describe("installation guide choices", () => {
-  it("shows the blocks of the chosen phone and way of setting it up", async () => {
+  it("shows the blocks of the chosen phone", async () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(origin + INSTALL_PATH);
     const form = "#bookmark-form";
-    const scriptLink = "#script-link";
+    const iphoneBlock = '[data-for="iphone-bookmark"]';
     expect(await page.isVisible(form)).toBe(true);
-    expect(await page.isVisible(scriptLink)).toBe(false);
-    expect(await page.isVisible("[data-method=bookmark]")).toBe(false);
+    expect(await page.isVisible(iphoneBlock)).toBe(false);
 
     await page.getByRole("button", { name: "iPhone" }).click();
-    expect(await page.isVisible("[data-method=bookmark]")).toBe(true);
     expect(await page.isVisible(form)).toBe(true);
-    expect(await page.isVisible(scriptLink)).toBe(false);
-
-    await page.getByRole("button", { name: "Приложение Userscripts" }).click();
-    expect(await page.isVisible(form)).toBe(false);
-    expect(await page.isVisible(scriptLink)).toBe(true);
+    expect(await page.isVisible(iphoneBlock)).toBe(true);
 
     await page.getByRole("button", { name: "Android" }).click();
     expect(await page.isVisible(form)).toBe(true);
-    expect(await page.isVisible(scriptLink)).toBe(false);
+    expect(await page.isVisible(iphoneBlock)).toBe(false);
     await context.close();
   });
 });

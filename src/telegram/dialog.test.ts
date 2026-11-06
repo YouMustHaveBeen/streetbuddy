@@ -1180,12 +1180,12 @@ describe("review, Edit and the phone", () => {
     await press("review_ok");
     expect(draft().step).toBe("phone");
     expect(lastSent().text).toBe("Your phone?");
-    expect(rowsOf()).toEqual([["iPhone bookmark"], ["iPhone Userscripts"], ["Android"], ["Cancel"]]);
-    await press("phone:iphone_userscripts");
+    expect(rowsOf()).toEqual([["iPhone bookmark"], ["Android"], ["Cancel"]]);
+    await press("phone:iphone_bookmark");
     expect(lastSent().text).toBe(
-      `${FINAL}\n\n-> Press “Open report”,\n-> «⋯» on the top and “Open in Safari”,\n-> fill and send the report,\n-> press “Done” to close the form.`,
+      `${FINAL}\n\n-> Press “Open report”,\n-> «⋯» on the top and “Open in Safari”,\n-> «⋯» on the bottom and “Bookmarks”,\n-> press qqqwww,\n-> fill and send the report,\n-> press “Done” to close the form.`,
     );
-    expect(sqlite.prepare("SELECT phone, reports FROM user_phones").get()).toEqual({ phone: "iphone_userscripts", reports: 1 });
+    expect(sqlite.prepare("SELECT phone, reports FROM user_phones").get()).toEqual({ phone: "iphone_bookmark", reports: 1 });
 
     await toReview();
     await press("review_ok");
