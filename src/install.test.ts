@@ -15,15 +15,12 @@ describe("installation guide page", () => {
     expect(html).toContain("<title>Руководство по установке StreetBuddy</title>");
   });
 
-  it("offers Android and iPhone, and two ways of setting up the iPhone", async () => {
+  it("offers Android and iPhone", async () => {
     const html = await installPage().text();
     expect(html).toContain('aria-pressed="true" data-os="android">Android</button>');
     expect(html).toContain('aria-pressed="false" data-os="iphone">iPhone</button>');
-    expect(html).toContain('aria-pressed="true" data-method="bookmark">Закладка</button>');
-    expect(html).toContain('aria-pressed="false" data-method="script">Приложение Userscripts</button>');
-    expect(html).toContain(`id="script-link" href="${SCRIPT_PATH}"`);
     expect(html).toContain('<button class="install" type="submit">Создать закладку</button>');
-    expect(html).not.toMatch(/firefox|violentmonkey/i);
+    expect(html).not.toMatch(/firefox|violentmonkey|userscripts/i);
     expect(html).not.toContain("data-browser");
   });
 
@@ -43,12 +40,9 @@ describe("installation guide page", () => {
 });
 
 describe("userscript file", () => {
-  it("has a version and points its update addresses at the script file", async () => {
+  it("has a version", async () => {
     const file = await userscriptFile().text();
     expect(file).toMatch(/^\/\/ @version\s+\d+\.\d+\.\d+$/m);
-    for (const key of ["@updateURL", "@downloadURL"]) {
-      expect(file).toMatch(new RegExp(`^// ${key}\\s+https://\\S+${SCRIPT_PATH}$`, "m"));
-    }
   });
 
   it("is served as JavaScript and starts with the userscript header", async () => {

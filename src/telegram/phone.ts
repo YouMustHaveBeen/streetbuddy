@@ -3,7 +3,7 @@ import { REPORT_LOG_TTL_MS } from "../core/stats";
 
 export const PHONE_TTL_MS = REPORT_LOG_TTL_MS;
 
-export const PHONES = ["iphone_bookmark", "iphone_userscripts", "android"] as const;
+export const PHONES = ["iphone_bookmark", "android"] as const;
 
 export type Phone = (typeof PHONES)[number];
 

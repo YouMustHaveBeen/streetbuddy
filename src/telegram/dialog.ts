@@ -137,10 +137,6 @@ const REPORT_STEPS: Record<Phone, string> = {
 -> press qqqwww,
 -> fill and send the report,
 -> press “Done” to close the form.`,
-  iphone_userscripts: `-> Press “Open report”,
--> «⋯» on the top and “Open in Safari”,
--> fill and send the report,
--> press “Done” to close the form.`,
   android: `-> Press “Open report”,
 -> «⋮» on the top and “Open in browser”,
 -> tap the address bar and type qqqwww,
@@ -179,7 +175,6 @@ const REMOVE_KEYBOARD = { remove_keyboard: true };
 
 const PHONE_BUTTONS: Button[][] = [
   [{ text: "iPhone bookmark", callback_data: `${PHONE_PREFIX}iphone_bookmark` }],
-  [{ text: "iPhone Userscripts", callback_data: `${PHONE_PREFIX}iphone_userscripts` }],
   [{ text: "Android", callback_data: `${PHONE_PREFIX}android` }],
   [CANCEL],
 ];
