@@ -40,12 +40,9 @@ describe("installation guide page", () => {
 });
 
 describe("userscript file", () => {
-  it("has a version and points its update addresses at the script file", async () => {
+  it("has a version", async () => {
     const file = await userscriptFile().text();
     expect(file).toMatch(/^\/\/ @version\s+\d+\.\d+\.\d+$/m);
-    for (const key of ["@updateURL", "@downloadURL"]) {
-      expect(file).toMatch(new RegExp(`^// ${key}\\s+https://\\S+${SCRIPT_PATH}$`, "m"));
-    }
   });
 
   it("is served as JavaScript and starts with the userscript header", async () => {

@@ -20,7 +20,7 @@ const VENDOR_FILES: Record<string, string> = {
     "node_modules/bootstrap-datepicker/dist/locales/bootstrap-datepicker.en-IE.min.js",
 };
 
-// Made-up personal data, saved the way the extension storage would hold it.
+// Made-up personal data.
 const PROFILE = {
   name: "Test Person",
   phone: "0870000000",
@@ -83,16 +83,13 @@ afterAll(async () => {
 
 // A new context is a new browser profile: its session storage starts empty.
 // `changeForm` edits the page text before the browser gets it (to take a field or option away).
-// `stored` is the personal data in the extension storage; null means none is saved yet.
+// `profile` is the personal data the bookmarklet puts on the page.
 async function newContext(
   changeForm?: (html: string) => string,
-  stored: object | null = PROFILE,
+  profile: object = PROFILE,
 ): Promise<BrowserContext> {
   const context = await browser.newContext();
-  // One init script: the order of several scripts is not guaranteed, and the script reads GM at once.
-  const saved = stored === null ? "undefined" : JSON.stringify(JSON.stringify(stored));
-  const gmMock = `globalThis.GM = { getValue: async (key) => (key === "profile" ? ${saved} : undefined), setValue: async () => {} };`;
-  await context.addInitScript(`${gmMock}\n${SCRIPT}`);
+  await context.addInitScript(`globalThis.STREETBUDDY_PROFILE = ${JSON.stringify(profile)};\n${SCRIPT}`);
   if (changeForm) {
     await context.route(`**${FORM_PATH}`, (route) =>
       route.fulfill({ contentType: "text/html; charset=utf-8", body: changeForm(FORM_HTML) }),
@@ -394,44 +391,6 @@ describe("form-filling script on a copy of the report form", () => {
     },
     FIELDS_TIMEOUT_MS + 20000,
   );
-
-  it("fills the form with personal data saved by an older version that also kept Were you a", async () => {
-    const context = await newContext(undefined, { ...PROFILE, roadUser: "Driver" });
-    const page = await context.newPage();
-    const report = ordinaryReport();
-    await page.goto(linkTo(report));
-    await tickAndStart(page);
-    await waitUntilFilled(page);
-    expect(await fieldValues(page)).toEqual(expectedValues(report));
-    await context.close();
-  });
-
-  it("asks for the personal data without Were you a, then fills the form", async () => {
-    const context = await newContext(undefined, null);
-    const page = await context.newPage();
-    const report = ordinaryReport();
-    await page.goto(linkTo(report));
-    const panel = page.locator("#streetbuddy-profile");
-    await panel.waitFor();
-    expect((await panel.locator("label").allInnerTexts()).map((label) => label.split("\n")[0])).toEqual([
-      "First Name and Last Name",
-      "Phone",
-      "Email",
-      "Address",
-      "How you wish to be contacted",
-    ]);
-    const inputs = panel.locator("input");
-    await inputs.nth(0).fill(PROFILE.name);
-    await inputs.nth(1).fill(PROFILE.phone);
-    await inputs.nth(2).fill(PROFILE.email);
-    await inputs.nth(3).fill(PROFILE.address);
-    await panel.locator("select").selectOption(PROFILE.contact);
-    await panel.getByRole("button", { name: "Save" }).click();
-    await tickAndStart(page);
-    await waitUntilFilled(page);
-    expect(await fieldValues(page)).toEqual(expectedValues(report));
-    await context.close();
-  });
 });
 
 describe("bookmarklet built on the installation page", () => {
@@ -459,7 +418,7 @@ describe("bookmarklet built on the installation page", () => {
     await page.getByRole("button", { name: "Создать закладку" }).click();
   }
 
-  it("copies a short bookmarklet, which loads the script and fills the form like the userscript", async () => {
+  it("copies a short bookmarklet, which loads the script and fills the form", async () => {
     const guideContext = await browser.newContext();
     await guideContext.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
     const sent: string[] = [];

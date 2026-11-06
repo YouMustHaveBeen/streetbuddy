@@ -1,20 +1,14 @@
 // ==UserScript==
 // @name         StreetBuddy
 // @namespace    streetbuddy
-// @version      1.2.0
+// @version      1.3.0
 // @description  Fills in the Garda Traffic Watch form from a StreetBuddy link
 // @match        https://www.garda.ie/en/trafficwatchreport*
 // @match        https://garda.ie/en/trafficwatchreport*
 // @run-at       document-start
-// @updateURL    https://streetbuddy.youmusthavebeen.workers.dev/streetbuddy.user.js
-// @downloadURL  https://streetbuddy.youmusthavebeen.workers.dev/streetbuddy.user.js
-// @grant        GM.getValue
-// @grant        GM.setValue
-// @grant        GM_getValue
-// @grant        GM_setValue
 // ==/UserScript==
 
-// StreetBuddy form-filling script: the userscript and the bookmarklet both run this same file.
+// StreetBuddy form-filling script: the bookmarklet loads this file.
 // It never ticks the confirmation checkboxes, never presses "Click Here to Start" or
 // "Submit Report" and never touches the captcha: those steps always stay with the person.
 (function () {
@@ -24,8 +18,6 @@
 
   const LINK_PREFIX = "#sb=";
   const REPORT_KEY = "streetbuddy-report";
-  const PANEL_ID = "streetbuddy-profile";
-  const PROFILE_KEY = "profile";
   // How long to wait for all the fields once the first one is visible.
   const FIELDS_TIMEOUT_MS = 10000;
 
@@ -109,9 +101,8 @@
     }
   }
 
-  // Drops the link data on submit events, except for the panel for personal data.
-  function forgetReport(event) {
-    if (event.target && event.target.id === PANEL_ID) return;
+  // Drops the link data on submit events.
+  function forgetReport() {
     try {
       sessionStorage.removeItem(REPORT_KEY);
     } catch {
@@ -120,20 +111,6 @@
   }
 
   // ------------------------------------------------------------ personal data
-
-  // Extension storage on the phone.
-  function pickStorage() {
-    if (typeof GM !== "undefined" && GM && typeof GM.getValue === "function") {
-      return { get: (key) => GM.getValue(key), set: (key, value) => GM.setValue(key, value) };
-    }
-    if (typeof GM_getValue === "function") {
-      return {
-        get: async (key) => GM_getValue(key),
-        set: async (key, value) => GM_setValue(key, value),
-      };
-    }
-    return null;
-  }
 
   // Returns the cleaned personal data, or null when anything is missing or not allowed.
   function validateProfile(data) {
@@ -150,15 +127,8 @@
     };
   }
 
-  async function loadProfile(storage) {
-    if (globalThis.STREETBUDDY_PROFILE) return validateProfile(globalThis.STREETBUDDY_PROFILE);
-    if (!storage) return null;
-    try {
-      const stored = await storage.get(PROFILE_KEY);
-      return stored ? validateProfile(JSON.parse(stored)) : null;
-    } catch {
-      return null;
-    }
+  function loadProfile() {
+    return globalThis.STREETBUDDY_PROFILE ? validateProfile(globalThis.STREETBUDDY_PROFILE) : null;
   }
 
   // ---------------------------------------------------------------- page parts
@@ -170,68 +140,6 @@
     box.style.cssText = "padding:12px;margin:8px;border:2px solid #b00020;background:#fff;color:#000;font:16px sans-serif";
     box.textContent = text;
     document.body.prepend(box);
-  }
-
-  function field(labelText, control) {
-    const label = document.createElement("label");
-    label.style.cssText = "display:block;margin:8px 0";
-    label.append(labelText, document.createElement("br"), control);
-    return label;
-  }
-
-  function textInput(type) {
-    const input = document.createElement("input");
-    input.type = type;
-    input.required = true;
-    input.style.cssText = "width:100%;box-sizing:border-box;font-size:16px";
-    return input;
-  }
-
-  function selectInput(options) {
-    const select = document.createElement("select");
-    select.required = true;
-    select.style.cssText = "width:100%;box-sizing:border-box;font-size:16px";
-    for (const text of options) select.append(new Option(text, text));
-    select.selectedIndex = -1;
-    return select;
-  }
-
-  // Asks for the personal data.
-  function showProfilePanel(onSave) {
-    const panel = document.createElement("form");
-    panel.id = PANEL_ID;
-    panel.style.cssText = "padding:12px;margin:8px;border:2px solid #444;background:#fff;color:#000;font:16px sans-serif";
-    const name = textInput("text");
-    const phone = textInput("tel");
-    const email = textInput("email");
-    const address = textInput("text");
-    const contact = selectInput(CONTACT_METHODS);
-    const save = document.createElement("button");
-    save.type = "submit";
-    save.textContent = "Save";
-    save.style.cssText = "font-size:16px;padding:8px 16px";
-    panel.append(
-      field("First Name and Last Name", name),
-      field("Phone", phone),
-      field("Email", email),
-      field("Address", address),
-      field("How you wish to be contacted", contact),
-      save,
-    );
-    panel.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const profile = validateProfile({
-        name: name.value,
-        phone: phone.value,
-        email: email.value,
-        address: address.value,
-        contact: contact.value,
-      });
-      if (!profile) return;
-      panel.remove();
-      await onSave(profile);
-    });
-    document.body.prepend(panel);
   }
 
   // ------------------------------------------------------------------- filling
@@ -355,25 +263,13 @@
     else callback();
   }
 
-  async function run() {
-    const storage = pickStorage();
-    let profile = await loadProfile(storage);
+  function run() {
+    const profile = loadProfile();
     onReady(() => {
       // Drops the saved link data on a submit event.
       document.addEventListener("submit", forgetReport, true);
       if (link.invalid) showMessage(MESSAGE_LINK_INVALID);
-      const start = () => {
-        if (link.report && profile) waitAndFill(link.report, profile);
-      };
-      if (!profile && storage) {
-        showProfilePanel(async (saved) => {
-          await storage.set(PROFILE_KEY, JSON.stringify(saved));
-          profile = saved;
-          start();
-        });
-      } else {
-        start();
-      }
+      if (link.report && profile) waitAndFill(link.report, profile);
     });
   }
 
