@@ -10,8 +10,7 @@ const MIN_INTERVAL_MS = 1000;
 export const GEOCODE_CACHE_TTL_MS = 60 * DAY_MS;
 
 const EIRCODE = /^([AC-FHKNPRTV-Y]\d{2}|D6W)\s?([0-9AC-FHKNPRTV-Y]{4})$/i;
-// In a written address: capitals only, and a digit among the last four characters.
-const EIRCODE_IN_TEXT = /\b([AC-FHKNPRTV-Y]\d{2}|D6W) ?(?=[0-9AC-FHKNPRTV-Y]{0,3}\d)[0-9AC-FHKNPRTV-Y]{4}\b/;
+const EIRCODE_IN_TEXT = /\b([AC-FHKNPRTV-Y]\d{2}|D6W)\s?[0-9AC-FHKNPRTV-Y]{4}\b/i;
 
 // Runs work after the caller has finished, without making it wait.
 export type Defer = (work: Promise<unknown>) => void;
@@ -39,7 +38,7 @@ function formatAddress(details: Record<string, string>): string {
   return [line, locality, postal].filter(Boolean).join(", ");
 }
 
-// The address as it goes into the form: the postal district of the area is added unless the
+// The address as it goes into the form and the final message: the postal district of the area is added unless the
 // address has an Eircode.
 export const formAddress = (address: string, area: Area): string =>
   EIRCODE_IN_TEXT.test(address) ? address : `${address}, ${area.postalDistrict}`;

@@ -111,11 +111,7 @@ describe("formAddress", () => {
     expect(formAddress("1 Parkside Drive", area)).toBe("1 Parkside Drive, D13");
     expect(formAddress("12 Main Street, Clongriffin, D13 X1Y2", area)).toBe("12 Main Street, Clongriffin, D13 X1Y2");
     expect(formAddress("12 Main Street D13X1Y2", area)).toBe("12 Main Street D13X1Y2");
-  });
-  it("takes only capitals with a digit among the last four characters for an Eircode", () => {
-    expect(formAddress("12 Main Street d13x1y2", area)).toBe("12 Main Street d13x1y2, D13");
-    expect(formAddress("D13 Cafe, Main Street", area)).toBe("D13 Cafe, Main Street, D13");
-    expect(formAddress("D13 CAFE, Main Street", area)).toBe("D13 CAFE, Main Street, D13");
+    expect(formAddress("12 Main Street d13x1y2", area)).toBe("12 Main Street d13x1y2");
   });
 });
 

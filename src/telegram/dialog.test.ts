@@ -351,7 +351,7 @@ describe("location", () => {
     await press("done");
     await giveLink();
     const final = lastSent();
-    expect(final.text).toContain("\nat 5 New Street\n");
+    expect(final.text).toContain("\nat 5 New Street, D13\n");
     const url = final.reply_markup.inline_keyboard[0][0].url as string;
     const data = JSON.parse(new TextDecoder().decode(Buffer.from(url.split("#sb=")[1], "base64url")));
     expect(data.l).toBe(`5 New Street, D13 (${latInside.toFixed(5)}, ${lonInside.toFixed(5)})`);
@@ -385,7 +385,9 @@ describe("location", () => {
     expect(data.d).not.toContain("North Dublin");
     expect(data.l).toBe(`${address}, D13 (${latInside.toFixed(5)}, ${lonInside.toFixed(5)})`);
     const atLine = (final.text as string).split("\n").find((line) => line.startsWith("at ")) as string;
-    expect(address.startsWith(atLine.slice(3))).toBe(true);
+    const inForm = (data.d as string).split(" at ")[1].split(" on ")[0];
+    expect(atLine).toBe(`at ${inForm}`);
+    expect(inForm.length).toBeLessThan(`${address}, D13`.length);
   });
   it("keeps an Eircode in a written address and adds no postal district in the form", async () => {
     await location();
@@ -696,7 +698,7 @@ describe("parking and the final message", () => {
 
     const final = lastSent();
     expect(final.text).toBe(
-      "Vehicle 12-D-3456\nparked on a footpath\nand blocking a private driveway\nat 12 Main Street, Clongriffin\non 26/10/2026 at 07:33.\nI was a pedestrian.\n\n-> Press “Open report”,\n-> «⋮» on the top and “Open in browser”,\n-> tap the address bar and type qqqwww,\n-> choose qqqwww in the suggestions,\n-> fill and send the report,\n-> press “Done” to close the form.",
+      "Vehicle 12-D-3456\nparked on a footpath\nand blocking a private driveway\nat 12 Main Street, Clongriffin, D13\non 26/10/2026 at 07:33.\nI was a pedestrian.\n\n-> Press “Open report”,\n-> «⋮» on the top and “Open in browser”,\n-> tap the address bar and type qqqwww,\n-> choose qqqwww in the suggestions,\n-> fill and send the report,\n-> press “Done” to close the form.",
     );
     expect(final.reply_parameters.message_id).toBe(lastPhoto);
     const button = final.reply_markup.inline_keyboard[0][0];
@@ -1078,6 +1080,8 @@ describe("review, Edit and the phone", () => {
   }
   const rowsOf = () => lastSent().reply_markup.inline_keyboard.map((line: { text: string }[]) => line.map((b) => b.text));
   const REPORT = "Vehicle 12-D-3456\nparked on a footpath\nat 12 Main Street, Clongriffin\non 26/10/2026 at 07:33.\nI was a pedestrian.";
+  // The final message has the address as it goes into the form.
+  const FINAL = REPORT.replace("Clongriffin", "Clongriffin, D13");
 
   it("shows the review under the last photo", async () => {
     await toReview();
@@ -1179,7 +1183,7 @@ describe("review, Edit and the phone", () => {
     expect(rowsOf()).toEqual([["iPhone bookmark"], ["iPhone Userscripts"], ["Android"], ["Cancel"]]);
     await press("phone:iphone_userscripts");
     expect(lastSent().text).toBe(
-      `${REPORT}\n\n-> Press “Open report”,\n-> «⋯» on the top and “Open in Safari”,\n-> fill and send the report,\n-> press “Done” to close the form.`,
+      `${FINAL}\n\n-> Press “Open report”,\n-> «⋯» on the top and “Open in Safari”,\n-> fill and send the report,\n-> press “Done” to close the form.`,
     );
     expect(sqlite.prepare("SELECT phone, reports FROM user_phones").get()).toEqual({ phone: "iphone_userscripts", reports: 1 });
 
@@ -1209,7 +1213,7 @@ describe("review, Edit and the phone", () => {
     sqlite.exec("UPDATE user_phones SET reports = 10");
     await toReview();
     await press("review_ok");
-    expect(lastSent().text).toBe(REPORT);
+    expect(lastSent().text).toBe(FINAL);
 
     await text("/phone");
     expect(lastSent().text).toBe("Your phone?");
@@ -1299,7 +1303,7 @@ describe("review, Edit and the phone", () => {
     await press("review_ok");
     sqlite.exec("UPDATE final_messages SET created_at = 0");
     await closeExpiredFinalMessages(env);
-    expect(called("editMessageText").at(-1)?.body).toMatchObject({ text: REPORT, reply_markup: { inline_keyboard: [] } });
+    expect(called("editMessageText").at(-1)?.body).toMatchObject({ text: FINAL, reply_markup: { inline_keyboard: [] } });
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM final_messages").get()).toEqual({ n: 0 });
   });
 

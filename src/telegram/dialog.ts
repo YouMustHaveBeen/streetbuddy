@@ -519,13 +519,13 @@ function reportMoment(draft: Pick<Draft, "first_photo_at" | "time">): { date: st
   return { date: moment.date, time: draft.time ?? moment.time };
 }
 
-// The report as the final message shows it, with the "Were you a" line.
-function reportBody(draft: Draft, parkingBits: number): string {
+// The report with the "Were you a" line; the final message passes the address as it goes into the form.
+function reportBody(draft: Draft, parkingBits: number, address = draft.address as string): string {
   const { date, time } = reportMoment(draft);
   const lines = buildDescriptionLines({
     plate: draft.plate as string,
     parking: chosenParking(parkingBits),
-    address: draft.address as string,
+    address,
     date,
     time,
   });
@@ -791,7 +791,7 @@ async function finish(c: Context, draft: Draft, from: Step, phone: UserPhone): P
   const { date, time } = reportMoment(draft);
   const address = draft.address as string;
   const plate = draft.plate as string;
-  // Only the fields of the form get the postal district.
+  // The fields of the form and the final message get the postal district.
   const inForm = formAddress(address, district);
   const description = buildDescription({ plate, parking, address: inForm, date, time });
   const link = buildReportLink({
@@ -802,7 +802,7 @@ async function finish(c: Context, draft: Draft, from: Step, phone: UserPhone): P
     roadUser: draft.road_user as RoadUser,
   });
   // The report text without the steps: Done puts "Report sent ..." in their place.
-  const body = reportBody(draft, chosen);
+  const body = reportBody(draft, chosen, inForm);
   const text = phone.reports < REPORTS_WITH_STEPS ? `${body}\n\n${REPORT_STEPS[phone.phone]}` : body;
 
   const sentId = await sendMessage(c.env.TELEGRAM_BOT_TOKEN, c.chatId, text, {
