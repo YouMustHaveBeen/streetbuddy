@@ -1,10 +1,10 @@
 -- Migration number: 0010 	 2026-11-06T16:00:00.000Z
 
 -- The address directory the bot takes addresses from, kept until an administrator deletes a row.
--- kind is point, line or area; geometry is the GeoJSON geometry (Point, LineString,
+-- IDs are never given again after a row is deleted. kind is point, line or area; geometry is the GeoJSON geometry (Point, LineString,
 -- MultiLineString or Polygon) as JSON; west, south, east, north is the rectangle around it.
 CREATE TABLE addresses (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   text TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('point', 'line', 'area')),
   geometry TEXT NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE addresses (
 -- Incoming addresses waiting for the administrator: from the walk file (source walk, no user_id)
 -- and written by users (source user, with the author's Telegram ID until the decision).
 -- decision is NULL while there is none, then approved, rejected or replace; the nightly move takes
--- the decided rows out.
+-- the decided rows out. walk_file is the name of the walk file a walk address came from.
 CREATE TABLE incoming_addresses (
   id INTEGER PRIMARY KEY,
   source TEXT NOT NULL CHECK (source IN ('walk', 'user')),
@@ -26,6 +26,7 @@ CREATE TABLE incoming_addresses (
   geometry TEXT NOT NULL,
   user_id INTEGER,
   decision TEXT CHECK (decision IN ('approved', 'rejected', 'replace')),
+  walk_file TEXT,
   created_at INTEGER NOT NULL
 );
 

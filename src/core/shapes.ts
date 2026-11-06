@@ -14,7 +14,12 @@ export interface Shape {
 }
 
 const isLonLat = (value: unknown): value is LonLat =>
-  Array.isArray(value) && value.length >= 2 && Number.isFinite(value[0]) && Number.isFinite(value[1]);
+  Array.isArray(value) &&
+  value.length >= 2 &&
+  Number.isFinite(value[0]) &&
+  Number.isFinite(value[1]) &&
+  Math.abs(value[0]) <= 180 &&
+  Math.abs(value[1]) <= 90;
 
 const isLine = (value: unknown): value is LonLat[] => Array.isArray(value) && value.length >= 2 && value.every(isLonLat);
 

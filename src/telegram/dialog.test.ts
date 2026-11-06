@@ -344,6 +344,48 @@ describe("location", () => {
     await press("addr_other");
     await text("5 New Street, d13");
     expect(draft().address).toBe("5 New Street");
+    await photo();
+    await press("create");
+    await press("plate_ok");
+    await press("opt:0");
+    await press("done");
+    await giveLink();
+    const final = lastSent();
+    expect(final.text).toContain("\nat 5 New Street\n");
+    const url = final.reply_markup.inline_keyboard[0][0].url as string;
+    const data = JSON.parse(new TextDecoder().decode(Buffer.from(url.split("#sb=")[1], "base64url")));
+    expect(data.l).toBe(`5 New Street, D13 (${latInside.toFixed(5)}, ${lonInside.toFixed(5)})`);
+    expect(data.d).toBe("Vehicle 12-D-3456 parked on a cycle track at 5 New Street, D13 on 26/10/2026 at 07:33.");
+  });
+  it("asks again for a written address of blank characters", async () => {
+    await location();
+    await press("addr_other");
+    await text("   ");
+    expect(lastSent().text).toBe("Write the address");
+    expect(draft().step).toBe("address_text");
+    await text("x".repeat(101));
+    await text("   ");
+    expect(lastSent().text).toBe("Write the address");
+  });
+  it("keeps the description of a long address with all seven options within 300 characters", async () => {
+    const address = "Unit 100, Block A, Parkside Business Park, Main Street, Clongriffin, North Dublin";
+    await location();
+    await press("addr_other");
+    await text(address);
+    await photo();
+    await press("create");
+    await press("plate_ok");
+    for (let i = 0; i < 7; i++) await press(`opt:${i}`);
+    await press("done");
+    await giveLink();
+    const final = lastSent();
+    const url = final.reply_markup.inline_keyboard[0][0].url as string;
+    const data = JSON.parse(new TextDecoder().decode(Buffer.from(url.split("#sb=")[1], "base64url")));
+    expect(data.d.length).toBeLessThanOrEqual(300);
+    expect(data.d).not.toContain("North Dublin");
+    expect(data.l).toBe(`${address}, D13 (${latInside.toFixed(5)}, ${lonInside.toFixed(5)})`);
+    const atLine = (final.text as string).split("\n").find((line) => line.startsWith("at ")) as string;
+    expect(address.startsWith(atLine.slice(3))).toBe(true);
   });
   it("keeps an Eircode in a written address and adds no postal district in the form", async () => {
     await location();
@@ -357,8 +399,8 @@ describe("location", () => {
     await giveLink();
     const url = lastSent().reply_markup.inline_keyboard[0][0].url as string;
     const data = JSON.parse(new TextDecoder().decode(Buffer.from(url.split("#sb=")[1], "base64url")));
-    expect(data.l.startsWith("5 New Street, D13 X1Y2 (")).toBe(true);
-    expect(data.d).toContain("at 5 New Street, D13 X1Y2 on");
+    expect(data.l).toBe(`5 New Street, D13 X1Y2 (${latInside.toFixed(5)}, ${lonInside.toFixed(5)})`);
+    expect(data.d).toBe("Vehicle 12-D-3456 parked on a cycle track at 5 New Street, D13 X1Y2 on 26/10/2026 at 07:33.");
   });
   it("Other address takes a written address, keeps the coordinates, limits the length", async () => {
     await location();

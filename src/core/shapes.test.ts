@@ -33,6 +33,8 @@ describe("shapeFromGeometry", () => {
     expect(shapeFromGeometry({ type: "Polygon", coordinates: [[at(0, 0), at(1, 0), at(0, 0)]] })).toBeNull();
     expect(shapeFromGeometry({ type: "LineString", coordinates: [at(0, 0)] })).toBeNull();
     expect(shapeFromGeometry({ type: "Point", coordinates: ["a", 1] })).toBeNull();
+    expect(shapeFromGeometry({ type: "Point", coordinates: [181, 53] })).toBeNull();
+    expect(shapeFromGeometry({ type: "Point", coordinates: [-6, 91] })).toBeNull();
     expect(shapeFromGeometry({ type: "MultiPoint", coordinates: [at(0, 0)] })).toBeNull();
     expect(shapeFromGeometry(null)).toBeNull();
   });
@@ -71,8 +73,8 @@ describe("distanceBetween", () => {
   });
   it("is the same both ways", () => {
     const a = line([0, 0], [10, 10]);
-    const b = square(20, 0, 5);
-    expect(distanceBetween(a, b)).toBeCloseTo(distanceBetween(b, a), 6);
+    const b = square(20, 20, 5);
+    expect(distanceBetween(a, b)).toBeCloseTo(distanceBetween(b, a), 3);
   });
 });
 

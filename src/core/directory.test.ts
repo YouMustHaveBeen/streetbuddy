@@ -132,6 +132,17 @@ describe("sameTextDistance", () => {
   });
 });
 
+describe("the directory IDs", () => {
+  it("never gives the ID of a deleted address again", async () => {
+    const { db, sqlite } = fakeD1();
+    const first = addDirectory(sqlite, "A", point(0, 0));
+    sqlite.prepare("DELETE FROM addresses WHERE id = ?").run(first);
+    addIncoming(sqlite, "B", point(0, 0), "approved");
+    await moveIncomingAddresses(db);
+    expect((all(sqlite, "SELECT id FROM addresses")[0].id as number) > first).toBe(true);
+  });
+});
+
 describe("movePoint", () => {
   it("moves a point and its rectangle, and leaves a line alone", async () => {
     const { db, sqlite } = fakeD1();

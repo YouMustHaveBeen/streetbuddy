@@ -9,9 +9,9 @@ const MIN_INTERVAL_MS = 1000;
 // How long a cached address is kept; older rows are removed by the scheduled cleanup.
 export const GEOCODE_CACHE_TTL_MS = 60 * DAY_MS;
 
-const EIRCODE_PATTERN = "([AC-FHKNPRTV-Y]\\d{2}|D6W)\\s?([0-9AC-FHKNPRTV-Y]{4})";
-const EIRCODE = new RegExp(`^${EIRCODE_PATTERN}$`, "i");
-const EIRCODE_IN_TEXT = new RegExp(`\\b${EIRCODE_PATTERN}\\b`, "i");
+const EIRCODE = /^([AC-FHKNPRTV-Y]\d{2}|D6W)\s?([0-9AC-FHKNPRTV-Y]{4})$/i;
+// In a written address: capitals only, and a digit among the last four characters.
+const EIRCODE_IN_TEXT = /\b([AC-FHKNPRTV-Y]\d{2}|D6W) ?(?=[0-9AC-FHKNPRTV-Y]{0,3}\d)[0-9AC-FHKNPRTV-Y]{4}\b/;
 
 // Runs work after the caller has finished, without making it wait.
 export type Defer = (work: Promise<unknown>) => void;
@@ -56,7 +56,8 @@ function toPlace(result: NominatimResult | undefined): Place | null {
   const lat = Number(result.lat);
   const lon = Number(result.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-  return { address: formatAddress(result.address), lat, lon };
+  const address = formatAddress(result.address);
+  return address === "" ? null : { address, lat, lon };
 }
 
 // Reserves the next free Nominatim slot in D1 and waits for it.

@@ -290,11 +290,14 @@ export async function deleteDraftWithButtons(db: D1Database, userId: number): Pr
   return row?.buttons_message_id ?? null;
 }
 
-// Removes a question of /admin left without an answer.
-export async function deleteAdminDraft(db: D1Database, userId: number): Promise<void> {
+// Removes the question of /admin shown in the given message, if it is still waiting for an answer.
+export async function deleteAdminDraft(db: D1Database, userId: number, messageId: number): Promise<void> {
   await db
-    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND step IN ('admin_location', 'admin_text', 'admin_move')")
-    .bind(userId)
+    .prepare(
+      `DELETE FROM drafts WHERE user_id = ?1 AND buttons_message_id = ?2
+       AND step IN ('admin_location', 'admin_text', 'admin_move')`,
+    )
+    .bind(userId, messageId)
     .run();
 }
 

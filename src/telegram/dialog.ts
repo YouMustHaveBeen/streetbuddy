@@ -26,8 +26,10 @@ import type { Defer, LoggedReport } from "../core";
 import type { Env } from "../env";
 import { INSTALL_PATH } from "../install";
 import { MANUAL_PATH } from "../manual";
-import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS } from "./address";
+import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS, OUT_OF_AREA } from "./address";
 import { handleAdminInput } from "./admin";
+
+export { OUT_OF_AREA };
 import { answerButton, callTelegram, deleteMessage, downloadFile, sendMessage } from "./api";
 import {
   addCleanup,
@@ -101,7 +103,6 @@ This bot is not affiliated with An Garda Síochána.
 (A link to the Privacy Policy will be here.)
 © OpenStreetMap contributors`;
 
-export const OUT_OF_AREA = "Sorry, this bot doesn't work in this area";
 const TRY_AGAIN = "Could not get the address. Please try again in a minute";
 const WRITE_ADDRESS = "Could not get the address. Please write it";
 const SEND_LOCATION = "Please send the location";
@@ -433,6 +434,11 @@ async function handleManualAddress(
   text: string,
 ): Promise<void> {
   const cleanupIds = [message.message_id];
+  if (text.trim() === "") {
+    // Asks again with the question, not with the length warning.
+    await show(c, draft, draft.prompt === ADDRESS_TOO_LONG ? WRITE_OTHER_ADDRESS : draft.prompt, {}, cleanupIds);
+    return;
+  }
   if (text.length > ADDRESS_MAX_LENGTH) {
     await show(c, draft, ADDRESS_TOO_LONG, {}, cleanupIds);
     return;

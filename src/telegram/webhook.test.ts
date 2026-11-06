@@ -573,8 +573,10 @@ describe("/admin: incoming addresses and the directory", () => {
       "Incoming address 1 of 1\nA\nPoint, from the walk\nPossible duplicate: the same address is in the directory 40 m away",
     );
     expect(labels()).toEqual(["Keep old", "Replace old", "Next", "Approve all from the walk", "Back"]);
-    await press(`admin_in:replace:${id}:101`);
+    const [screen, pin] = [lastId(), pinId()];
+    await press(`admin_in:replace:${id}:${pin}`, screen);
     expect(decision()).toEqual([{ decision: "replace", user_id: null }]);
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, pin]));
     expect(last().text).toBe("No incoming addresses");
     expect(labels()).toEqual(["Back"]);
   });
@@ -657,11 +659,43 @@ describe("/admin: incoming addresses and the directory", () => {
   });
   it("Back on a question removes it, and a location afterwards starts a report", async () => {
     await press("admin_directory");
-    await press("admin_back");
+    await press("admin_back", lastId());
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
     vi.spyOn(console, "error").mockImplementation(() => {});
     await message({ location: { latitude: 53.0, longitude: -7.0 } });
     expect(last().text).toBe("Sorry, this bot doesn't work in this area");
+  });
+  it("Back on an old question leaves a newer one alone", async () => {
+    await press("admin_directory");
+    const old = lastId();
+    await press("admin_directory");
+    await press("admin_back", old);
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_location" }]);
+  });
+  it("takes spaces and the postal district off an edited text, and asks again for a blank one", async () => {
+    const id = addAddress("1 Main Street", "point", 53.405, -6.16);
+    await press(`admin_text:${id}`);
+    await message({ text: "   " });
+    expect(last().text).toBe("Write the new address");
+    await message({ text: "x".repeat(101) });
+    expect(last().text).toBe("The address must be 100 characters or less");
+    await message({ text: "   " });
+    expect(last().text).toBe("Write the new address");
+    await message({ text: "  1A Main Street, D13 " });
+    expect(sqlite.prepare("SELECT text FROM addresses WHERE id = ?").get(id)).toEqual({ text: "1A Main Street" });
+  });
+  it("refuses to move a point outside the area and asks again", async () => {
+    const id = addAddress("1 Main Street", "point", 53.405, -6.16);
+    await press(`admin_move:${id}`);
+    await message({ location: { latitude: 53.0, longitude: -7.0 } });
+    expect(of("sendMessage").slice(-2).map((call) => call.body.text)).toEqual([
+      "Sorry, this bot doesn't work in this area",
+      "Send the new location",
+    ]);
+    expect(sqlite.prepare("SELECT geometry FROM addresses WHERE id = ?").get(id)).toEqual({
+      geometry: JSON.stringify({ type: "Point", coordinates: [-6.16, 53.405] }),
+    });
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_move" }]);
   });
   it("drops a question of /admin without a word for someone no longer an administrator", async () => {
     await press("admin_directory");

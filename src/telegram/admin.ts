@@ -4,6 +4,9 @@
 // and the editing of the address directory.
 import {
   approveAllWalk,
+  district,
+  isInArea,
+  withoutPostalDistrict,
   decideIncoming,
   deleteAddress,
   disableBot,
@@ -21,7 +24,7 @@ import {
 } from "../core";
 import type { Decision, FormCheckOutcome } from "../core";
 import type { Env } from "../env";
-import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS } from "./address";
+import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS, OUT_OF_AREA } from "./address";
 import { answerButton, callTelegram, deleteMessage, sendMessage } from "./api";
 import { createDraft, deleteAdminDraft, deleteDraft, swapScreen } from "./draft";
 import type { Draft, Step } from "./draft";
@@ -227,7 +230,7 @@ export async function handleAdminButton(
     next = sendIncoming(env, chatId, 0);
   } else if (name === BACK) {
     pinId = first ? Number(first) : null;
-    await deleteAdminDraft(env.DB, userId);
+    if (query.messageId !== undefined) await deleteAdminDraft(env.DB, userId, query.messageId);
     next = sendScreen(env, chatId);
   } else if (name === DIRECTORY) {
     next = askInput(env, userId, chatId, "admin_location", SEND_ADDRESS_LOCATION, null);
@@ -283,12 +286,17 @@ export async function handleAdminInput(
     }
     return;
   }
-  if (draft.step === "admin_text" && text !== undefined && text.length <= ADDRESS_MAX_LENGTH) {
-    await renameAddress(env.DB, draft.address_id as number, text);
-  } else if (draft.step === "admin_move" && location) {
+  const trimmed = text?.trim() ?? "";
+  const inArea = location !== undefined && isInArea(district, location.latitude, location.longitude);
+  if (draft.step === "admin_text" && trimmed !== "" && trimmed.length <= ADDRESS_MAX_LENGTH) {
+    await renameAddress(env.DB, draft.address_id as number, withoutPostalDistrict(trimmed, district));
+  } else if (draft.step === "admin_move" && location && inArea) {
     await movePoint(env.DB, draft.address_id as number, location.latitude, location.longitude);
   } else {
-    const prompt = draft.step === "admin_text" && text !== undefined ? ADDRESS_TOO_LONG : draft.prompt;
+    let prompt = draft.prompt;
+    if (draft.step === "admin_text" && trimmed.length > ADDRESS_MAX_LENGTH) prompt = ADDRESS_TOO_LONG;
+    else if (draft.step === "admin_text") prompt = WRITE_NEW_ADDRESS;
+    if (draft.step === "admin_move" && location) await send(env, chatId, OUT_OF_AREA);
     const messageId = await send(env, chatId, prompt, [[backButton()]]);
     if (messageId === null) return;
     const previous = await swapScreen(env.DB, userId, draft.draft_id, draft.step, messageId, prompt, {}, []);
