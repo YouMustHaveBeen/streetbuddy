@@ -14,7 +14,8 @@ if (!FILE) {
 }
 const NAME = basename(FILE);
 const MAX_LENGTH = 100;
-const KINDS = { Point: "point", LineString: "line", MultiLineString: "line", Polygon: "area" };
+const GEOMETRY_TYPES = ["Point", "LineString", "MultiLineString", "Polygon"];
+const KINDS = ["house", "appt", "facility", "spot", "area"];
 
 const isPosition = (p) =>
   Array.isArray(p) &&
@@ -28,7 +29,7 @@ const isLine = (l) => Array.isArray(l) && l.length >= 2 && l.every(isPosition);
 // Returns the reason a geometry is wrong, or null.
 function geometryError(geometry) {
   const { type, coordinates } = geometry ?? {};
-  if (typeof type !== "string" || !Object.hasOwn(KINDS, type)) return `geometry must be Point, LineString, MultiLineString or Polygon, not ${type}`;
+  if (typeof type !== "string" || !GEOMETRY_TYPES.includes(type)) return `geometry must be Point, LineString, MultiLineString or Polygon, not ${type}`;
   if (type === "Point" && !isPosition(coordinates)) return "the point has no valid coordinates";
   if (type === "LineString" && !isLine(coordinates)) return "the line needs at least 2 valid points";
   if (type === "MultiLineString" && !(Array.isArray(coordinates) && coordinates.length > 0 && coordinates.every(isLine))) {
@@ -42,6 +43,16 @@ function geometryError(geometry) {
     const distinct = new Set(ring.map(([lon, lat]) => `${lon},${lat}`));
     if (distinct.size < 3) return "the polygon needs at least 3 points";
   }
+  return null;
+}
+
+// Returns the reason the kind is wrong for the geometry, or null.
+function kindError(kind, geometryType) {
+  if (typeof kind !== "string" || kind === "") return "the kind is missing";
+  if (kind === "temp") return "the kind temp is not allowed in a walk file";
+  if (!KINDS.includes(kind)) return `the kind must be ${KINDS.join(", ")}, not ${kind}`;
+  if (kind === "area" && geometryType !== "Polygon") return "the kind area needs a Polygon";
+  if (kind !== "area" && geometryType === "Polygon") return "a Polygon needs the kind area";
   return null;
 }
 
@@ -68,9 +79,12 @@ collection.features.forEach((feature, i) => {
   else if (text.length > MAX_LENGTH) errors.push(`${where}: the address is longer than ${MAX_LENGTH} characters`);
   const problem = geometryError(feature?.geometry);
   if (problem) errors.push(`${where}: ${problem}`);
-  if (!problem && typeof text === "string") {
+  const kind = feature?.properties?.kind;
+  const kindProblem = problem ? null : kindError(kind, feature.geometry.type);
+  if (kindProblem) errors.push(`${where}: ${kindProblem}`);
+  if (!problem && !kindProblem && typeof text === "string") {
     const { type, coordinates } = feature.geometry;
-    rows.push({ text, kind: KINDS[type], geometry: JSON.stringify({ type, coordinates }) });
+    rows.push({ text, kind, geometry: JSON.stringify({ type, coordinates }) });
   }
 });
 if (errors.length > 0) {

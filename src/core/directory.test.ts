@@ -10,6 +10,7 @@ import {
   movePoint,
   nearestAddresses,
   nextIncoming,
+  setAddressKind,
 } from "./directory";
 import { shapeBounds, shapeFromGeometry } from "./shapes";
 import type { Shape } from "./shapes";
@@ -29,7 +30,7 @@ function addDirectory(sqlite: Sqlite, text: string, geometry: object): number {
   const { west, south, east, north } = shapeBounds(shape);
   const result = sqlite
     .prepare("INSERT INTO addresses (text, kind, geometry, west, south, east, north) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(text, shape.kind, JSON.stringify(geometry), west, south, east, north);
+    .run(text, shape.kind === "area" ? "area" : shape.kind === "point" ? "house" : "spot", JSON.stringify(geometry), west, south, east, north);
   return Number(result.lastInsertRowid);
 }
 
@@ -40,7 +41,8 @@ function addIncoming(
   decision: string | null,
   source = "walk",
 ): number {
-  const kind = (shapeFromGeometry(geometry) as Shape).kind;
+  const form = (shapeFromGeometry(geometry) as Shape).kind;
+  const kind = source === "user" ? "temp" : form === "area" ? "area" : form === "point" ? "house" : "spot";
   const result = sqlite
     .prepare(
       `INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, decision, created_at)
@@ -83,7 +85,7 @@ describe("incoming addresses", () => {
     const { db, sqlite } = fakeD1();
     await addUserAddress(db, 42, "5 New Street", LAT, LON);
     expect(all(sqlite, "SELECT source, text, kind, geometry, user_id, decision FROM incoming_addresses")).toEqual([
-      { source: "user", text: "5 New Street", kind: "point", geometry: JSON.stringify({ type: "Point", coordinates: [LON, LAT] }), user_id: 42, decision: null },
+      { source: "user", text: "5 New Street", kind: "temp", geometry: JSON.stringify({ type: "Point", coordinates: [LON, LAT] }), user_id: 42, decision: null },
     ]);
   });
   it("shows the queue in order, with the place and the length, and starts again after the last", async () => {
@@ -105,6 +107,28 @@ describe("incoming addresses", () => {
     await decideIncoming(db, id, "rejected");
     await decideIncoming(db, id, "approved");
     expect(all(sqlite, "SELECT decision, user_id FROM incoming_addresses")).toEqual([{ decision: "rejected", user_id: null }]);
+  });
+  it("gives an address of a user the chosen kind, never approves it without one, and keeps the kind of a walk address", async () => {
+    const { db, sqlite } = fakeD1();
+    const user = addIncoming(sqlite, "User", point(0, 0), null, "user");
+    const walk = addIncoming(sqlite, "Walk", point(0, 0), null);
+    await decideIncoming(db, user, "approved");
+    await decideIncoming(db, user, "replace");
+    expect(all(sqlite, "SELECT kind, decision, user_id FROM incoming_addresses WHERE id = " + user)).toEqual([
+      { kind: "temp", decision: null, user_id: 42 },
+    ]);
+    await decideIncoming(db, user, "approved", "appt");
+    await decideIncoming(db, walk, "approved", "spot");
+    expect(all(sqlite, "SELECT kind, decision, user_id FROM incoming_addresses ORDER BY id")).toEqual([
+      { kind: "appt", decision: "approved", user_id: null },
+      { kind: "house", decision: "approved", user_id: null },
+    ]);
+  });
+  it("rejects an address of a user without a kind", async () => {
+    const { db, sqlite } = fakeD1();
+    const user = addIncoming(sqlite, "User", point(0, 0), null, "user");
+    await decideIncoming(db, user, "rejected");
+    expect(all(sqlite, "SELECT kind, decision FROM incoming_addresses")).toEqual([{ kind: "temp", decision: "rejected" }]);
   });
   it("approves all walk addresses except those whose text is in the directory and addresses of users", async () => {
     const { db, sqlite } = fakeD1();
@@ -157,7 +181,33 @@ describe("movePoint", () => {
   });
 });
 
+describe("setAddressKind", () => {
+  it("changes the kind of an address that is not an area, and leaves an area alone", async () => {
+    const { db, sqlite } = fakeD1();
+    const house = addDirectory(sqlite, "1 Main Street", point(0, 0));
+    const area = addDirectory(sqlite, "Park", {
+      type: "Polygon",
+      coordinates: [[at(0, 0), at(10, 0), at(10, 10), at(0, 0)]],
+    });
+    await setAddressKind(db, house, "facility");
+    await setAddressKind(db, area, "spot");
+    expect(all(sqlite, "SELECT text, kind FROM addresses ORDER BY id")).toEqual([
+      { text: "1 Main Street", kind: "facility" },
+      { text: "Park", kind: "area" },
+    ]);
+  });
+});
+
 describe("moveIncomingAddresses", () => {
+  it("keeps the kind of the incoming address and leaves an approved one without a kind in the queue", async () => {
+    const { db, sqlite } = fakeD1();
+    addIncoming(sqlite, "Shop", point(0, 0), "approved");
+    sqlite.prepare("UPDATE incoming_addresses SET kind = 'facility'").run();
+    const noKind = addIncoming(sqlite, "No kind", point(20, 0), "approved", "user");
+    await moveIncomingAddresses(db);
+    expect(all(sqlite, "SELECT text, kind FROM addresses")).toEqual([{ text: "Shop", kind: "facility" }]);
+    expect(all(sqlite, "SELECT id, decision FROM incoming_addresses")).toEqual([{ id: noKind, decision: "approved" }]);
+  });
   it("moves approved addresses into the directory with their rectangle, drops rejected ones, keeps the rest", async () => {
     const { db, sqlite } = fakeD1();
     addIncoming(sqlite, "Street", line([0, 0], [10, 20]), "approved");
@@ -167,7 +217,7 @@ describe("moveIncomingAddresses", () => {
     const [west, south] = at(0, 0);
     const [east, north] = at(10, 20);
     expect(all(sqlite, "SELECT text, kind, west, south, east, north FROM addresses")).toEqual([
-      { text: "Street", kind: "line", west, south, east, north },
+      { text: "Street", kind: "spot", west, south, east, north },
     ]);
     expect(all(sqlite, "SELECT text FROM incoming_addresses")).toEqual([{ text: "Waiting" }]);
   });
