@@ -1,7 +1,7 @@
 // The address directory and the incoming addresses in D1.
 import { M_PER_DEG } from "./area";
 import { distanceBetween, distanceToShape, pointGeometry, shapeBounds, shapeFromGeometry } from "./shapes";
-import type { Shape, ShapeKind } from "./shapes";
+import type { Shape } from "./shapes";
 import { TWO_MONTHS_MS } from "./shared";
 
 // Directory addresses farther than this from the point are not offered.
@@ -11,10 +11,14 @@ const DUPLICATE_M = 5;
 // How long an address written by a user waits for a decision.
 export const USER_ADDRESS_TTL_MS = TWO_MONTHS_MS;
 
+// The kinds an administrator can give an address; a polygon is always an area.
+export const CHOOSABLE_KINDS = ["house", "appt", "facility", "spot"] as const;
+export type AddressKind = (typeof CHOOSABLE_KINDS)[number] | "area";
+
 interface DirectoryAddress {
   id: number;
   text: string;
-  kind: ShapeKind;
+  kind: AddressKind;
   geometry: string;
 }
 
@@ -22,7 +26,7 @@ interface IncomingAddress {
   id: number;
   source: "walk" | "user";
   text: string;
-  kind: ShapeKind;
+  kind: AddressKind | "temp";
   geometry: string;
   position: number;
   total: number;
@@ -77,7 +81,7 @@ export async function addUserAddress(
   await db
     .prepare(
       `INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, created_at)
-       VALUES ('user', ?1, 'point', ?2, ?3, ?4)`,
+       VALUES ('user', ?1, 'temp', ?2, ?3, ?4)`,
     )
     .bind(text, JSON.stringify(pointGeometry(lat, lon)), userId, Date.now())
     .run();
@@ -98,11 +102,21 @@ export async function nextIncoming(db: D1Database, afterId: number): Promise<Inc
     .first<IncomingAddress>();
 }
 
-// The decision also erases the author's Telegram ID.
-export async function decideIncoming(db: D1Database, id: number, decision: Decision): Promise<void> {
+// The decision also erases the author's Telegram ID. An address with the kind temp takes the chosen
+// kind; without a kind it cannot be approved.
+export async function decideIncoming(
+  db: D1Database,
+  id: number,
+  decision: Decision,
+  kind: AddressKind | null = null,
+): Promise<void> {
   await db
-    .prepare("UPDATE incoming_addresses SET decision = ?2, user_id = NULL WHERE id = ?1 AND decision IS NULL")
-    .bind(id, decision)
+    .prepare(
+      `UPDATE incoming_addresses
+       SET decision = ?2, user_id = NULL, kind = CASE WHEN kind = 'temp' AND ?3 IS NOT NULL THEN ?3 ELSE kind END
+       WHERE id = ?1 AND decision IS NULL AND (?2 = 'rejected' OR kind != 'temp' OR ?3 IS NOT NULL)`,
+    )
+    .bind(id, decision, kind)
     .run();
 }
 
@@ -141,12 +155,21 @@ export async function renameAddress(db: D1Database, id: number, text: string): P
   await db.prepare("UPDATE addresses SET text = ?2 WHERE id = ?1").bind(id, text).run();
 }
 
+// The kind of an address that is not an area.
+export async function setAddressKind(
+  db: D1Database,
+  id: number,
+  kind: (typeof CHOOSABLE_KINDS)[number],
+): Promise<void> {
+  await db.prepare("UPDATE addresses SET kind = ?2 WHERE id = ?1 AND kind != 'area'").bind(id, kind).run();
+}
+
 // Only a point can be moved.
 export async function movePoint(db: D1Database, id: number, lat: number, lon: number): Promise<void> {
   await db
     .prepare(
       `UPDATE addresses SET geometry = ?2, west = ?3, south = ?4, east = ?3, north = ?4
-       WHERE id = ?1 AND kind = 'point'`,
+       WHERE id = ?1 AND json_extract(geometry, '$.type') = 'Point'`,
     )
     .bind(id, JSON.stringify(pointGeometry(lat, lon)), lon, lat)
     .run();
@@ -180,21 +203,21 @@ export async function moveIncomingAddresses(db: D1Database): Promise<void> {
 
   const writes: D1PreparedStatement[] = [];
   const drop = (id: number) => db.prepare("DELETE FROM incoming_addresses WHERE id = ?1").bind(id);
-  const insert = (text: string, kind: ShapeKind, geometry: string, shape: Shape) => {
+  const insert = (text: string, kind: AddressKind, geometry: string, shape: Shape) => {
     const { west, south, east, north } = shapeBounds(shape);
     return db
       .prepare("INSERT INTO addresses (text, kind, geometry, west, south, east, north) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
       .bind(text, kind, geometry, west, south, east, north);
   };
 
-  for (const row of decided.results as { id: number; text: string; kind: ShapeKind; geometry: string; decision: Decision }[]) {
+  for (const row of decided.results as { id: number; text: string; kind: AddressKind | "temp"; geometry: string; decision: Decision }[]) {
     if (row.decision === "rejected") {
       writes.push(drop(row.id));
       continue;
     }
     const shape = parseShape(row.geometry);
-    if (!shape) {
-      console.error(`Incoming address ${row.id} has a broken shape`);
+    if (!shape || row.kind === "temp") {
+      console.error(`Incoming address ${row.id} has a broken shape or no kind`);
       continue;
     }
     const key = sameTextKey(row.text);

@@ -44,7 +44,7 @@ const addDirectory = (text: string, geometry: { type: string; coordinates: unkno
     .prepare("INSERT INTO addresses (text, kind, geometry, west, south, east, north) VALUES (?, ?, ?, ?, ?, ?, ?)")
     .run(
       text,
-      geometry.type === "Point" ? "point" : geometry.type === "Polygon" ? "area" : "line",
+      geometry.type === "Point" ? "house" : geometry.type === "Polygon" ? "area" : "spot",
       JSON.stringify(geometry),
       Math.min(...lons),
       Math.min(...lats),
@@ -1362,7 +1362,7 @@ describe("the address of the report when the link is given", () => {
     await press("addr_other");
     await text("5 New Street");
     await toLink();
-    expect(incoming()).toEqual([{ source: "user", text: "5 New Street", kind: "point", user_id: USER, decision: null }]);
+    expect(incoming()).toEqual([{ source: "user", text: "5 New Street", kind: "temp", user_id: USER, decision: null }]);
     expect(logged()).toEqual([{ address: "5 New Street", address_id: null }]);
   });
   it("logs the ID of a chosen directory address and writes nothing to the incoming addresses", async () => {

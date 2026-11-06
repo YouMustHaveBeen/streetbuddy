@@ -91,7 +91,7 @@ describe("cleanupExpired", () => {
     const add = (source: string, decision: string | null, age: number) =>
       sqlite
         .prepare(
-          "INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, decision, created_at) VALUES (?, ?, 'point', '{}', 1, ?, ?)",
+          "INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, decision, created_at) VALUES (?, ?, 'house', '{}', 1, ?, ?)",
         )
         .run(source, `${source} ${decision} ${age}`, decision, NOW - age);
     add("user", null, GEOCODE_TTL + 1);
@@ -152,7 +152,7 @@ describe("scheduled", () => {
     sqlite
       .prepare(
         `INSERT INTO incoming_addresses (source, text, kind, geometry, decision, created_at)
-         VALUES ('walk', '1 Main Street', 'point', '{"type":"Point","coordinates":[-6.1,53.4]}', 'approved', 0)`,
+         VALUES ('walk', '1 Main Street', 'house', '{"type":"Point","coordinates":[-6.1,53.4]}', 'approved', 0)`,
       )
       .run();
     await worker.scheduled(OTHER_RUN, { DB: db } as Env, {} as ExecutionContext);

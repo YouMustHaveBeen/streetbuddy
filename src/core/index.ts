@@ -15,8 +15,10 @@ export {
   nextIncoming,
   renameAddress,
   sameTextDistance,
+  setAddressKind,
+  CHOOSABLE_KINDS,
 } from "./directory";
-export type { Decision } from "./directory";
+export type { AddressKind, Decision } from "./directory";
 export { shapeFromGeometry, shapeMiddle } from "./shapes";
 export type { Defer } from "./geocode";
 export { PLATE_MAX_LENGTH, recognizePlates } from "./plate";

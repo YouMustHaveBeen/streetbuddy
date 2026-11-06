@@ -3,6 +3,7 @@
 // the feedback and the statistics, which do nothing yet, the decisions on incoming addresses
 // and the editing of the address directory.
 import {
+  CHOOSABLE_KINDS,
   approveAllWalk,
   district,
   isInArea,
@@ -19,6 +20,7 @@ import {
   nextIncoming,
   renameAddress,
   sameTextDistance,
+  setAddressKind,
   shapeFromGeometry,
   shapeMiddle,
 } from "../core";
@@ -51,10 +53,17 @@ const FEEDBACK = "admin_feedback";
 const STATISTICS = "admin_statistics";
 const INCOMING = "admin_incoming";
 const DIRECTORY = "admin_directory";
-// With arguments: ":<decision>:<incoming id>:<pin message id>" for the incoming screen,
-// ":<pin message id>" for Back and Approve all, ":<directory id>" for the screens of the directory;
-// the pin is left out when there is none.
+// With arguments: ":<decision>:<incoming id>:<pin message id>" for the incoming screen (the
+// decision "same" shows the same address again), ":<decision>:<incoming id>:<pin message id>" for
+// the kind screen of an incoming address, ":<decision>:<kind>:<incoming id>:<pin message id>" for
+// its answers, ":<pin message id>" for Back and Approve all, ":<directory id>" for the screens of
+// the directory, ":<kind>:<directory id>" for the answers of its kind screen; the pin is left out
+// when there is none.
 const DECIDE = "admin_in";
+const KIND = "admin_kind";
+const SET_KIND = "admin_setkind";
+const EDIT_KIND = "admin_editkind";
+const DIR_KIND = "admin_dirkind";
 const ALL_WALK = "admin_all_walk";
 const BACK = "admin_back";
 const ADDRESS = "admin_addr";
@@ -70,6 +79,7 @@ const NO_ADDRESSES = "No addresses within 30 m";
 const WRITE_NEW_ADDRESS = "Write the new address";
 const SEND_NEW_LOCATION = "Send the new location";
 const SAVED = "Saved";
+const CHOOSE_KIND = "Choose the kind";
 const NO_INCOMING = "No incoming addresses";
 
 const CHECK_RESULT_TEXT: Record<FormCheckOutcome, string> = {
@@ -138,15 +148,17 @@ async function sendIncoming(env: AdminEnv, chatId: number, afterId: number): Pro
     : null;
   const pinId = pin?.message_id ?? null;
   const tail = pinId === null ? "" : `:${pinId}`;
+  // The address of a user has no kind yet: its Approve and Replace old ask for it.
   const decide = (text: string, action: string): Button => ({
     text,
-    callback_data: `${DECIDE}:${action}:${item.id}${tail}`,
+    callback_data: `${item.kind === "temp" && (action === "ok" || action === "replace") ? KIND : DECIDE}:${action}:${item.id}${tail}`,
   });
 
+  const form = shape ? KIND_TEXT[shape.kind] : "Unknown";
   const lines = [
     `Incoming address ${item.position} of ${item.total}`,
     item.text,
-    `${KIND_TEXT[item.kind]}, ${item.source === "walk" ? "from the walk" : "written by a user"}`,
+    item.source === "walk" ? `${form} (${item.kind}), from the walk` : `${form}, written by a user`,
   ];
   if (duplicateM !== null) {
     lines.push(`Possible duplicate: the same address is in the directory ${Math.round(duplicateM)} m away`);
@@ -163,13 +175,20 @@ async function sendIncoming(env: AdminEnv, chatId: number, afterId: number): Pro
   return sent;
 }
 
+// The screen with a button for each kind an administrator can give an address, and Back.
+const sendKindScreen = (env: AdminEnv, chatId: number, answer: (kind: string) => string, back: Button) =>
+  send(env, chatId, CHOOSE_KIND, [...CHOOSABLE_KINDS.map((kind) => [{ text: kind, callback_data: answer(kind) }]), [back]]);
+
 async function sendAddress(env: AdminEnv, chatId: number, id: number): Promise<number | null> {
   const address = await getAddress(env.DB, id);
   if (!address) return sendScreen(env, chatId);
+  const shape = shapeFromGeometry(JSON.parse(address.geometry));
   const actions: Button[] = [{ text: "Edit text", callback_data: `${EDIT_TEXT}:${id}` }];
-  if (address.kind === "point") actions.push({ text: "Move", callback_data: `${MOVE}:${id}` });
+  if (address.kind !== "area") actions.push({ text: "Edit kind", callback_data: `${EDIT_KIND}:${id}` });
+  if (shape?.kind === "point") actions.push({ text: "Move", callback_data: `${MOVE}:${id}` });
   actions.push({ text: "Delete", callback_data: `${DELETE}:${id}` });
-  return send(env, chatId, `${address.text}\n${KIND_TEXT[address.kind]}`, [actions, [backButton()]]);
+  const form = shape ? KIND_TEXT[shape.kind] : "Unknown";
+  return send(env, chatId, `${address.text}\n${form} (${address.kind})`, [actions, [backButton()]]);
 }
 
 // Asks for a location or a text: a report in progress is stopped without a word, and the
@@ -210,7 +229,7 @@ export async function handleAdminButton(
     await answered;
     return;
   }
-  const [name, first, second, third] = (query.data ?? "").split(":");
+  const [name, first, second, third, fourth] = (query.data ?? "").split(":");
   let pinId: number | null = null;
   let next: Promise<number | null>;
   if (name === SWITCH_ON || name === SWITCH_OFF) {
@@ -223,6 +242,20 @@ export async function handleAdminButton(
     pinId = third ? Number(third) : null;
     const decision = DECISIONS[first];
     if (decision) await decideIncoming(env.DB, id, decision);
+    next = sendIncoming(env, chatId, first === "same" ? id - 1 : id);
+  } else if (name === KIND) {
+    const id = Number(second);
+    const tail = third ? `:${third}` : "";
+    next = sendKindScreen(env, chatId, (kind) => `${SET_KIND}:${first}:${kind}:${id}${tail}`, {
+      text: "Back",
+      callback_data: `${DECIDE}:same:${id}${tail}`,
+    });
+  } else if (name === SET_KIND) {
+    const id = Number(third);
+    pinId = fourth ? Number(fourth) : null;
+    const decision = DECISIONS[first];
+    const kind = CHOOSABLE_KINDS.find((chosen) => chosen === second);
+    if (decision && kind) await decideIncoming(env.DB, id, decision, kind);
     next = sendIncoming(env, chatId, id);
   } else if (name === ALL_WALK) {
     pinId = first ? Number(first) : null;
@@ -236,6 +269,13 @@ export async function handleAdminButton(
     next = askInput(env, userId, chatId, "admin_location", SEND_ADDRESS_LOCATION, null);
   } else if (name === ADDRESS) {
     next = sendAddress(env, chatId, Number(first));
+  } else if (name === EDIT_KIND) {
+    const id = Number(first);
+    next = sendKindScreen(env, chatId, (kind) => `${DIR_KIND}:${kind}:${id}`, { text: "Back", callback_data: `${ADDRESS}:${id}` });
+  } else if (name === DIR_KIND) {
+    const kind = CHOOSABLE_KINDS.find((chosen) => chosen === first);
+    if (kind) await setAddressKind(env.DB, Number(second), kind);
+    next = send(env, chatId, SAVED).then(() => sendScreen(env, chatId));
   } else if (name === EDIT_TEXT) {
     next = askInput(env, userId, chatId, "admin_text", WRITE_NEW_ADDRESS, Number(first));
   } else if (name === MOVE) {
