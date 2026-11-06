@@ -30,7 +30,16 @@ export interface Draft {
   parking: number;
   road_user: string | null;
   editing: number;
+  address_options: string | null;
+  address_id: number | null;
+  address_typed: number;
   created_at: number;
+}
+
+// A choice of the address screen; id is the directory address, null for Nominatim.
+export interface AddressOption {
+  text: string;
+  id: number | null;
 }
 
 export type Step =
@@ -51,12 +60,29 @@ export type Step =
   | "phone" // The phone is asked for before the first link.
   | "finishing"
   | "feedback_input" // Not a report: waiting for the text of a feedback.
-  | "phone_choice"; // Not a report: /phone.
+  | "phone_choice" // Not a report: /phone.
+  | "admin_location" // Not a report: /admin waits for the location of a directory address.
+  | "admin_text" // Not a report: /admin waits for the new text of a directory address.
+  | "admin_move"; // Not a report: /admin waits for the new location of a directory point.
+
+export const isAdminStep = (step: Step): boolean => step.startsWith("admin_");
 
 export type DraftChanges = Partial<
   Pick<
     Draft,
-    "step" | "failures" | "address" | "lat" | "lon" | "plate" | "time" | "first_photo_at" | "road_user" | "editing"
+    "step"
+    | "failures"
+    | "address"
+    | "lat"
+    | "lon"
+    | "plate"
+    | "time"
+    | "first_photo_at"
+    | "road_user"
+    | "editing"
+    | "address_options"
+    | "address_id"
+    | "address_typed"
   >
 >;
 
@@ -86,8 +112,9 @@ export async function createDraft(
   await db
     .prepare(
       `INSERT OR REPLACE INTO drafts
-       (user_id, draft_id, step, prompt, buttons_message_id, cleanup, failures, address, lat, lon, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+       (user_id, draft_id, step, prompt, buttons_message_id, cleanup, failures, address, lat, lon, created_at,
+        address_options, address_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
     )
     .bind(
       userId,
@@ -101,6 +128,8 @@ export async function createDraft(
       changes.lat ?? null,
       changes.lon ?? null,
       Date.now(),
+      changes.address_options ?? null,
+      changes.address_id ?? null,
     )
     .run();
   return draftId;
@@ -259,6 +288,17 @@ export async function deleteDraftWithButtons(db: D1Database, userId: number): Pr
     .bind(userId)
     .first<{ buttons_message_id: number }>();
   return row?.buttons_message_id ?? null;
+}
+
+// Removes the question of /admin shown in the given message, if it is still waiting for an answer.
+export async function deleteAdminDraft(db: D1Database, userId: number, messageId: number): Promise<void> {
+  await db
+    .prepare(
+      `DELETE FROM drafts WHERE user_id = ?1 AND buttons_message_id = ?2
+       AND step IN ('admin_location', 'admin_text', 'admin_move')`,
+    )
+    .bind(userId, messageId)
+    .run();
 }
 
 // Removes the draft only if it is still on the step that gives the link, and returns its list

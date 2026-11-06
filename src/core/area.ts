@@ -64,22 +64,6 @@ export function parseArea(geojson: unknown): Area {
   return { county, postalDistrict, ring };
 }
 
-// Rectangle around the polygon, widened by the margin.
-export function areaBounds(area: Area): { west: number; south: number; east: number; north: number } {
-  const lons = area.ring.map(([lon]) => lon);
-  const lats = area.ring.map(([, lat]) => lat);
-  const south = Math.min(...lats);
-  const north = Math.max(...lats);
-  const marginLat = AREA_MARGIN_M / M_PER_DEG;
-  const marginLon = marginLat / Math.cos((((south + north) / 2) * Math.PI) / 180);
-  return {
-    west: Math.min(...lons) - marginLon,
-    south: south - marginLat,
-    east: Math.max(...lons) + marginLon,
-    north: north + marginLat,
-  };
-}
-
 // Distance in metres between two points, on a flat local map.
 export function distanceM(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const dLat = (bLat - aLat) * M_PER_DEG;
@@ -88,7 +72,7 @@ export function distanceM(aLat: number, aLon: number, bLat: number, bLon: number
 }
 
 // Distance in metres from the origin (0, 0) to the segment (ax, ay)-(bx, by).
-function distanceToSegment(ax: number, ay: number, bx: number, by: number): number {
+export function distanceToSegment(ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
   const dy = by - ay;
   const lengthSq = dx * dx + dy * dy;
@@ -110,16 +94,25 @@ export function isInArea(area: Area, lat: number, lon: number): boolean {
     (ptLat - lat) * M_PER_DEG,
   ]);
 
-  // Ray casting: count border crossings of a ray going to the right.
-  let inside = false;
   let minDistance = Infinity;
   for (let i = 0, j = local.length - 1; i < local.length; j = i++) {
     const [xi, yi] = local[i];
     const [xj, yj] = local[j];
-    if (yi > 0 !== yj > 0 && 0 < ((xj - xi) * (0 - yi)) / (yj - yi) + xi) {
-      inside = !inside;
-    }
     minDistance = Math.min(minDistance, distanceToSegment(xi, yi, xj, yj));
   }
-  return inside || minDistance <= AREA_MARGIN_M;
+  return insideRing(local, 0, 0) || minDistance <= AREA_MARGIN_M;
+}
+
+// True if (x, y) is inside the ring of flat coordinates: ray casting, counting border crossings
+// of a ray going to the right.
+export function insideRing(ring: readonly (readonly [number, number])[], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
