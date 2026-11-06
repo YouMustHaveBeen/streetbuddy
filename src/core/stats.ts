@@ -1,13 +1,13 @@
 // The report log, the nightly statistics and the hotspots, all in D1.
-import { distanceM, M_PER_DEG } from "./area";
+import { distanceM } from "./area";
 import { dublinDateTime, PARKING_OPTIONS } from "./report";
 import { DAY_MS, TWO_MONTHS_MS } from "./shared";
 
 // How long a row of the log stays.
 export const REPORT_LOG_TTL_MS = TWO_MONTHS_MS;
 
-// Places of the log closer to each other than this count as one place.
-const HOTSPOT_RADIUS_M = 50;
+// A report without a directory address joins the group whose first report is this close.
+const HOTSPOT_RADIUS_M = 20;
 const HOTSPOT_COUNT = 5;
 // The least number of different plates of a place that is shown.
 export const HOTSPOT_MIN_REPORTS = 10;
@@ -18,6 +18,8 @@ export interface LoggedReport {
   address: string;
   lat: number;
   lon: number;
+  // The chosen directory address, null for an address from Nominatim or written by the user.
+  addressId: number | null;
 }
 
 interface Hotspot {
@@ -36,9 +38,9 @@ export async function logReport(db: D1Database, report: LoggedReport): Promise<n
   const now = Date.now();
   const result = await db
     .prepare(
-      "INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+      "INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon, address_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
     )
-    .bind(now, dublinDay(now), report.plate, report.parking, report.address, report.lat, report.lon)
+    .bind(now, dublinDay(now), report.plate, report.parking, report.address, report.lat, report.lon, report.addressId)
     .run();
   return result.meta.last_row_id;
 }
@@ -56,51 +58,40 @@ interface PlaceRow {
   lat: number;
   lon: number;
   created_at: number;
+  address_id: number | null;
 }
 
-// Joins rows within HOTSPOT_RADIUS_M of each other into groups, including chains of close
-// points. Rows are put into a grid of cells at least the radius wide, and a row is compared
-// only with the rows of its own and the eight neighbouring cells. A group is a tree of row
-// numbers, with parent[i] pointing towards its root. Groups come in the order of their last rows.
+// Rows are in time order. Rows with the same directory address make one group. A row without one
+// joins the group of rows without one whose first row is nearest, within HOTSPOT_RADIUS_M, or else
+// starts a new group with itself as the first row. Groups come in the order of their last rows.
 export function groupPlaces(rows: readonly PlaceRow[]): PlaceRow[][] {
-  const parent = rows.map((_, i) => i);
-  const find = (start: number): number => {
-    let i = start;
-    while (parent[i] !== i) {
-      parent[i] = parent[parent[i]];
-      i = parent[i];
-    }
-    return i;
-  };
-
-  const latStep = HOTSPOT_RADIUS_M / M_PER_DEG;
-  const lonStep = latStep / rows.reduce((least, row) => Math.min(least, Math.cos((row.lat * Math.PI) / 180)), 1);
-  const cells = new Map<string, number[]>();
+  const byAddress = new Map<number, { rows: PlaceRow[]; last: number }>();
+  const loose: { rows: PlaceRow[]; last: number }[] = [];
   rows.forEach((row, i) => {
-    const x = Math.floor(row.lon / lonStep);
-    const y = Math.floor(row.lat / latStep);
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        for (const other of cells.get(`${x + dx},${y + dy}`) ?? []) {
-          const near = find(other) !== find(i) && distanceM(rows[other].lat, rows[other].lon, row.lat, row.lon) <= HOTSPOT_RADIUS_M;
-          if (near) parent[find(other)] = find(i);
-        }
+    if (row.address_id !== null) {
+      const group = byAddress.get(row.address_id) ?? { rows: [], last: i };
+      group.rows.push(row);
+      group.last = i;
+      byAddress.set(row.address_id, group);
+      return;
+    }
+    let nearest: { rows: PlaceRow[]; last: number } | null = null;
+    let least = Infinity;
+    for (const group of loose) {
+      const distance = distanceM(group.rows[0].lat, group.rows[0].lon, row.lat, row.lon);
+      if (distance <= HOTSPOT_RADIUS_M && distance < least) {
+        nearest = group;
+        least = distance;
       }
     }
-    const key = `${x},${y}`;
-    const cell = cells.get(key);
-    if (cell) cell.push(i);
-    else cells.set(key, [i]);
+    if (nearest) {
+      nearest.rows.push(row);
+      nearest.last = i;
+    } else {
+      loose.push({ rows: [row], last: i });
+    }
   });
-
-  const groups = new Map<number, { rows: PlaceRow[]; last: number }>();
-  rows.forEach((row, i) => {
-    const group = groups.get(find(i)) ?? { rows: [], last: i };
-    group.rows.push(row);
-    group.last = i;
-    groups.set(find(i), group);
-  });
-  return [...groups.values()].sort((a, b) => a.last - b.last).map((group) => group.rows);
+  return [...byAddress.values(), ...loose].sort((a, b) => a.last - b.last).map((group) => group.rows);
 }
 
 // Rows are in time order. A group is shown by the address that occurs in it most often, and by
@@ -128,7 +119,7 @@ export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
 // whole log and one batch of writes; repeating it gives the same rows.
 export async function runNightlyStats(db: D1Database, now: number): Promise<void> {
   const { results } = await db
-    .prepare("SELECT plate, address, lat, lon, parking, day, created_at FROM report_log ORDER BY created_at")
+    .prepare("SELECT plate, address, lat, lon, address_id, parking, day, created_at FROM report_log ORDER BY created_at")
     .all<PlaceRow & { parking: number; day: string }>();
 
   const yesterday = dublinDay(now - DAY_MS);

@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { areaBounds, isInArea } from "./area";
 import type { Area } from "./area";
-import { reverseGeocode, searchAddress } from "./geocode";
+import { reverseGeocode } from "./geocode";
 
 const area: Area = {
   county: "Dublin",
@@ -47,13 +46,6 @@ let db: D1Database;
 async function reverse(lat: number, lon: number) {
   try {
     return await reverseGeocode(db, area, lat, lon, defer);
-  } finally {
-    await Promise.all(deferred.splice(0));
-  }
-}
-async function search(text: string) {
-  try {
-    return await searchAddress(db, area, text, defer);
   } finally {
     await Promise.all(deferred.splice(0));
   }
@@ -107,38 +99,5 @@ describe("reverseGeocode", () => {
     await reverse(53.406, -6.16);
     expect(mock).toHaveBeenCalledTimes(2);
     expect(Date.now() - started).toBeGreaterThanOrEqual(990);
-  });
-});
-
-describe("searchAddress", () => {
-  it("searches only inside the rectangle around the district", async () => {
-    const mock = respondWith([result({ road: "Main Street" })]);
-    const place = await search("  Main   Street ");
-    const params = mock.mock.calls[0][0].searchParams;
-    const { west, south, east, north } = areaBounds(area);
-    expect(params.get("q")).toBe("Main Street");
-    expect(params.get("bounded")).toBe("1");
-    expect(params.get("countrycodes")).toBe("ie");
-    expect(params.get("viewbox")).toBe(`${west},${north},${east},${south}`);
-    expect(place).toEqual({ address: "Main Street, D13", lat: 53.405, lon: -6.16 });
-  });
-  it("ignores case and spacing in the cache", async () => {
-    const mock = respondWith([result({ road: "Main Street" })]);
-    await search("Main Street");
-    await search("main  STREET");
-    expect(mock).toHaveBeenCalledTimes(1);
-  });
-  it("returns null when nothing is found", async () => {
-    respondWith([]);
-    expect(await search("Nowhere")).toBeNull();
-  });
-});
-
-describe("areaBounds", () => {
-  it("contains the 50 m margin", () => {
-    const { west, north } = areaBounds(area);
-    expect(isInArea(area, north - 0.0001, -6.16)).toBe(true);
-    expect(isInArea(area, 53.405, west + 0.0001)).toBe(true);
-    expect(isInArea(area, north + 0.0001, -6.16)).toBe(false);
   });
 });

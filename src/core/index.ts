@@ -2,7 +2,21 @@
 // description templates, link building).
 export { isInArea } from "./area";
 export { district } from "./district";
-export { reverseGeocode, searchAddress } from "./geocode";
+export { reverseGeocode } from "./geocode";
+export {
+  addUserAddress,
+  approveAllWalk,
+  decideIncoming,
+  deleteAddress,
+  getAddress,
+  moveIncomingAddresses,
+  movePoint,
+  nearestAddresses,
+  nextIncoming,
+  renameAddress,
+} from "./directory";
+export type { Decision } from "./directory";
+export { shapeFromGeometry, shapeMiddle } from "./shapes";
 export type { Defer } from "./geocode";
 export { PLATE_MAX_LENGTH, recognizePlates } from "./plate";
 export {

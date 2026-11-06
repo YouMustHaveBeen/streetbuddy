@@ -1,6 +1,6 @@
 // StreetBuddy Worker entry point.
 import { cleanupExpired } from "./cleanup";
-import { dublinDateTime, runNightlyStats } from "./core";
+import { dublinDateTime, moveIncomingAddresses, runNightlyStats } from "./core";
 import { runFormCheck } from "./dailyCheck";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
@@ -33,13 +33,19 @@ export default {
     } catch (error) {
       console.error("scheduled: cleanup failed", error);
     }
-    // The statistics run in the trigger that is 3:00 in Dublin, the form check in the one that is 6:00.
+    // The statistics and the move of incoming addresses run in the trigger that is 3:00 in Dublin,
+    // the form check in the one that is 6:00.
     const dublinTime = dublinDateTime(event.scheduledTime).time;
     if (dublinTime.startsWith("03:")) {
       try {
         await runNightlyStats(env.DB, event.scheduledTime);
       } catch (error) {
         console.error("scheduled: statistics failed", error);
+      }
+      try {
+        await moveIncomingAddresses(env.DB);
+      } catch (error) {
+        console.error("scheduled: moving incoming addresses failed", error);
       }
     }
     if (dublinTime.startsWith("06:")) {

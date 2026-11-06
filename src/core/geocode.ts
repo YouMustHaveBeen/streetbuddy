@@ -1,5 +1,4 @@
 // Address lookup through OpenStreetMap Nominatim, cached in D1.
-import { areaBounds } from "./area";
 import type { Area } from "./area";
 import { DAY_MS, REQUEST_TIMEOUT_MS, sleep } from "./shared";
 
@@ -15,7 +14,7 @@ const EIRCODE = /^([AC-FHKNPRTV-Y]\d{2}|D6W)\s?([0-9AC-FHKNPRTV-Y]{4})$/i;
 // Runs work after the caller has finished, without making it wait.
 export type Defer = (work: Promise<unknown>) => void;
 
-export interface Place {
+interface Place {
   address: string;
   lat: number;
   lon: number;
@@ -117,33 +116,4 @@ export async function reverseGeocode(
   }).toString();
   const place = await lookup(db, `r:${roundedLat},${roundedLon}`, url, area, (body) => body as NominatimResult, defer);
   return place?.address ?? null;
-}
-
-// Place for a typed address, searched only inside the rectangle around the district.
-export async function searchAddress(
-  db: D1Database,
-  area: Area,
-  text: string,
-  defer: Defer,
-): Promise<Place | null> {
-  const query = text.trim().replace(/\s+/g, " ");
-  const { west, south, east, north } = areaBounds(area);
-  const url = new URL(`${NOMINATIM_URL}/search`);
-  url.search = new URLSearchParams({
-    format: "jsonv2",
-    addressdetails: "1",
-    limit: "1",
-    countrycodes: "ie",
-    bounded: "1",
-    viewbox: `${west},${north},${east},${south}`,
-    q: query,
-  }).toString();
-  return lookup(
-    db,
-    `s:${query.toLowerCase()}`,
-    url,
-    area,
-    (body) => (Array.isArray(body) ? (body[0] as NominatimResult | undefined) : undefined),
-    defer,
-  );
 }

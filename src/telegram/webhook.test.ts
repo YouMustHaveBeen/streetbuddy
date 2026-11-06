@@ -14,6 +14,10 @@ const ADMIN_ROW = [
   { text: "Feedback", callback_data: "admin_feedback" },
   { text: "Statistics", callback_data: "admin_statistics" },
 ];
+const ADDRESS_ROW = [
+  { text: "Incoming addresses", callback_data: "admin_incoming" },
+  { text: "Edit directory", callback_data: "admin_directory" },
+];
 let env: WebhookEnv;
 let rows: () => number;
 let sqlite: ReturnType<typeof fakeD1>["sqlite"];
@@ -192,10 +196,10 @@ describe("membership", () => {
       )
       .run(Date.now());
     const press = privateButton() as any;
-    press.callback_query.data = "address_ok";
+    press.callback_query.data = "addr_other";
     press.callback_query.message.message_id = 5;
     await send(press);
-    expect(bodyOf(mock, "sendMessage").text).toBe("Send photos, the first one with the number plate, or write the plate number");
+    expect(bodyOf(mock, "sendMessage").text).toBe("Write the address");
   });
   it("lets nobody in and says nothing when Telegram fails the check", async () => {
     const mock = telegram({ ok: false, error_code: 400 });
@@ -240,7 +244,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW] },
     });
   });
   it("answers /admin written with the bot name", async () => {
@@ -258,7 +262,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: 03/11/2026 06:00 - form changed",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW] },
     });
   });
   it.each([
@@ -342,7 +346,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW] },
     });
     expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
   });
@@ -405,8 +409,8 @@ describe("which buttons check membership", () => {
   };
   it.each([
       "cancel",
-      "address_ok",
-      "address_edit",
+      "addr:0",
+      "addr_other",
       "opt:0",
       "done",
       "create",
@@ -431,7 +435,22 @@ describe("which buttons check membership", () => {
       expect(methods(mock)).not.toContain("getChatMember");
     },
   );
-  it.each(["admin_on", "admin_off", "admin_feedback", "admin_statistics", "review_ok"])(
+  it.each([
+    "admin_on",
+    "admin_off",
+    "admin_feedback",
+    "admin_statistics",
+    "admin_incoming",
+    "admin_directory",
+    "admin_in:ok:1:2",
+    "admin_all_walk",
+    "admin_back",
+    "admin_addr:1",
+    "admin_text:1",
+    "admin_move:1",
+    "admin_del:1",
+    "review_ok",
+  ])(
     "checks on %s",
     async (data) => {
       const mock = telegram(memberOf("left"));
@@ -439,4 +458,216 @@ describe("which buttons check membership", () => {
       expect(methods(mock)[0]).toBe("getChatMember");
     },
   );
+});
+
+describe("/admin: incoming addresses and the directory", () => {
+  let updateId = 0;
+  let nextId = 0;
+  let sent: { method: string; body: any; id: number }[] = [];
+  let status = "administrator";
+  beforeEach(() => {
+    updateId = 0;
+    nextId = 100;
+    sent = [];
+    status = "administrator";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        const method = String(url).split("/").pop() as string;
+        if (method === "getChatMember") return new Response(JSON.stringify(memberOf(status)));
+        nextId += 1;
+        sent.push({ method, body: JSON.parse(String(init.body)), id: nextId });
+        return new Response(JSON.stringify({ ok: true, result: { message_id: nextId } }));
+      }),
+    );
+  });
+  const of = (method: string) => sent.filter((call) => call.method === method);
+  const last = () => of("sendMessage").at(-1)?.body;
+  const lastId = () => of("sendMessage").at(-1)?.id as number;
+  const pinId = () => of("sendLocation").at(-1)?.id as number;
+  const keys = () => (last().reply_markup?.inline_keyboard ?? []).map((row: any[]) => row.map((b) => b.callback_data));
+  const labels = () => (last().reply_markup?.inline_keyboard ?? []).flat().map((b: any) => b.text);
+  const press = async (data: string, messageId = nextId) => {
+    const update = privateButton(++updateId) as any;
+    update.callback_query.data = data;
+    update.callback_query.message.message_id = messageId;
+    await send(update);
+  };
+  const message = async (fields: Record<string, unknown>) => {
+    const update = privateMessage(++updateId) as any;
+    Object.assign(update.message, { message_id: 500 + updateId, date: 1793000000, ...fields });
+    await send(update);
+  };
+  const addIncoming = (text: string, source: string, geometry: object, duplicate: number | null = null) =>
+    Number(
+      sqlite
+        .prepare(
+          "INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, duplicate_m, created_at) VALUES (?, ?, ?, ?, ?, ?, 1)",
+        )
+        .run(source, text, (geometry as any).type === "Point" ? "point" : "line", JSON.stringify(geometry), source === "user" ? 7 : null, duplicate)
+        .lastInsertRowid,
+    );
+  const addAddress = (text: string, kind: string, lat: number, lon: number) =>
+    Number(
+      sqlite
+        .prepare("INSERT INTO addresses (text, kind, geometry, west, south, east, north) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .run(
+          text,
+          kind,
+          JSON.stringify(
+            kind === "point"
+              ? { type: "Point", coordinates: [lon, lat] }
+              : { type: "LineString", coordinates: [[lon, lat], [lon + 0.0001, lat]] },
+          ),
+          lon,
+          lat,
+          kind === "point" ? lon : lon + 0.0001,
+          lat,
+        ).lastInsertRowid,
+    );
+  const decision = () => sqlite.prepare("SELECT decision, user_id FROM incoming_addresses").all();
+
+  it("shows an incoming address under a pin with its place in the queue", async () => {
+    const id = addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.16, 53.405] });
+    addIncoming("Parkside Drive", "walk", { type: "LineString", coordinates: [[-6.16, 53.405], [-6.158, 53.405]] });
+    await press("admin_incoming", 5);
+    expect(of("sendLocation")[0].body).toEqual({ chat_id: 42, latitude: 53.405, longitude: -6.16 });
+    const pin = pinId();
+    expect(last().text).toBe("Incoming address 1 of 2\n5 New Street\nPoint, written by a user");
+    expect(keys()).toEqual([
+      [`admin_in:ok:${id}:${pin}`, `admin_in:no:${id}:${pin}`, `admin_in:next:${id}:${pin}`],
+      [`admin_all_walk:${pin}`, `admin_back:${pin}`],
+    ]);
+    expect(labels()).toEqual(["Approve", "Reject", "Next", "Approve all from the walk", "Back"]);
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual([5]);
+  });
+  it("approves, removes the screen and its pin and shows the next one, with its line in the middle", async () => {
+    const id = addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.16, 53.405] });
+    addIncoming("Parkside Drive", "walk", { type: "LineString", coordinates: [[-6.16, 53.405], [-6.158, 53.405]] });
+    await press("admin_incoming", 5);
+    const [screen, pin] = [lastId(), pinId()];
+    await press(`admin_in:ok:${id}:${pin}`, screen);
+    expect((decision() as any[])[0]).toEqual({ decision: "approved", user_id: null });
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual([5, screen, pin]);
+    expect(of("sendLocation")[1].body.latitude).toBeCloseTo(53.405, 9);
+    expect(of("sendLocation")[1].body.longitude).toBeCloseTo(-6.159, 9);
+    expect(last().text).toBe("Incoming address 1 of 1\nParkside Drive\nLine, from the walk");
+  });
+  it("rejects, and Next goes on without a decision", async () => {
+    const a = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
+    const b = addIncoming("B", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
+    await press(`admin_in:next:${a}:1`);
+    expect(last().text).toContain("Incoming address 2 of 2\nB");
+    await press(`admin_in:no:${b}:1`);
+    expect(sqlite.prepare("SELECT text, decision FROM incoming_addresses ORDER BY id").all()).toEqual([
+      { text: "A", decision: null },
+      { text: "B", decision: "rejected" },
+    ]);
+    expect(last().text).toContain("Incoming address 1 of 1\nA");
+  });
+  it("offers Keep old and Replace old for a possible duplicate", async () => {
+    const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] }, 40);
+    await press("admin_incoming");
+    expect(last().text).toBe(
+      "Incoming address 1 of 1\nA\nPoint, from the walk\nPossible duplicate: the same address is in the directory 40 m away",
+    );
+    expect(labels()).toEqual(["Keep old", "Replace old", "Next", "Approve all from the walk", "Back"]);
+    await press(`admin_in:replace:${id}:101`);
+    expect(decision()).toEqual([{ decision: "replace", user_id: null }]);
+    expect(last().text).toBe("No incoming addresses");
+    expect(labels()).toEqual(["Back"]);
+  });
+  it("Keep old drops the new address", async () => {
+    const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] }, 40);
+    await press(`admin_in:keep:${id}:101`);
+    expect(decision()).toEqual([{ decision: "rejected", user_id: null }]);
+  });
+  it("approves all walk addresses at once and goes on with the rest", async () => {
+    addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
+    addIncoming("B", "user", { type: "Point", coordinates: [-6.16, 53.405] });
+    await press("admin_all_walk:77");
+    expect(sqlite.prepare("SELECT text, decision FROM incoming_addresses ORDER BY id").all()).toEqual([
+      { text: "A", decision: "approved" },
+      { text: "B", decision: null },
+    ]);
+    expect(last().text).toContain("Incoming address 1 of 1\nB");
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toContain(77);
+  });
+  it("Back removes the screen and its pin and shows the admin screen", async () => {
+    await press("admin_back:77", 60);
+    expect(last().text).toContain("Admin console");
+    expect(of("deleteMessage").map((call) => call.body.message_id).sort()).toEqual([60, 77]);
+  });
+  it("finds directory addresses by location, five at most, and edits the text of one", async () => {
+    const ids = [1, 2, 3, 4, 5, 6].map((i) => addAddress(`${i} Main Street`, "point", 53.405 + i * 0.00002, -6.16));
+    await press("admin_directory", 5);
+    expect(last().text).toBe("Send the location of the address");
+    expect(labels()).toEqual(["Back"]);
+    const prompt = lastId();
+    await message({ location: { latitude: 53.405, longitude: -6.16 } });
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([prompt, 500 + updateId]));
+    expect(last().text).toBe("Choose the address");
+    expect(labels()).toEqual(["1 Main Street", "2 Main Street", "3 Main Street", "4 Main Street", "5 Main Street", "Back"]);
+
+    await press(`admin_addr:${ids[0]}`);
+    expect(last().text).toBe("1 Main Street\nPoint");
+    expect(labels()).toEqual(["Edit text", "Move", "Delete", "Back"]);
+    await press(`admin_text:${ids[0]}`);
+    expect(last().text).toBe("Write the new address");
+    await message({ text: "x".repeat(101) });
+    expect(last().text).toBe("The address must be 100 characters or less");
+    await message({ text: "1A Main Street" });
+    expect(of("sendMessage").slice(-2).map((call) => call.body.text)).toEqual([
+      "Saved",
+      "Admin console\nBot: on\nLast form check: none yet",
+    ]);
+    expect(sqlite.prepare("SELECT text FROM addresses WHERE id = ?").get(ids[0])).toEqual({ text: "1A Main Street" });
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
+  });
+  it("says when there is nothing within 30 m", async () => {
+    await press("admin_directory");
+    await message({ location: { latitude: 53.405, longitude: -6.16 } });
+    expect(last().text).toBe("No addresses within 30 m");
+    expect(labels()).toEqual(["Back"]);
+  });
+  it("moves a point to a new location and offers no Move for a line", async () => {
+    const id = addAddress("1 Main Street", "point", 53.405, -6.16);
+    const lineId = addAddress("Main Street", "line", 53.405, -6.16);
+    await press(`admin_addr:${lineId}`);
+    expect(labels()).toEqual(["Edit text", "Delete", "Back"]);
+    await press(`admin_move:${id}`);
+    expect(last().text).toBe("Send the new location");
+    await message({ text: "here" });
+    expect(last().text).toBe("Send the new location");
+    await message({ location: { latitude: 53.406, longitude: -6.161 } });
+    expect(sqlite.prepare("SELECT geometry FROM addresses WHERE id = ?").get(id)).toEqual({
+      geometry: JSON.stringify({ type: "Point", coordinates: [-6.161, 53.406] }),
+    });
+    expect(of("sendMessage").at(-2)?.body.text).toBe("Saved");
+  });
+  it("deletes an address", async () => {
+    const id = addAddress("1 Main Street", "point", 53.405, -6.16);
+    await press(`admin_del:${id}`);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM addresses").get()).toEqual({ n: 0 });
+    expect(of("sendMessage").slice(-2).map((call) => call.body.text)).toEqual([
+      "Saved",
+      "Admin console\nBot: on\nLast form check: none yet",
+    ]);
+  });
+  it("Back on a question removes it, and a location afterwards starts a report", async () => {
+    await press("admin_directory");
+    await press("admin_back");
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await message({ location: { latitude: 53.0, longitude: -7.0 } });
+    expect(last().text).toBe("Sorry, this bot doesn't work in this area");
+  });
+  it("drops a question of /admin without a word for someone no longer an administrator", async () => {
+    await press("admin_directory");
+    status = "member";
+    const count = sent.length;
+    await message({ location: { latitude: 53.405, longitude: -6.16 } });
+    expect(sent.slice(count).map((call) => call.method)).toEqual(["deleteMessage"]);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
+  });
 });

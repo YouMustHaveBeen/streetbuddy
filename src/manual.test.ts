@@ -4,6 +4,7 @@ import type { Env } from "./env";
 import { PARKING_OPTIONS, ROAD_USER_TYPES } from "./core";
 import { INSTALL_PATH } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
+import { CHOOSE_ADDRESS } from "./telegram/address";
 import {
   CANCELLED,
   CHOOSE_PARKING,
@@ -41,14 +42,14 @@ describe("manual page", () => {
 
   it("walks through every step with the bot's own button names", async () => {
     const html = await manualPage().text();
-    for (const name of ["Confirm", "Edit", "Create report", "Edit plate", "Change time", "Done", "Open report", "Cancel", "Click Here to Start", "Submit Report"]) {
+    for (const name of ["Other address", "Confirm", "Edit", "Create report", "Edit plate", "Change time", "Done", "Open report", "Cancel", "Click Here to Start", "Submit Report"]) {
       expect(html).toContain(`«${name}»`);
     }
   });
 
   it("quotes the bot's texts and button names exactly as the bot sends them", async () => {
     const html = await manualPage().text();
-    const quoted = [OUT_OF_AREA, SEND_PHOTOS, PHOTO_RECEIVED, SEVERAL_PLATES, NO_PLATE, CHOOSE_PARKING, CHOOSE_ROAD_USER, CANCELLED];
+    const quoted = [OUT_OF_AREA, CHOOSE_ADDRESS, SEND_PHOTOS, PHOTO_RECEIVED, SEVERAL_PLATES, NO_PLATE, CHOOSE_PARKING, CHOOSE_ROAD_USER, CANCELLED];
     for (const text of [...quoted, ...PARKING_OPTIONS, ...ROAD_USER_TYPES]) {
       expect(html).toContain(text);
     }

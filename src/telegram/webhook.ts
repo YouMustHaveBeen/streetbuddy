@@ -109,7 +109,7 @@ async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionCont
       step = "admin";
       if (!access?.admin) return;
       if (incoming.callbackQueryId) {
-        await handleAdminButton(env, incoming.chatId, { id: incoming.callbackQueryId, data, messageId });
+        await handleAdminButton(env, incoming.userId, incoming.chatId, { id: incoming.callbackQueryId, data, messageId });
       } else {
         await handleAdminCommand(env, incoming.userId, incoming.chatId);
       }
@@ -135,7 +135,14 @@ async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionCont
         (work) => ctx.waitUntil(work),
       );
     } else {
-      await handleMessage(env, incoming.userId, incoming.chatId, update.message as Message, (work) => ctx.waitUntil(work));
+      await handleMessage(
+        env,
+        incoming.userId,
+        incoming.chatId,
+        update.message as Message,
+        (work) => ctx.waitUntil(work),
+        access?.admin === true,
+      );
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown error";

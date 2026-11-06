@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeD1 } from "../../test/fakeD1";
 import { district } from "../core";
+import { M_PER_DEG } from "../core/area";
 import { handleButton, handleMessage } from "./dialog";
 import { closeExpiredFinalMessages } from "./final";
 import type { DialogEnv, Message } from "./dialog";
@@ -33,6 +34,26 @@ const draft = () => sqlite.prepare("SELECT * FROM drafts WHERE user_id = ?").get
 const buttonId = () => (draft()?.buttons_message_id ?? 0) as number;
 const labels = () => lastSent().reply_markup.inline_keyboard.flat().map((b: { text: string }) => b.text);
 
+// A directory address; point(m) is a point m metres north of the inside point.
+const point = (metres: number) => ({ type: "Point", coordinates: [lonInside, latInside + metres / M_PER_DEG] });
+const addDirectory = (text: string, geometry: { type: string; coordinates: unknown }): number => {
+  const flat = JSON.stringify(geometry.coordinates).match(/-?\d+(\.\d+)?(e-?\d+)?/g)!.map(Number);
+  const lons = flat.filter((_, i) => i % 2 === 0);
+  const lats = flat.filter((_, i) => i % 2 === 1);
+  const result = sqlite
+    .prepare("INSERT INTO addresses (text, kind, geometry, west, south, east, north) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(
+      text,
+      geometry.type === "Point" ? "point" : geometry.type === "Polygon" ? "area" : "line",
+      JSON.stringify(geometry),
+      Math.min(...lons),
+      Math.min(...lats),
+      Math.max(...lons),
+      Math.max(...lats),
+    );
+  return Number(result.lastInsertRowid);
+};
+
 const message = async (fields: Partial<Message>) => {
   nextMessage += 1;
   await handleMessage(env, USER, USER, { message_id: nextMessage, date: 1793000000, ...fields }, defer);
@@ -56,7 +77,7 @@ const press = async (data: string, messageId = buttonId()) => {
 
 async function toPhotos() {
   await location();
-  await press("address_ok");
+  await press("addr:0");
 }
 const giveLink = async () => {
   await press("road:Pedestrian");
@@ -255,43 +276,80 @@ describe("location", () => {
     expect(sentTexts()).toEqual(["Sorry, this bot doesn't work in this area"]);
     expect(draft()).toBeUndefined();
   });
-  it("shows the address with Confirm, Edit and Cancel", async () => {
+  it("shows the Nominatim address with Other address and Cancel when the directory has nothing near", async () => {
     await location();
-    expect(lastSent().text).toBe("12 Main Street, Clongriffin, D13");
-    expect(labels()).toEqual(["Confirm", "Edit", "Cancel"]);
+    expect(lastSent().text).toBe("Choose the address");
+    expect(labels()).toEqual(["12 Main Street, Clongriffin, D13", "Other address", "Cancel"]);
   });
-  it("treats text as an address and refuses one that is not found", async () => {
-    nominatim = () => new Response("[]");
-    await text("Nowhere");
-    expect(sentTexts()).toEqual(["Sorry, this bot doesn't work in this area"]);
+  it("offers the two nearest directory addresses within 30 m, nearest first, without asking Nominatim", async () => {
+    nominatim = () => {
+      throw new Error("must not be called");
+    };
+    addDirectory("Far", point(45));
+    addDirectory("Second", point(20));
+    addDirectory("Third", point(25));
+    addDirectory("First", point(10));
+    await location();
+    expect(lastSent().text).toBe("Choose the address");
+    expect(labels()).toEqual(["First, D13", "Second, D13", "Other address", "Cancel"]);
   });
-  it("after two failures on a location takes the address as text", async () => {
+  it("offers a territory the point is inside", async () => {
+    nominatim = () => {
+      throw new Error("must not be called");
+    };
+    const d = 0.001;
+    addDirectory("Parkside Square", {
+      type: "Polygon",
+      coordinates: [[[lonInside - d, latInside - d], [lonInside + d, latInside - d], [lonInside + d, latInside + d], [lonInside - d, latInside + d], [lonInside - d, latInside - d]]],
+    });
+    await location();
+    expect(labels()).toEqual(["Parkside Square, D13", "Other address", "Cancel"]);
+  });
+  it("chooses a directory address with its ID and goes to the photos", async () => {
+    const id = addDirectory("1 Parkside Drive", point(5));
+    await location();
+    await press("addr:0");
+    expect(lastSent().text).toBe("Send photos, the first one with the number plate, or write the plate number");
+    expect(draft().address).toBe("1 Parkside Drive, D13");
+    expect(draft().address_id).toBe(id);
+    expect(draft().address_typed).toBe(0);
+  });
+  it("shows only Other address and Cancel when Nominatim finds nothing", async () => {
+    nominatim = () => new Response("{}");
+    await location();
+    expect(lastSent().text).toBe("Choose the address");
+    expect(labels()).toEqual(["Other address", "Cancel"]);
+  });
+  it("answers a text with no report by asking for the location and starts nothing", async () => {
+    await text("12 Main Street");
+    expect(sentTexts()).toEqual(["Please send the location"]);
+    expect(draft()).toBeUndefined();
+  });
+  it("after two failures on a location takes the address as text and goes to the photos", async () => {
     nominatim = () => new Response("", { status: 500 });
     await location();
+    expect(lastSent().text).toBe("Could not get the address. Please try again in a minute");
+    await text("Main Street");
     expect(lastSent().text).toBe("Could not get the address. Please try again in a minute");
     await location();
     expect(lastSent().text).toBe("Could not get the address. Please write it");
     await text("My street");
-    expect(lastSent().text).toBe("My street");
+    expect(lastSent().text).toBe("Send photos, the first one with the number plate, or write the plate number");
     expect(draft().address).toBe("My street");
+    expect(draft().address_typed).toBe(1);
     expect(draft().lat).toBe(latInside);
   });
-  it("after two failures on a typed address asks for the location", async () => {
-    nominatim = () => new Response("", { status: 500 });
-    await text("Main Street");
-    await text("Main Street");
-    expect(lastSent().text).toBe("Please send the location");
-    expect(draft().step).toBe("location");
-  });
-  it("edits the address, keeps the coordinates, limits the length", async () => {
+  it("Other address takes a written address, keeps the coordinates, limits the length", async () => {
     await location();
-    await press("address_edit");
-    expect(lastSent().text).toBe("12 Main Street, Clongriffin, D13\n\nWrite the correct address");
+    await press("addr_other");
+    expect(lastSent().text).toBe("Write the address");
     await text("x".repeat(101));
     expect(lastSent().text).toBe("The address must be 100 characters or less");
     await text("5 New Street");
-    expect(draft().step).toBe("address");
+    expect(draft().step).toBe("photos");
     expect(draft().address).toBe("5 New Street");
+    expect(draft().address_id).toBeNull();
+    expect(draft().address_typed).toBe(1);
     expect(draft().lat).toBe(latInside);
   });
   it("moves the address screen below a photo and does not remember the photo", async () => {
@@ -312,7 +370,7 @@ describe("location", () => {
     await location(latInside + 0.0002);
     expect(draft().step).toBe("address");
     expect(draft().photo_count).toBe(0);
-    expect(lastSent().text).toBe("7 Other Road, Clongriffin, D13");
+    expect(labels()[0]).toBe("7 Other Road, Clongriffin, D13");
     expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
     expect(sentTexts()).not.toContain("Report cancelled");
   });
@@ -846,7 +904,7 @@ describe("cancel and old buttons", () => {
     await vi.waitFor(() => expect(draft().step).toBe("finishing"));
     await press("cancel", screen);
     await location();
-    await vi.waitFor(() => expect(sentTexts().at(-1)).toContain("Main Street"));
+    await vi.waitFor(() => expect(sentTexts().at(-1)).toBe("Choose the address"));
     await new Promise((resolve) => setTimeout(resolve, 10));
     release();
     await finishing;
@@ -885,14 +943,14 @@ describe("cancel and old buttons", () => {
   it("only stops the spinner on a button of a replaced screen", async () => {
     await location();
     const old = buttonId();
-    await press("address_edit");
+    await press("addr_other");
     const count = calls.length;
-    await press("address_ok", old);
+    await press("addr:0", old);
     expect(calls.slice(count).map((call) => call.method)).toEqual(["answerCallbackQuery"]);
-    expect(draft().step).toBe("address_edit");
+    expect(draft().step).toBe("address_text");
   });
   it("only stops the spinner when there is no draft", async () => {
-    await press("address_ok", 1);
+    await press("addr:0", 1);
     expect(calls.map((call) => call.method)).toEqual(["answerCallbackQuery"]);
   });
   it("treats an expired draft as no draft", async () => {
@@ -915,10 +973,10 @@ describe("bot switched off", () => {
     expect(sentTexts()).toEqual([FORM_CHANGED]);
     expect(draft()).toBeUndefined();
   });
-  it("answers a typed address the same way", async () => {
+  it("answers a text with no report by asking for the location", async () => {
     switchOff();
     await text("12 Main Street");
-    expect(sentTexts()).toEqual([FORM_CHANGED]);
+    expect(sentTexts()).toEqual(["Please send the location"]);
     expect(draft()).toBeUndefined();
   });
   it("still shows /start and ignores a photo sent without a report", async () => {
@@ -933,8 +991,8 @@ describe("bot switched off", () => {
     await location();
     switchOff();
     await text("hello");
-    expect(sentTexts().at(-1)).toBe("12 Main Street, Clongriffin, D13");
-    await press("address_ok");
+    expect(sentTexts().at(-1)).toBe("Choose the address");
+    await press("addr:0");
     expect(sentTexts().at(-1)).toBe("Send photos, the first one with the number plate, or write the plate number");
     expect(sentTexts()).not.toContain(FORM_CHANGED);
   });
@@ -1000,10 +1058,19 @@ describe("review, Edit and the phone", () => {
     expect(lastSent().text).toContain("at 07:00.");
 
     await press("edit_address");
-    expect(lastSent().text).toBe("12 Main Street, Clongriffin, D13\n\nWrite the correct address");
+    expect(lastSent().text).toBe("Choose the address");
+    expect(labels()).toEqual(["12 Main Street, Clongriffin, D13", "Other address", "Cancel"]);
+    await press("addr_other");
     await text("1 New Road");
     expect(draft().step).toBe("edit");
     expect(lastSent().text).toContain("at 1 New Road");
+    expect(draft().address_typed).toBe(1);
+
+    await press("edit_address");
+    await press("addr:0");
+    expect(draft().step).toBe("edit");
+    expect(lastSent().text).toContain("at 12 Main Street, Clongriffin, D13");
+    expect(draft().address_typed).toBe(0);
 
     await press("edit_parking");
     expect(labels()).toContain("✅ on a footpath");
@@ -1207,5 +1274,59 @@ describe("review, Edit and the phone", () => {
     await press("review_ok");
     await closeExpiredFinalMessages(env);
     expect(called("editMessageText")).toEqual([]);
+  });
+});
+
+describe("the address of the report when the link is given", () => {
+  const toLink = async () => {
+    await photo();
+    await press("create");
+    await press("plate_ok");
+    await press("opt:0");
+    await press("done");
+    await giveLink();
+  };
+  const incoming = () => sqlite.prepare("SELECT source, text, kind, user_id, decision FROM incoming_addresses").all();
+  const logged = () => sqlite.prepare("SELECT address, address_id FROM report_log").all();
+
+  it("writes a written address to the incoming addresses with the Telegram ID", async () => {
+    await location();
+    await press("addr_other");
+    await text("5 New Street");
+    await toLink();
+    expect(incoming()).toEqual([{ source: "user", text: "5 New Street", kind: "point", user_id: USER, decision: null }]);
+    expect(logged()).toEqual([{ address: "5 New Street", address_id: null }]);
+  });
+  it("logs the ID of a chosen directory address and writes nothing to the incoming addresses", async () => {
+    const id = addDirectory("1 Parkside Drive", point(3));
+    await location();
+    await press("addr:0");
+    await toLink();
+    expect(incoming()).toEqual([]);
+    expect(logged()).toEqual([{ address: "1 Parkside Drive, D13", address_id: id }]);
+  });
+  it("writes nothing for a report cancelled before the link, and keeps the address after Cancel on the final message", async () => {
+    await location();
+    await press("addr_other");
+    await text("5 New Street");
+    await press("cancel");
+    expect(incoming()).toEqual([]);
+    await location();
+    await press("addr_other");
+    await text("5 New Street");
+    await toLink();
+    const final = (sqlite.prepare("SELECT message_id FROM final_messages").get() as { message_id: number }).message_id;
+    await press("final_cancel", final);
+    expect(logged()).toEqual([]);
+    expect(incoming()).toHaveLength(1);
+  });
+  it("still gives the link when the written address cannot be saved", async () => {
+    await location();
+    await press("addr_other");
+    await text("5 New Street");
+    sqlite.exec("DROP TABLE incoming_addresses");
+    await toLink();
+    expect(lastSent().reply_markup.inline_keyboard[0][0].text).toBe("Open report");
+    expect(draft()).toBeUndefined();
   });
 });

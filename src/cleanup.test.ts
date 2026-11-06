@@ -86,6 +86,27 @@ describe("cleanupExpired", () => {
     expect(rows(sqlite, "SELECT key FROM geocode_cache")).toEqual(["k"]);
   });
 
+  it("removes addresses written by users without a decision after 60 days, and nothing else of the incoming ones", async () => {
+    const { db, sqlite } = fakeD1();
+    const add = (source: string, decision: string | null, age: number) =>
+      sqlite
+        .prepare(
+          "INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, decision, created_at) VALUES (?, ?, 'point', '{}', 1, ?, ?)",
+        )
+        .run(source, `${source} ${decision} ${age}`, decision, NOW - age);
+    add("user", null, GEOCODE_TTL + 1);
+    add("user", null, GEOCODE_TTL);
+    add("user", null, GEOCODE_TTL - 1);
+    add("user", "approved", GEOCODE_TTL + 1);
+    add("walk", null, GEOCODE_TTL + 1);
+    await cleanupExpired(db, NOW);
+    expect(rows(sqlite, "SELECT text FROM incoming_addresses ORDER BY id")).toEqual([
+      `user null ${GEOCODE_TTL - 1}`,
+      `user approved ${GEOCODE_TTL + 1}`,
+      `walk null ${GEOCODE_TTL + 1}`,
+    ]);
+  });
+
   it("does nothing on empty tables", async () => {
     const { db } = fakeD1();
     await expect(cleanupExpired(db, NOW)).resolves.toBeUndefined();
@@ -124,6 +145,36 @@ describe("scheduled", () => {
     logLine(sqlite, OTHER_RUN.scheduledTime - 12 * 60 * 60 * 1000);
     await worker.scheduled(OTHER_RUN, { DB: db } as Env, {} as ExecutionContext);
     expect(rows(sqlite, "SELECT day FROM daily_stats")).toEqual([]);
+  });
+
+  it("moves the approved incoming addresses into the directory only in the run that is 3:00 in Dublin", async () => {
+    const { db, sqlite } = fakeD1();
+    sqlite
+      .prepare(
+        `INSERT INTO incoming_addresses (source, text, kind, geometry, decision, created_at)
+         VALUES ('walk', '1 Main Street', 'point', '{"type":"Point","coordinates":[-6.1,53.4]}', 'approved', 0)`,
+      )
+      .run();
+    await worker.scheduled(OTHER_RUN, { DB: db } as Env, {} as ExecutionContext);
+    expect(rows(sqlite, "SELECT text FROM addresses")).toEqual([]);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NIGHT_WINTER.scheduledTime);
+    try {
+      await worker.scheduled(NIGHT_WINTER, { DB: db } as Env, {} as ExecutionContext);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(rows(sqlite, "SELECT text FROM addresses")).toEqual(["1 Main Street"]);
+    expect(rows(sqlite, "SELECT id FROM incoming_addresses")).toEqual([]);
+  });
+
+  it("logs a failed move of the incoming addresses and does not throw", async () => {
+    const { db, sqlite } = fakeD1();
+    sqlite.exec("DROP TABLE addresses");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(worker.scheduled(NIGHT_WINTER, { DB: db } as Env, {} as ExecutionContext)).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith("scheduled: moving incoming addresses failed", expect.any(Error));
+    log.mockRestore();
   });
 
   it("logs a failed count and does not throw", async () => {

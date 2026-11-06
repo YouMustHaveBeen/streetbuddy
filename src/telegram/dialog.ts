@@ -1,5 +1,6 @@
 // The report dialog: location, photos, plate and time, parking options, "Were you a", final message.
 import {
+  addUserAddress,
   buildDescription,
   buildDescriptionLines,
   buildLocation,
@@ -11,18 +12,20 @@ import {
   isBotEnabled,
   logReport,
   isInArea,
+  nearestAddresses,
   sleep,
   PARKING_OPTIONS,
   PLATE_MAX_LENGTH,
   recognizePlates,
   ROAD_USER_TYPES,
   reverseGeocode,
-  searchAddress,
 } from "../core";
 import type { Defer, LoggedReport } from "../core";
 import type { Env } from "../env";
 import { INSTALL_PATH } from "../install";
 import { MANUAL_PATH } from "../manual";
+import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS } from "./address";
+import { handleAdminInput } from "./admin";
 import { answerButton, callTelegram, deleteMessage, downloadFile, sendMessage } from "./api";
 import {
   addCleanup,
@@ -42,12 +45,13 @@ import {
   deleteFinalMessage,
   readFinalMessage,
   toggleParking,
+  isAdminStep,
 } from "./draft";
 import { saveFeedback } from "./feedback";
 import { countReport, PHONES, readPhone, savePhone } from "./phone";
 import type { Phone, UserPhone } from "./phone";
 import { stopReport } from "./stop";
-import type { Draft, DraftChanges, Step } from "./draft";
+import type { AddressOption, Draft, DraftChanges, Step } from "./draft";
 import { FORM_CHANGED_TEXT } from "./notify";
 
 type RoadUser = (typeof ROAD_USER_TYPES)[number];
@@ -99,8 +103,7 @@ export const OUT_OF_AREA = "Sorry, this bot doesn't work in this area";
 const TRY_AGAIN = "Could not get the address. Please try again in a minute";
 const WRITE_ADDRESS = "Could not get the address. Please write it";
 const SEND_LOCATION = "Please send the location";
-const EDIT_ADDRESS = "Write the correct address";
-const ADDRESS_TOO_LONG = "The address must be 100 characters or less";
+const WRITE_OTHER_ADDRESS = "Write the address";
 export const SEND_PHOTOS = "Send photos, the first one with the number plate, or write the plate number";
 export const PHOTO_RECEIVED = "Photo received. Send more photos or press Create report";
 export const SEVERAL_PLATES = "Several plates found. Choose one";
@@ -152,7 +155,8 @@ const FINAL_DONE = "final_done";
 // Latin letters, digits, hyphens and spaces.
 const PLATE_TEXT = /^(?=.*[A-Z])(?=.*[0-9])[A-Z0-9][A-Z0-9 -]*$/;
 
-const ADDRESS_MAX_LENGTH = 100;
+// How many directory addresses the address screen offers.
+const ADDRESS_CHOICES = 2;
 const FEEDBACK_MAX_LENGTH = 1000;
 // The shortest longer side of the photo size taken from Telegram.
 const MIN_PHOTO_SIDE = 1280;
@@ -181,18 +185,20 @@ function parsePlateList(draft: Pick<Draft, "plates">): string[] {
   return draft.plates ? (JSON.parse(draft.plates) as string[]) : [];
 }
 
+function parseAddressOptions(draft: Pick<Draft, "address_options">): AddressOption[] {
+  return draft.address_options ? (JSON.parse(draft.address_options) as AddressOption[]) : [];
+}
+
 // Buttons of a step. All of them are inline, and Cancel is everywhere.
 function buttonsFor(
   step: Step,
-  draft: Pick<Draft, "photo_count" | "plates" | "parking">,
+  draft: Pick<Draft, "photo_count" | "plates" | "parking" | "address_options">,
 ): Button[][] {
   switch (step) {
     case "address":
       return [
-        [
-          { text: "Confirm", callback_data: "address_ok" },
-          { text: "Edit", callback_data: "address_edit" },
-        ],
+        ...parseAddressOptions(draft).map((option, i) => [{ text: option.text, callback_data: `addr:${i}` }]),
+        [{ text: "Other address", callback_data: "addr_other" }],
         [CANCEL],
       ];
     case "photos":
@@ -288,6 +294,7 @@ async function show(
     photo_count: draft?.photo_count ?? 0,
     plates: draft?.plates ?? null,
     parking: draft?.parking ?? 0,
+    address_options: changes.address_options ?? draft?.address_options ?? null,
   };
   const replyTo = step === "review" || step === "edit" ? (draft?.last_photo_id ?? null) : null;
   const messageId = await send(c, text, { inline_keyboard: buttonsFor(step, view) }, false, replyTo);
@@ -364,6 +371,9 @@ async function refuseArea(c: Context, draft: Draft | null): Promise<void> {
   await send(c, OUT_OF_AREA);
 }
 
+// The address screen offers the nearest directory addresses; Nominatim is asked only when there
+// are none.
+// QUERY BUDGET EXCEPTION: draft read, directory read, address cache and Nominatim slot, screen swap.
 async function handleLocation(
   c: Context,
   draft: Draft | null,
@@ -376,55 +386,43 @@ async function handleLocation(
     return;
   }
   const cleanupIds = [message.message_id];
-  let address: string | null;
-  try {
-    address = await reverseGeocode(c.env.DB, district, lat, lon, c.defer);
-  } catch {
-    console.error("Nominatim failed on coordinates");
-    const failures = (draft?.failures ?? 0) + 1;
-    if (failures === 1) {
-      await show(c, draft, TRY_AGAIN, { step: "location", failures }, cleanupIds);
-    } else {
-      // Asks for the address as text and keeps the coordinates.
-      await show(c, draft, WRITE_ADDRESS, { step: "address_text", failures, lat, lon }, cleanupIds);
+  const nearby = await nearestAddresses(c.env.DB, lat, lon, ADDRESS_CHOICES);
+  const options: AddressOption[] = nearby.map((found) => ({
+    text: `${found.text}, ${district.postalDistrict}`,
+    id: found.id,
+  }));
+  if (options.length === 0) {
+    let address: string | null;
+    try {
+      address = await reverseGeocode(c.env.DB, district, lat, lon, c.defer);
+    } catch {
+      console.error("Nominatim failed on coordinates");
+      const failures = (draft?.failures ?? 0) + 1;
+      if (failures === 1) {
+        await show(c, draft, TRY_AGAIN, { step: "location", failures }, cleanupIds);
+      } else {
+        // Asks for the address as text and keeps the coordinates.
+        const changes: DraftChanges = { step: "address_text", failures, lat, lon, address_options: "[]" };
+        await show(c, draft, WRITE_ADDRESS, changes, cleanupIds);
+      }
+      return;
     }
-    return;
-  }
-  if (address === null) {
-    await refuseArea(c, draft);
-    return;
-  }
-  await show(c, draft, address, { step: "address", failures: 0, address, lat, lon }, cleanupIds);
-}
-
-async function handleAddressText(
-  c: Context,
-  draft: Draft | null,
-  message: Message,
-  text: string,
-): Promise<void> {
-  const cleanupIds = [message.message_id];
-  let place;
-  try {
-    place = await searchAddress(c.env.DB, district, text, c.defer);
-  } catch {
-    console.error("Nominatim failed on a typed address");
-    const failures = (draft?.failures ?? 0) + 1;
-    const prompt = failures === 1 ? TRY_AGAIN : SEND_LOCATION;
-    await show(c, draft, prompt, { step: "location", failures }, cleanupIds);
-    return;
-  }
-  if (!place || !isInArea(district, place.lat, place.lon)) {
-    await refuseArea(c, draft);
-    return;
+    if (address !== null) options.push({ text: address, id: null });
   }
   await show(
     c,
     draft,
-    place.address,
-    { step: "address", failures: 0, address: place.address, lat: place.lat, lon: place.lon },
+    CHOOSE_ADDRESS,
+    { step: "address", failures: 0, lat, lon, address_options: JSON.stringify(options) },
     cleanupIds,
   );
+}
+
+// A choice of the address screen; from the Edit screen it goes back there.
+async function chooseAddress(c: Context, draft: Draft, option: AddressOption): Promise<void> {
+  const changes: DraftChanges = { address: option.text, address_id: option.id, address_typed: 0 };
+  if (draft.editing) await showReport(c, draft, "edit", changes);
+  else await show(c, draft, SEND_PHOTOS, { ...changes, step: "photos" });
 }
 
 // An address written by hand is kept as it is, with the coordinates already in the draft.
@@ -439,11 +437,12 @@ async function handleManualAddress(
     await show(c, draft, ADDRESS_TOO_LONG, {}, cleanupIds);
     return;
   }
+  const changes: DraftChanges = { address: text, address_id: null, address_typed: 1 };
   if (draft.editing) {
-    await showReport(c, draft, "edit", { address: text }, cleanupIds);
+    await showReport(c, draft, "edit", changes, cleanupIds);
     return;
   }
-  await show(c, draft, text, { step: "address", address: text }, cleanupIds);
+  await show(c, draft, SEND_PHOTOS, { ...changes, step: "photos" }, cleanupIds);
 }
 
 // The smallest size that still shows the plate, or the largest one if all are smaller.
@@ -617,12 +616,14 @@ async function handleFeedback(c: Context, draft: Draft, text: string): Promise<v
   await send(c, FEEDBACK_SENT);
 }
 
+// isAdmin: the sender is an administrator of the group.
 export async function handleMessage(
   env: DialogEnv,
   userId: number,
   chatId: number,
   message: Message,
   defer: Defer,
+  isAdmin = false,
 ): Promise<void> {
   const c: Context = { env, userId, chatId, defer };
   const text = message.text;
@@ -635,11 +636,24 @@ export async function handleMessage(
 
   const draft = await loadDraft(env.DB, userId);
 
+  // /admin waiting for a location or a text; someone no longer an administrator only loses it.
+  if (draft && isAdminStep(draft.step)) {
+    if (isAdmin) await handleAdminInput(env, userId, chatId, draft, message);
+    else await stopReport(env, userId, chatId);
+    return;
+  }
+
+  // A text with no report asks for the location and starts nothing.
+  if (!draft && text !== undefined && !message.location) {
+    await send(c, SEND_LOCATION);
+    return;
+  }
+
   // A new location on any step but the one that gives the link starts the report over.
   const restart = Boolean(message.location && draft && draft.step !== "location" && draft.step !== "finishing");
   if (!draft || draft.step === "location" || restart) {
     // A report is started only while the bot is on; one already begun is carried on.
-    if ((!draft || restart) && (message.location || text !== undefined) && !(await isBotEnabled(env.DB))) {
+    if ((!draft || restart) && message.location && !(await isBotEnabled(env.DB))) {
       await send(c, FORM_CHANGED_TEXT);
       return;
     }
@@ -647,8 +661,6 @@ export async function handleMessage(
     const current = restart ? null : draft;
     if (message.location) {
       await handleLocation(c, current, message, message.location.latitude, message.location.longitude);
-    } else if (text !== undefined) {
-      await handleAddressText(c, current, message, text);
     } else if (current) {
       await redraw(c, current, message);
     }
@@ -657,7 +669,7 @@ export async function handleMessage(
 
   if (draft.step === "photos" && message.photo?.length) {
     await handlePhoto(c, draft, message);
-  } else if (text !== undefined && (draft.step === "address_text" || draft.step === "address_edit")) {
+  } else if (text !== undefined && draft.step === "address_text") {
     await handleManualAddress(c, draft, message, text);
   } else if (text !== undefined && draft.step === "photos" && draft.photo_count === 0) {
     await handlePhotosStepText(c, draft, message, text);
@@ -732,6 +744,15 @@ async function keepCount(c: Context): Promise<void> {
   }
 }
 
+// An address written by the user goes to the incoming addresses. A failure is only logged.
+async function keepTypedAddress(c: Context, report: LoggedReport): Promise<void> {
+  try {
+    await addUserAddress(c.env.DB, c.userId, report.address, report.lat, report.lon);
+  } catch {
+    console.error("Saving the written address failed");
+  }
+}
+
 // Deletes messages of the chat in batches.
 async function deleteMessages(c: Context, ids: number[]): Promise<void> {
   for (let i = 0; i < ids.length; i += DELETE_BATCH) {
@@ -744,7 +765,7 @@ async function deleteMessages(c: Context, ids: number[]): Promise<void> {
 
 // Moves the step first and moves it back if Telegram fails; the report is saved and the
 // dialog is cleared at the same time once the link is out.
-// QUERY BUDGET EXCEPTION: step, report log, final message, count of reports, draft removal.
+// QUERY BUDGET EXCEPTION: step, report log, final message, count of reports, written address, draft removal.
 async function finish(c: Context, draft: Draft, from: Step, phone: UserPhone): Promise<void> {
   const chosen = await startFinishing(c.env.DB, c.userId, draft.draft_id, from);
   if (chosen === null) return;
@@ -788,11 +809,19 @@ async function finish(c: Context, draft: Draft, from: Step, phone: UserPhone): P
     await moveStep(c.env.DB, c.userId, draft.draft_id, "finishing", from);
     return;
   }
-  const report = { plate, parking: chosen, address, lat: draft.lat as number, lon: draft.lon as number };
+  const report = {
+    plate,
+    parking: chosen,
+    address,
+    lat: draft.lat as number,
+    lon: draft.lon as number,
+    addressId: draft.address_id,
+  };
   const cleanup = JSON.parse(draft.cleanup) as number[];
   await Promise.all([
     keepReport(c, report, sentId, body),
     keepCount(c),
+    draft.address_typed ? keepTypedAddress(c, report) : Promise.resolve(),
     deleteMessages(c, [...cleanup, draft.buttons_message_id]),
   ]);
   // Deletes the messages added to the list after it was read.
@@ -882,10 +911,11 @@ export async function handleButton(
   const step = draft.step;
   if (action === "cancel") {
     await cancel(c, draft);
-  } else if (action === "address_ok" && step === "address") {
-    await show(c, draft, SEND_PHOTOS, { step: "photos" });
-  } else if (action === "address_edit" && step === "address") {
-    await show(c, draft, `${draft.address}\n\n${EDIT_ADDRESS}`, { step: "address_edit" });
+  } else if (action === "addr" && step === "address") {
+    const option = parseAddressOptions(draft)[Number(argument)];
+    if (option !== undefined) await chooseAddress(c, draft, option);
+  } else if (action === "addr_other" && step === "address") {
+    await show(c, draft, WRITE_OTHER_ADDRESS, { step: "address_text" });
   } else if (action === "create" && step === "photos") {
     await createReport(c, draft);
   } else if (action === "pick" && step === "plate_choice") {
@@ -926,7 +956,7 @@ export async function handleButton(
   } else if (action === "edit_parking" && step === "edit") {
     await show(c, draft, CHOOSE_PARKING, { step: "parking" });
   } else if (action === "edit_address" && step === "edit") {
-    await show(c, draft, `${draft.address}\n\n${EDIT_ADDRESS}`, { step: "address_edit" });
+    await show(c, draft, CHOOSE_ADDRESS, { step: "address" });
   } else if (action === "edit_time" && step === "edit") {
     await show(c, draft, `${reportMoment(draft).time}\n\n${WRITE_TIME}`, { step: "time_input" });
   } else if (action === "edit_road_user" && step === "edit") {
