@@ -199,6 +199,20 @@ describe("setAddressKind", () => {
 });
 
 describe("moveIncomingAddresses", () => {
+  it("moves an address once when two moves read the same state", async () => {
+    const { db, sqlite } = fakeD1();
+    addIncoming(sqlite, "New", point(0, 0), "approved");
+    await Promise.all([moveIncomingAddresses(db), moveIncomingAddresses(db)]);
+    expect(all(sqlite, "SELECT text FROM addresses")).toEqual([{ text: "New" }]);
+    expect(all(sqlite, "SELECT id FROM incoming_addresses")).toEqual([]);
+  });
+  it("replaces an address once when two moves read the same state", async () => {
+    const { db, sqlite } = fakeD1();
+    const old = addDirectory(sqlite, "Street", point(40, 0));
+    addIncoming(sqlite, "Street", point(0, 0), "replace");
+    await Promise.all([moveIncomingAddresses(db), moveIncomingAddresses(db)]);
+    expect(all(sqlite, "SELECT id, text FROM addresses")).toEqual([{ id: old, text: "Street" }]);
+  });
   it("keeps the kind of the incoming address and leaves an approved one without a kind in the queue", async () => {
     const { db, sqlite } = fakeD1();
     addIncoming(sqlite, "Shop", point(0, 0), "approved");

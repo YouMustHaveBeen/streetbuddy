@@ -7,6 +7,7 @@ import {
   approveAllWalk,
   district,
   isInArea,
+  moveIncomingAddresses,
   withoutPostalDistrict,
   decideIncoming,
   deleteAddress,
@@ -217,6 +218,8 @@ export async function handleAdminCommand(env: AdminEnv, userId: number, chatId: 
 }
 
 // Every button sends its next screen and removes the one it was pressed on, and the pin above it.
+// A decision on an incoming address is followed at once by the move into the directory.
+// QUERY BUDGET EXCEPTION: the decision, the move (a read batch and a write batch), the next incoming address, the same-text check.
 export async function handleAdminButton(
   env: AdminEnv,
   userId: number,
@@ -241,7 +244,10 @@ export async function handleAdminButton(
     const id = Number(second);
     pinId = third ? Number(third) : null;
     const decision = DECISIONS[first];
-    if (decision) await decideIncoming(env.DB, id, decision);
+    if (decision) {
+      await decideIncoming(env.DB, id, decision);
+      await moveIncomingAddresses(env.DB);
+    }
     next = sendIncoming(env, chatId, first === "same" ? id - 1 : id);
   } else if (name === KIND) {
     const id = Number(second);
@@ -255,11 +261,15 @@ export async function handleAdminButton(
     pinId = fourth ? Number(fourth) : null;
     const decision = DECISIONS[first];
     const kind = CHOOSABLE_KINDS.find((chosen) => chosen === second);
-    if (decision && kind) await decideIncoming(env.DB, id, decision, kind);
+    if (decision && kind) {
+      await decideIncoming(env.DB, id, decision, kind);
+      await moveIncomingAddresses(env.DB);
+    }
     next = sendIncoming(env, chatId, id);
   } else if (name === ALL_WALK) {
     pinId = first ? Number(first) : null;
     await approveAllWalk(env.DB);
+    await moveIncomingAddresses(env.DB);
     next = sendIncoming(env, chatId, 0);
   } else if (name === BACK) {
     pinId = first ? Number(first) : null;

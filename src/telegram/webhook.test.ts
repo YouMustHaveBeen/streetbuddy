@@ -568,11 +568,8 @@ describe("/admin: incoming addresses and the directory", () => {
 
     const kindScreen = lastId();
     await press(`admin_setkind:ok:facility:${id}:${pin}`, kindScreen);
-    expect(sqlite.prepare("SELECT decision, kind, user_id FROM incoming_addresses WHERE id = ?").get(id)).toEqual({
-      decision: "approved",
-      kind: "facility",
-      user_id: null,
-    });
+    expect(sqlite.prepare("SELECT id FROM incoming_addresses WHERE id = ?").get(id)).toBeUndefined();
+    expect(sqlite.prepare("SELECT text, kind FROM addresses").all()).toEqual([{ text: "5 New Street", kind: "facility" }]);
     expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual([5, screen, kindScreen, pin]);
     expect(of("sendLocation")[1].body.latitude).toBeCloseTo(53.405, 9);
     expect(of("sendLocation")[1].body.longitude).toBeCloseTo(-6.159, 9);
@@ -598,24 +595,22 @@ describe("/admin: incoming addresses and the directory", () => {
     await press(`admin_setkind:ok:temp:${id}:9`);
     expect(decision()).toEqual([{ decision: null, user_id: 7 }]);
     await press(`admin_in:no:${id}:9`);
-    expect(decision()).toEqual([{ decision: "rejected", user_id: null }]);
+    expect(decision()).toEqual([]);
   });
   it("Keep old of an address of a user rejects it without a kind", async () => {
     addAddress("a", "point", 53.405 + 40 / 111195, -6.16);
     const id = addIncoming("A", "user", { type: "Point", coordinates: [-6.16, 53.405] });
     await press(`admin_in:keep:${id}:9`);
-    expect(sqlite.prepare("SELECT decision, kind, user_id FROM incoming_addresses").all()).toEqual([
-      { decision: "rejected", kind: "temp", user_id: null },
-    ]);
+    expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
+    expect(sqlite.prepare("SELECT text FROM addresses").all()).toEqual([{ text: "a" }]);
   });
   it("approves an address of the walk without asking for a kind", async () => {
     const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
     await press("admin_incoming");
     expect(keys()[0][0]).toBe(`admin_in:ok:${id}:${pinId()}`);
     await press(`admin_in:ok:${id}:${pinId()}`);
-    expect(sqlite.prepare("SELECT decision, kind FROM incoming_addresses").all()).toEqual([
-      { decision: "approved", kind: "house" },
-    ]);
+    expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
+    expect(sqlite.prepare("SELECT text, kind FROM addresses").all()).toEqual([{ text: "A", kind: "house" }]);
   });
   it("asks for the kind on Replace old of an address of a user, and not on Keep old", async () => {
     addAddress("a", "point", 53.405 + 40 / 111195, -6.16);
@@ -625,9 +620,8 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(keys()[0]).toEqual([`admin_in:keep:${id}:${pin}`, `admin_kind:replace:${id}:${pin}`, `admin_in:next:${id}:${pin}`]);
     await press(`admin_kind:replace:${id}:${pin}`);
     await press(`admin_setkind:replace:appt:${id}:${pin}`);
-    expect(sqlite.prepare("SELECT decision, kind FROM incoming_addresses").all()).toEqual([
-      { decision: "replace", kind: "appt" },
-    ]);
+    expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
+    expect(sqlite.prepare("SELECT text, kind FROM addresses").all()).toEqual([{ text: "A", kind: "appt" }]);
   });
   it("rejects, and Next goes on without a decision", async () => {
     const a = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
@@ -637,7 +631,6 @@ describe("/admin: incoming addresses and the directory", () => {
     await press(`admin_in:no:${b}:1`);
     expect(sqlite.prepare("SELECT text, decision FROM incoming_addresses ORDER BY id").all()).toEqual([
       { text: "A", decision: null },
-      { text: "B", decision: "rejected" },
     ]);
     expect(last().text).toContain("Incoming address 1 of 1\nA");
   });
@@ -651,7 +644,8 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(labels()).toEqual(["Keep old", "Replace old", "Next", "Approve all from the walk", "Back"]);
     const [screen, pin] = [lastId(), pinId()];
     await press(`admin_in:replace:${id}:${pin}`, screen);
-    expect(decision()).toEqual([{ decision: "replace", user_id: null }]);
+    expect(decision()).toEqual([]);
+    expect(sqlite.prepare("SELECT text FROM addresses").all()).toEqual([{ text: "A" }]);
     expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, pin]));
     expect(last().text).toBe("No incoming addresses");
     expect(labels()).toEqual(["Back"]);
@@ -659,16 +653,16 @@ describe("/admin: incoming addresses and the directory", () => {
   it("Keep old drops the new address", async () => {
     const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
     await press(`admin_in:keep:${id}:101`);
-    expect(decision()).toEqual([{ decision: "rejected", user_id: null }]);
+    expect(decision()).toEqual([]);
   });
   it("approves all walk addresses at once and goes on with the rest", async () => {
     addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
     addIncoming("B", "user", { type: "Point", coordinates: [-6.16, 53.405] });
     await press("admin_all_walk:77");
     expect(sqlite.prepare("SELECT text, decision FROM incoming_addresses ORDER BY id").all()).toEqual([
-      { text: "A", decision: "approved" },
       { text: "B", decision: null },
     ]);
+    expect(sqlite.prepare("SELECT text, kind FROM addresses").all()).toEqual([{ text: "A", kind: "house" }]);
     expect(last().text).toContain("Incoming address 1 of 1\nB");
     expect(of("deleteMessage").map((call) => call.body.message_id)).toContain(77);
   });
