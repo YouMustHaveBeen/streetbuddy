@@ -600,6 +600,14 @@ describe("/admin: incoming addresses and the directory", () => {
     await press(`admin_in:no:${id}:9`);
     expect(decision()).toEqual([{ decision: "rejected", user_id: null }]);
   });
+  it("Keep old of an address of a user rejects it without a kind", async () => {
+    addAddress("a", "point", 53.405 + 40 / 111195, -6.16);
+    const id = addIncoming("A", "user", { type: "Point", coordinates: [-6.16, 53.405] });
+    await press(`admin_in:keep:${id}:9`);
+    expect(sqlite.prepare("SELECT decision, kind, user_id FROM incoming_addresses").all()).toEqual([
+      { decision: "rejected", kind: "temp", user_id: null },
+    ]);
+  });
   it("approves an address of the walk without asking for a kind", async () => {
     const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
     await press("admin_incoming");

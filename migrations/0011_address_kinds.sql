@@ -21,7 +21,7 @@ INSERT INTO addresses_new (id, text, kind, geometry, west, south, east, north)
 INSERT INTO addresses_new (id, text, kind, geometry, west, south, east, north)
   SELECT seq, '', 'spot', '', 0, 0, 0, 0 FROM sqlite_sequence
   WHERE name = 'addresses' AND seq > (SELECT coalesce(max(id), 0) FROM addresses_new);
-DELETE FROM addresses_new WHERE text = '' AND geometry = '';
+DELETE FROM addresses_new WHERE id > (SELECT coalesce(max(id), 0) FROM addresses);
 DROP TABLE addresses;
 ALTER TABLE addresses_new RENAME TO addresses;
 
