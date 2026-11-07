@@ -12,7 +12,7 @@ describe("installation guide page", () => {
 
   it("has the title", async () => {
     const html = await installPage().text();
-    expect(html).toContain("<title>Руководство по установке StreetBuddy</title>");
+    expect(html).toContain("<title>StreetBuddy</title>");
   });
 
   it("offers Android and iPhone", async () => {
@@ -63,7 +63,7 @@ describe("Worker routes", () => {
     const response = await get(INSTALL_PATH);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
-    expect(await response.text()).toContain("<title>Руководство по установке StreetBuddy</title>");
+    expect(await response.text()).toContain("<title>StreetBuddy</title>");
   });
 
   it("serves the script as JavaScript on GET", async () => {
