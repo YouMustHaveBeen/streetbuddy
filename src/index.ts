@@ -2,6 +2,7 @@
 import { cleanupExpired } from "./cleanup";
 import { dublinDateTime, moveIncomingAddresses, runNightlyStats } from "./core";
 import { runFormCheck } from "./dailyCheck";
+import { LINK_EXPIRED_TEXT, isDirectoryLinkValid } from "./directoryLink";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
 import { DIRECTORY_PATH, REPORT_MAP_PATH, directoryPage, reportMapPage } from "./maps";
@@ -20,7 +21,10 @@ export default {
     if (reads && url.pathname === MANUAL_PATH) return manualPage();
     if (reads && url.pathname === SCRIPT_PATH) return userscriptFile();
     if (reads && url.pathname === REPORT_MAP_PATH) return reportMapPage(env, url.searchParams.get("period"));
-    if (reads && url.pathname === DIRECTORY_PATH) return directoryPage(env);
+    if (reads && url.pathname === DIRECTORY_PATH) {
+      if (!(await isDirectoryLinkValid(env, url.searchParams))) return new Response(LINK_EXPIRED_TEXT, { status: 403 });
+      return directoryPage(env);
+    }
     return new Response("Not Found", { status: 404 });
   },
 

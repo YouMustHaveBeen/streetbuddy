@@ -192,7 +192,7 @@ interface Known {
 // Two reads and one batch of writes.
 export async function moveIncomingAddresses(db: D1Database): Promise<void> {
   const [decided, directory] = await db.batch([
-    db.prepare("SELECT id, text, kind, geometry, decision FROM incoming_addresses WHERE decision IS NOT NULL ORDER BY id"),
+    db.prepare("SELECT id, source, text, kind, geometry, decision FROM incoming_addresses WHERE decision IS NOT NULL ORDER BY id"),
     db.prepare("SELECT id, text, geometry FROM addresses"),
   ]);
   const known: Known[] = [];
@@ -205,17 +205,24 @@ export async function moveIncomingAddresses(db: D1Database): Promise<void> {
   const drop = (id: number) => db.prepare("DELETE FROM incoming_addresses WHERE id = ?1").bind(id);
   // The writes run only while the incoming row is still there, so of two moves that read the same
   // state only the first one changes the directory.
-  const insert = (id: number, text: string, kind: AddressKind, geometry: string, shape: Shape) => {
+  const insert = (id: number, source: string, text: string, kind: AddressKind, geometry: string, shape: Shape) => {
     const { west, south, east, north } = shapeBounds(shape);
     return db
       .prepare(
-        `INSERT INTO addresses (text, kind, geometry, west, south, east, north)
-         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE EXISTS (SELECT 1 FROM incoming_addresses WHERE id = ?8)`,
+        `INSERT INTO addresses (text, kind, geometry, west, south, east, north, source)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?9 WHERE EXISTS (SELECT 1 FROM incoming_addresses WHERE id = ?8)`,
       )
-      .bind(text, kind, geometry, west, south, east, north, id);
+      .bind(text, kind, geometry, west, south, east, north, id, source);
   };
 
-  for (const row of decided.results as { id: number; text: string; kind: AddressKind | "temp"; geometry: string; decision: Decision }[]) {
+  for (const row of decided.results as {
+    id: number;
+    source: string;
+    text: string;
+    kind: AddressKind | "temp";
+    geometry: string;
+    decision: Decision;
+  }[]) {
     if (row.decision === "rejected") {
       writes.push(drop(row.id));
       continue;
@@ -236,10 +243,10 @@ export async function moveIncomingAddresses(db: D1Database): Promise<void> {
       writes.push(
         db
           .prepare(
-            `UPDATE addresses SET text = ?2, kind = ?3, geometry = ?4, west = ?5, south = ?6, east = ?7, north = ?8
+            `UPDATE addresses SET text = ?2, kind = ?3, geometry = ?4, west = ?5, south = ?6, east = ?7, north = ?8, source = ?10
              WHERE id = ?1 AND EXISTS (SELECT 1 FROM incoming_addresses WHERE id = ?9)`,
           )
-          .bind(nearest.entry.id, row.text, row.kind, row.geometry, west, south, east, north, row.id),
+          .bind(nearest.entry.id, row.text, row.kind, row.geometry, west, south, east, north, row.id, row.source),
         drop(row.id),
       );
       nearest.entry.shape = shape;
@@ -248,7 +255,7 @@ export async function moveIncomingAddresses(db: D1Database): Promise<void> {
     } else if (row.decision === "approved" && nearest) {
       writes.push(db.prepare("UPDATE incoming_addresses SET decision = NULL WHERE id = ?1 AND decision = 'approved'").bind(row.id));
     } else {
-      writes.push(insert(row.id, row.text, row.kind, row.geometry, shape), drop(row.id));
+      writes.push(insert(row.id, row.source, row.text, row.kind, row.geometry, shape), drop(row.id));
       known.push({ id: null, key, shape });
     }
   }

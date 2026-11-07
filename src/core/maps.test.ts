@@ -118,6 +118,6 @@ describe("getDirectoryItems", () => {
     const line = { type: "LineString", coordinates: [[-6.1, 53.4], [-6.1, 53.401]] };
     addAddress("Main St", "spot", line, -6.1, 53.4);
     addAddress("Broken", "house", { type: "Point", coordinates: ["x"] }, 0, 0);
-    expect(await getDirectoryItems(db)).toEqual([{ text: "Main St", kind: "spot", geometry: line }]);
+    expect(await getDirectoryItems(db)).toEqual([{ text: "Main St", kind: "spot", source: "walk", geometry: line }]);
   });
 });

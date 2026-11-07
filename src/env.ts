@@ -8,4 +8,5 @@ export interface Env {
   GROUP_ID: string;
   SITE_URL: string;
   MAPBOX_TOKEN: string;
+  DIRECTORY_LINK_SECRET: string;
 }

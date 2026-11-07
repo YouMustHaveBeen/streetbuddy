@@ -62,7 +62,7 @@ import { FORM_CHANGED_TEXT } from "./notify";
 
 type RoadUser = (typeof ROAD_USER_TYPES)[number];
 
-export type DialogEnv = Pick<Env, "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL">;
+export type DialogEnv = Pick<Env, "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL" | "DIRECTORY_LINK_SECRET">;
 
 interface PhotoSize {
   file_id: string;

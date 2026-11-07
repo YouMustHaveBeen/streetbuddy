@@ -93,7 +93,7 @@ beforeEach(() => {
   const fake = fakeD1();
   sqlite = fake.sqlite;
   run = vi.fn(async () => ({ response: '["12-D-3456"]' }));
-  env = { AI: { run } as unknown as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", SITE_URL: "https://site.example" };
+  env = { AI: { run } as unknown as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", SITE_URL: "https://site.example", DIRECTORY_LINK_SECRET: "link-secret" };
   calls = [];
   deferred = [];
   nextId = 1000;

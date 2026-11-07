@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { fakeD1 } from "../test/fakeD1";
+import { DIRECTORY_LINK_TTL_MS, directoryLink } from "./directoryLink";
 import worker from "./index";
 import { directoryPage, reportMapPage } from "./maps";
 import type { Env } from "./env";
@@ -10,7 +11,7 @@ let sqlite: ReturnType<typeof fakeD1>["sqlite"];
 beforeEach(() => {
   const fake = fakeD1();
   sqlite = fake.sqlite;
-  env = { DB: fake.db, MAPBOX_TOKEN: "pk.test-token" } as Env;
+  env = { DB: fake.db, MAPBOX_TOKEN: "pk.test-token", SITE_URL: "https://example.com", DIRECTORY_LINK_SECRET: "link-secret" } as Env;
 });
 
 const addAddress = (text: string, kind: string, geometry: unknown) =>
@@ -63,6 +64,15 @@ describe("the directory map page", () => {
     expect(html).not.toContain("innerHTML");
   });
 
+  it("gives every address its source and draws the points of the source osm white", async () => {
+    addAddress("12 Main St", "house", { type: "Point", coordinates: [-6.1, 53.4] });
+    sqlite.prepare("UPDATE addresses SET source = 'osm'").run();
+    const html = await (await directoryPage(env)).text();
+    expect(html).toContain('"text":"12 Main St","kind":"house","source":"osm"');
+    expect(html).toContain('["==", ["get", "source"], "osm"], WHITE');
+    expect(html).toContain('WHITE = "#ffffff"');
+  });
+
   it("cannot be broken out of its script by an address text", async () => {
     addAddress("</script><b>x", "house", { type: "Point", coordinates: [-6.1, 53.4] });
     const html = await (await directoryPage(env)).text();
@@ -87,10 +97,30 @@ describe("the script of the map pages", () => {
 describe("the routes of the map pages", () => {
   const request = (path: string, method = "GET") => worker.fetch(new Request(`https://example.com${path}`, { method }), env, {} as ExecutionContext);
 
-  it("serve /reportmap with a period and /directory", async () => {
+  const signedPath = async (now = Date.now()) => (await directoryLink(env, now)).replace("https://example.com", "");
+
+  it("serve /reportmap with a period and /directory with a signed link", async () => {
     expect((await request("/reportmap?period=today")).status).toBe(200);
     expect((await request("/reportmap?period=today", "HEAD")).status).toBe(200);
-    expect((await request("/directory")).status).toBe(200);
+    expect((await request(await signedPath())).status).toBe(200);
+    expect((await request(await signedPath(), "HEAD")).status).toBe(200);
+  });
+  it("answers /directory with 403 when the secret is not set, even for a link signed before", async () => {
+    const good = await signedPath();
+    env = { ...env, DIRECTORY_LINK_SECRET: "" };
+    const response = await request(good);
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe("This link has expired");
+  });
+  it("answer /directory without a good link with 403 and the text that the link has expired", async () => {
+    const good = await signedPath();
+    const forged = good.replace(/sig=[0-9a-f]/, (match) => (match.endsWith("0") ? "sig=1" : "sig=0"));
+    const expired = await signedPath(Date.now() - DIRECTORY_LINK_TTL_MS - 1000);
+    for (const path of ["/directory", "/directory?exp=9999999999", forged, expired, good.replace("exp=", "exp=1")]) {
+      const response = await request(path);
+      expect(response.status).toBe(403);
+      expect(await response.text()).toBe("This link has expired");
+    }
   });
   it("give 404 for /reportmap without a known period", async () => {
     expect((await request("/reportmap")).status).toBe(404);

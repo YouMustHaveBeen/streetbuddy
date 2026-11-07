@@ -4,8 +4,12 @@ import { handleAdminButton, handleAdminCommand, isAdminButton, isAdminCommand } 
 import { answerButton, callTelegram, sendMessage } from "./api";
 import { checksMembership, handleButton, handleMessage } from "./dialog";
 import type { Message } from "./dialog";
+import { secretMatches } from "../secret";
 
-export type WebhookEnv = Pick<Env, "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "WEBHOOK_SECRET" | "GROUP_ID" | "SITE_URL">;
+export type WebhookEnv = Pick<
+  Env,
+  "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "WEBHOOK_SECRET" | "GROUP_ID" | "SITE_URL" | "DIRECTORY_LINK_SECRET"
+>;
 
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 const NOT_MEMBER_TEXT = "This bot is only for members of the group";
@@ -43,16 +47,6 @@ interface Incoming {
   userId: number;
   chatId: number;
   callbackQueryId?: string;
-}
-
-// Compares in constant time.
-function secretMatches(received: string | null, expected: string): boolean {
-  if (!received || !expected || received.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++) {
-    diff |= received.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return diff === 0;
 }
 
 // Keeps only messages and button presses from private chats.

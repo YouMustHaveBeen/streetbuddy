@@ -235,6 +235,23 @@ describe("moveIncomingAddresses", () => {
     ]);
     expect(all(sqlite, "SELECT text FROM incoming_addresses")).toEqual([{ text: "Waiting" }]);
   });
+  it("moves an address with its source, and a replacement puts its source in place of the old one", async () => {
+    const { db, sqlite } = fakeD1();
+    addIncoming(sqlite, "From the walk", point(0, 0), "approved");
+    addIncoming(sqlite, "From OSM", point(100, 0), "approved", "osm");
+    addIncoming(sqlite, "Written", point(200, 0), "approved", "user");
+    sqlite.prepare("UPDATE incoming_addresses SET kind = 'house'").run();
+    await moveIncomingAddresses(db);
+    expect(all(sqlite, "SELECT text, source FROM addresses ORDER BY id")).toEqual([
+      { text: "From the walk", source: "walk" },
+      { text: "From OSM", source: "osm" },
+      { text: "Written", source: "user" },
+    ]);
+    addIncoming(sqlite, "From OSM", point(130, 0), "replace", "walk");
+    sqlite.prepare("UPDATE incoming_addresses SET kind = 'house'").run();
+    await moveIncomingAddresses(db);
+    expect(all(sqlite, "SELECT text, source FROM addresses WHERE text = 'From OSM'")).toEqual([{ text: "From OSM", source: "walk" }]);
+  });
   it("drops an address with the same text closer than 5 m, ignoring case and spaces", async () => {
     const { db, sqlite } = fakeD1();
     addDirectory(sqlite, "1 Main Street", point(0, 0));
