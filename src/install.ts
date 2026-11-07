@@ -133,7 +133,7 @@ const PAGE = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Руководство по установке StreetBuddy</title>
+<title>StreetBuddy</title>
 <style>
 ${BASE_STYLE}
   .install { display: inline-block; padding: 10px 20px; border: 2px solid; border-radius: 6px; font: inherit; font-weight: bold; text-decoration: none; }
@@ -148,7 +148,7 @@ ${BASE_STYLE}
 </head>
 <body>
 <main>
-<h1>Руководство по установке StreetBuddy</h1>
+<h1>StreetBuddy<br>Руководство по установке</h1>
 <p>Чтобы отправить репорт о неправильной парковке на портале Traffic Watch Online Reporting, нужно заполнить 11 полей:</p>
 <p>6 полей, описывающих нарушение:</p>
 <ol>
