@@ -133,7 +133,7 @@ const OPEN_MAP = "Open map";
 
 // The steps under the description in the final message.
 const REPORT_STEPS: Record<Phone, string> = {
-  iphone_bookmark: `-> Press “Open report”,
+  iphone: `-> Press “Open report”,
 -> «⋯» on the top and “Open in Safari”,
 -> «⋯» on the bottom and “Bookmarks”,
 -> press qqqwww,
@@ -179,7 +179,7 @@ const CANCEL: Button = { text: "Cancel", callback_data: "cancel" };
 const REMOVE_KEYBOARD = { remove_keyboard: true };
 
 const PHONE_BUTTONS: Button[][] = [
-  [{ text: "iPhone bookmark", callback_data: `${PHONE_PREFIX}iphone_bookmark` }],
+  [{ text: "iPhone", callback_data: `${PHONE_PREFIX}iphone` }],
   [{ text: "Android", callback_data: `${PHONE_PREFIX}android` }],
   [CANCEL],
 ];
