@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreetBuddy
 // @namespace    streetbuddy
-// @version      1.3.0
+// @version      1.4.0
 // @description  Fills in the Garda Traffic Watch form from a StreetBuddy link
 // @match        https://www.garda.ie/en/trafficwatchreport*
 // @match        https://garda.ie/en/trafficwatchreport*
@@ -23,6 +23,8 @@
 
   const MESSAGE_FORM_CHANGED = "The Garda form has changed. Please fill in the fields manually.";
   const MESSAGE_LINK_INVALID = "The link is not valid. Please fill in the fields manually.";
+  const MESSAGE_RUNNING = "StreetBuddy is running. Tick the two boxes below and press Click Here to Start";
+  const MESSAGE_FILLED = "The form is filled in. Check the details, pass the captcha and press Submit Report";
 
   // Same texts as on the form.
   const CRIME_TYPE = "Parking Offences";
@@ -133,13 +135,15 @@
 
   // ---------------------------------------------------------------- page parts
 
-  // Builds what the script shows from elements and plain text.
-  function showMessage(text) {
+  // Builds what the script shows from elements and plain text: an error by default,
+  // a plain notice when ok is true. Returns the box.
+  function showMessage(text, ok) {
     const box = document.createElement("div");
-    box.setAttribute("role", "alert");
-    box.style.cssText = "padding:12px;margin:8px;border:2px solid #b00020;background:#fff;color:#000;font:16px sans-serif";
+    box.setAttribute("role", ok ? "status" : "alert");
+    box.style.cssText = "padding:12px;margin:8px;border:2px solid " + (ok ? "#1a7f37" : "#b00020") + ";background:#fff;color:#000;font:16px sans-serif";
     box.textContent = text;
     document.body.prepend(box);
+    return box;
   }
 
   // ------------------------------------------------------------------- filling
@@ -212,12 +216,15 @@
     let finished = false;
     let timer = null;
     const observer = new MutationObserver(check);
+    const runningNotice = showMessage(MESSAGE_RUNNING, true);
 
     function finish(filled) {
       finished = true;
       observer.disconnect();
       clearTimeout(timer);
-      if (!filled) showMessage(MESSAGE_FORM_CHANGED);
+      runningNotice.remove();
+      if (filled) showMessage(MESSAGE_FILLED, true);
+      else showMessage(MESSAGE_FORM_CHANGED);
     }
 
     // Fills the form or shows the message when the time is up.

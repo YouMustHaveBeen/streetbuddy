@@ -183,10 +183,13 @@ describe("form-filling script on a copy of the report form", () => {
     expect(await page.isChecked("#NotAnEmergencyCheckbox")).toBe(false);
     expect(await page.isChecked("#AttendCourtCheckbox")).toBe(false);
     await expectNothingWritten(page);
+    await page.getByRole("status").filter({ hasText: /StreetBuddy is running/ }).waitFor();
 
     await tickAndStart(page);
     await waitUntilFilled(page);
     expect(await fieldValues(page)).toEqual(expectedValues(report));
+    await page.getByRole("status").filter({ hasText: /The form is filled in/ }).waitFor();
+    expect(await page.getByRole("status").filter({ hasText: /StreetBuddy is running/ }).count()).toBe(0);
 
     // The date picker must keep the date when it closes, and the form's own checks must pass.
     await page.click("h2");
