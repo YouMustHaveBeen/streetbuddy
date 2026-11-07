@@ -39,7 +39,7 @@ function districtOutline(): { border: [number, number][]; bounds: [[number, numb
 }
 
 const STYLE = `  html, body, #map { margin: 0; height: 100%; }
-  .place { width: 30px; height: 30px; box-sizing: border-box; border: 2px solid ${OUTLINE}; border-radius: 50%;
+  .place { min-width: 30px; height: 30px; padding: 0 4px; box-sizing: border-box; border: 2px solid ${OUTLINE}; border-radius: 15px;
     display: flex; align-items: center; justify-content: center; font: 600 14px system-ui, sans-serif; color: #222; cursor: pointer; }
   .popup-list { max-height: 40vh; overflow-y: auto; font: 14px/1.4 system-ui, sans-serif; color: #222; }`;
 
@@ -84,7 +84,7 @@ ${STYLE}
     return node;
   }
 
-  // A line with a dark edge under it, so that it shows on the light map.
+  // Adds a line with a dark edge under it.
   function addLine(id, source, filter, width) {
     map.addLayer({ id: id + "-edge", type: "line", source: source, filter: filter, paint: { "line-color": OUTLINE, "line-width": width + 2 } });
     map.addLayer({ id: id, type: "line", source: source, filter: filter, paint: { "line-color": GREEN, "line-width": width } });
@@ -105,7 +105,7 @@ const REPORT_MAP_SCRIPT = `DATA.places.forEach(function (place) {
       var element = document.createElement("div");
       element.className = "place";
       element.style.background = place.facility ? FUCHSIA : VIOLET;
-      element.textContent = String(place.dates.length);
+      element.textContent = (place.hotspot ? "🔥" : "") + place.dates.length;
       var popup = new mapboxgl.Popup({ offset: 18 }).setDOMContent(textNode(place.dates));
       new mapboxgl.Marker({ element: element }).setLngLat([place.lon, place.lat]).setPopup(popup).addTo(map);
     });`;

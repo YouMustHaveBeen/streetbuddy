@@ -39,4 +39,4 @@ export { DAY_MS, REQUEST_TIMEOUT_MS, sleep } from "./shared";
 export { dublinDay, getHotspots, logReport, runNightlyStats } from "./stats";
 export { getDirectoryItems, getReportPlaces, MAP_PERIODS } from "./maps";
 export type { MapPeriod } from "./maps";
-export type { LoggedReport } from "./stats";
+export type { Hotspot, LoggedReport } from "./stats";

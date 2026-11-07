@@ -61,8 +61,8 @@ describe("getReportPlaces", () => {
     const places = await getReportPlaces(db, "week", now);
     expect(places).toHaveLength(2);
     const facility = places.find((place) => place.facility);
-    expect(facility).toEqual({ lat: 53.4, lon: -6.1, facility: true, dates: ["06/11/2026", "05/11/2026"] });
-    expect(places.find((place) => !place.facility)).toEqual({ lat: 53.5, lon: -6.2, facility: false, dates: ["06/11/2026"] });
+    expect(facility).toEqual({ lat: 53.4, lon: -6.1, facility: true, hotspot: false, dates: ["06/11/2026", "05/11/2026"] });
+    expect(places.find((place) => !place.facility)).toEqual({ lat: 53.5, lon: -6.2, facility: false, hotspot: false, dates: ["06/11/2026"] });
   });
 
   it("puts the reports without a directory address within 20 m into one place, at the first report", async () => {
@@ -76,7 +76,7 @@ describe("getReportPlaces", () => {
 
   it("shows a place of a deleted directory address at the coordinates of its first report", async () => {
     addReport("AAA111", "2026-11-06", at(2026, 11, 6, 8), 53.5, -6.2, 999);
-    expect(await getReportPlaces(db, "week", now)).toEqual([{ lat: 53.5, lon: -6.2, facility: false, dates: ["06/11/2026"] }]);
+    expect(await getReportPlaces(db, "week", now)).toEqual([{ lat: 53.5, lon: -6.2, facility: false, hotspot: false, dates: ["06/11/2026"] }]);
   });
 
   it("takes the day of a row without one from its time", async () => {
@@ -93,6 +93,18 @@ describe("getReportPlaces", () => {
     expect((await getReportPlaces(db, "week", now)).map((place) => place.lat)).toEqual([]);
     expect((await getReportPlaces(db, "last_month", now)).map((place) => place.lat)).toEqual([53.6]);
     expect((await getReportPlaces(db, "month_before", now)).map((place) => place.lat)).toEqual([53.7]);
+  });
+
+  it("marks the places that are hotspots, by directory address or by distance", async () => {
+    const shop = addAddress("Shop", "house", { type: "Point", coordinates: [-6.1, 53.4] }, -6.1, 53.4);
+    addReport("AAA111", "2026-11-06", at(2026, 11, 6, 8), 53.4, -6.1, shop);
+    addReport("BBB222", "2026-11-06", at(2026, 11, 6, 9), 53.5001, -6.2, null);
+    addReport("CCC333", "2026-11-06", at(2026, 11, 6, 10), 53.6, -6.3, null);
+    const insert = sqlite.prepare("INSERT INTO hotspots (rank, address, plates, address_id, lat, lon) VALUES (?, 'x', 10, ?, ?, ?)");
+    insert.run(1, shop, 53.4, -6.1);
+    insert.run(2, null, 53.5, -6.2);
+    const places = await getReportPlaces(db, "week", now);
+    expect(places.map((place) => [place.lat, place.hotspot])).toEqual([[53.4, true], [53.5001, true], [53.6, false]]);
   });
 
   it("does not give plates", async () => {

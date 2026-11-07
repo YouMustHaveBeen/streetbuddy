@@ -1,14 +1,13 @@
 // The report log, the nightly statistics and the hotspots, all in D1.
 import { distanceM } from "./area";
 import { dublinDateTime, PARKING_OPTIONS } from "./report";
-import { DAY_MS, TWO_MONTHS_MS } from "./shared";
+import { DAY_MS } from "./shared";
 
 // How long a row of the log stays.
-export const REPORT_LOG_TTL_MS = TWO_MONTHS_MS;
+export const REPORT_LOG_TTL_MS = 66 * DAY_MS;
 
 // A report without a directory address joins the group whose first report is this close.
 const HOTSPOT_RADIUS_M = 20;
-const HOTSPOT_COUNT = 5;
 // The least number of different plates of a place that is shown.
 export const HOTSPOT_MIN_REPORTS = 10;
 
@@ -22,9 +21,14 @@ export interface LoggedReport {
   addressId: number | null;
 }
 
-interface Hotspot {
+export interface Hotspot {
   address: string;
   plates: number;
+  // The directory address of the place, or null.
+  addressId: number | null;
+  // The first report of the place.
+  lat: number;
+  lon: number;
 }
 
 // "dd/mm/yyyy" of the Dublin date becomes the key of daily_stats and of report_log.day.
@@ -45,11 +49,21 @@ export async function logReport(db: D1Database, report: LoggedReport): Promise<n
   return result.meta.last_row_id;
 }
 
+// Every hotspot, the most plates first.
 export async function getHotspots(db: D1Database): Promise<Hotspot[]> {
   const { results } = await db
-    .prepare("SELECT address, plates FROM hotspots ORDER BY rank")
+    .prepare("SELECT address, plates, address_id AS addressId, lat, lon FROM hotspots ORDER BY rank")
     .all<Hotspot>();
   return results;
+}
+
+// Whether a place with this directory address, or else near these coordinates, is a hotspot.
+export function isHotspot(hotspots: readonly Hotspot[], addressId: number | null, lat: number, lon: number): boolean {
+  return hotspots.some((spot) =>
+    addressId !== null
+      ? spot.addressId === addressId
+      : spot.addressId === null && distanceM(spot.lat, spot.lon, lat, lon) <= HOTSPOT_RADIUS_M,
+  );
 }
 
 export interface PlaceRow {
@@ -96,7 +110,7 @@ export function groupPlaces<T extends PlaceRow>(rows: readonly T[]): T[][] {
 
 // Rows are in time order. A group is shown by the address that occurs in it most often, and by
 // the latest of those when they are equal; its count is the number of different plates, and
-// groups below HOTSPOT_MIN_REPORTS are left out.
+// groups below HOTSPOT_MIN_REPORTS are left out. The most plates come first.
 export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
   return groupPlaces(rows)
     .map((group) => {
@@ -108,11 +122,16 @@ export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
       const [address] = [...counts.entries()].sort(
         (a, b) => b[1].count - a[1].count || b[1].latest - a[1].latest,
       )[0];
-      return { address, plates: new Set(group.map((row) => row.plate)).size };
+      return {
+        address,
+        plates: new Set(group.map((row) => row.plate)).size,
+        addressId: group[0].address_id,
+        lat: group[0].lat,
+        lon: group[0].lon,
+      };
     })
     .filter((spot) => spot.plates >= HOTSPOT_MIN_REPORTS)
-    .sort((a, b) => b.plates - a.plates)
-    .slice(0, HOTSPOT_COUNT);
+    .sort((a, b) => b.plates - a.plates);
 }
 
 // The nightly count: the statistics of the day before and the new hotspots. One read of the
@@ -137,7 +156,9 @@ export async function runNightlyStats(db: D1Database, now: number): Promise<void
       .bind(yesterday, ofYesterday.length, ...perOption),
     db.prepare("DELETE FROM hotspots"),
     ...topHotspots(results).map((spot, i) =>
-      db.prepare("INSERT INTO hotspots (rank, address, plates) VALUES (?1, ?2, ?3)").bind(i + 1, spot.address, spot.plates),
+      db
+        .prepare("INSERT INTO hotspots (rank, address, plates, address_id, lat, lon) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
+        .bind(i + 1, spot.address, spot.plates, spot.addressId, spot.lat, spot.lon),
     ),
   ]);
 }

@@ -1,7 +1,7 @@
 // The data of the two map pages: the places of the reports of a period, and the address directory.
 import { DAY_MS } from "./shared";
 import { shapeFromGeometry, shapeMiddle } from "./shapes";
-import { dublinDay, groupPlaces } from "./stats";
+import { dublinDay, getHotspots, groupPlaces, isHotspot } from "./stats";
 import type { PlaceRow } from "./stats";
 
 export const MAP_PERIODS = ["today", "week", "last_month", "month_before"] as const;
@@ -12,6 +12,8 @@ export interface ReportPlace {
   lon: number;
   // The place is a directory address of the kind facility.
   facility: boolean;
+  // The place is one of the hotspots (by the whole log).
+  hotspot: boolean;
   // One date (dd/mm/yyyy) for every report of the place, the latest first.
   dates: string[];
 }
@@ -59,15 +61,18 @@ export function mapPeriodDays(period: MapPeriod, now: number): { from: string; t
 }
 
 // The places of the reports of the period, grouped as in the hotspots; a place with a directory
-// address is shown at that address. Plates are not passed on. One read of the whole log.
+// address is shown at that address. Plates are not passed on. One read of the whole log and one of the hotspots.
 export async function getReportPlaces(db: D1Database, period: MapPeriod, now: number): Promise<ReportPlace[]> {
   const { from, to } = mapPeriodDays(period, now);
-  const { results } = await db
-    .prepare(
-      `SELECT r.plate, r.address, r.lat, r.lon, r.created_at, r.address_id, r.day, a.kind, a.geometry
-       FROM report_log r LEFT JOIN addresses a ON a.id = r.address_id ORDER BY r.created_at`,
-    )
-    .all<MapRow>();
+  const [{ results }, hotspots] = await Promise.all([
+    db
+      .prepare(
+        `SELECT r.plate, r.address, r.lat, r.lon, r.created_at, r.address_id, r.day, a.kind, a.geometry
+         FROM report_log r LEFT JOIN addresses a ON a.id = r.address_id ORDER BY r.created_at`,
+      )
+      .all<MapRow>(),
+    getHotspots(db),
+  ]);
   const dayOf = (row: MapRow) => row.day || dublinDay(row.created_at);
   const inPeriod = results.filter((row) => dayOf(row) >= from && dayOf(row) <= to);
   return groupPlaces(inPeriod).map((group) => {
@@ -78,6 +83,7 @@ export async function getReportPlaces(db: D1Database, period: MapPeriod, now: nu
       lat: spot.lat,
       lon: spot.lon,
       facility: first.kind === "facility",
+      hotspot: isHotspot(hotspots, first.address_id, first.lat, first.lon),
       dates: group.map((row) => dayOf(row).split("-").reverse().join("/")).reverse(),
     };
   });

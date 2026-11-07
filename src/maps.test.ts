@@ -34,6 +34,11 @@ describe("the report map page", () => {
     expect(html).not.toContain("AAA111");
   });
 
+  it("marks a hotspot place with the fire in the circle", async () => {
+    const html = await (await reportMapPage(env, "week")).text();
+    expect(html).toContain('(place.hotspot ? "🔥" : "")');
+  });
+
   it("gives no page for a missing or unknown period", async () => {
     expect((await reportMapPage(env, null)).status).toBe(404);
     expect((await reportMapPage(env, "year")).status).toBe(404);
@@ -47,11 +52,13 @@ describe("the report map page", () => {
 describe("the directory map page", () => {
   it("is HTML with every address of the directory", async () => {
     addAddress("12 Main St", "house", { type: "Point", coordinates: [-6.1, 53.4] });
+    addAddress("Main Road", "spot", { type: "LineString", coordinates: [[-6.1, 53.4], [-6.1, 53.401]] });
     const response = await directoryPage(env);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
     const html = await response.text();
     expect(html).toContain('"text":"12 Main St","kind":"house"');
+    expect(html).toContain('"text":"Main Road","kind":"spot"');
     expect(html).toContain('mapboxgl.accessToken = "pk.test-token"');
     expect(html).not.toContain("innerHTML");
   });

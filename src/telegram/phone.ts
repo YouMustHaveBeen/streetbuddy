@@ -1,7 +1,7 @@
 // The phone a user has chosen: it decides the steps shown in the final message.
-import { REPORT_LOG_TTL_MS } from "../core/stats";
+import { TWO_MONTHS_MS } from "../core/shared";
 
-export const PHONE_TTL_MS = REPORT_LOG_TTL_MS;
+export const PHONE_TTL_MS = TWO_MONTHS_MS;
 
 export const PHONES = ["iphone_bookmark", "android"] as const;
 
