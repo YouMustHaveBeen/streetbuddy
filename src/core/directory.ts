@@ -24,7 +24,7 @@ interface DirectoryAddress {
 
 interface IncomingAddress {
   id: number;
-  source: "walk" | "user";
+  source: "walk" | "user" | "osm";
   text: string;
   kind: AddressKind | "temp";
   geometry: string;
@@ -136,14 +136,15 @@ export async function sameTextDistance(db: D1Database, text: string, geometry: s
   return distances.length > 0 ? Math.min(...distances) : null;
 }
 
-// Approves every walk address without a decision, except those whose text is already in the directory.
-export async function approveAllWalk(db: D1Database): Promise<void> {
+// Approves every address of the source without a decision, except those whose text is already in the directory.
+export async function approveAllFrom(db: D1Database, source: "walk" | "osm"): Promise<void> {
   await db
     .prepare(
       `UPDATE incoming_addresses SET decision = 'approved'
-       WHERE source = 'walk' AND decision IS NULL
+       WHERE source = ?1 AND decision IS NULL
          AND NOT EXISTS (SELECT 1 FROM addresses a WHERE ${sqlTextKey("a.text")} = ${sqlTextKey("incoming_addresses.text")})`,
     )
+    .bind(source)
     .run();
 }
 

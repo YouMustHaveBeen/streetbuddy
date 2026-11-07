@@ -5,7 +5,7 @@ export { district } from "./district";
 export { formAddress, reverseGeocode, withoutPostalDistrict } from "./geocode";
 export {
   addUserAddress,
-  approveAllWalk,
+  approveAllFrom,
   decideIncoming,
   deleteAddress,
   getAddress,

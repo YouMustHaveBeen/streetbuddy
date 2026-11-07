@@ -465,6 +465,7 @@ describe("which buttons check membership", () => {
     "admin_editkind:1",
     "admin_dirkind:house:1",
     "admin_all_walk",
+    "admin_all_osm",
     "admin_back",
     "admin_addr:1",
     "admin_text:1",
@@ -562,8 +563,9 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(keys()).toEqual([
       [`admin_kind:ok:${id}:${pin}`, `admin_in:no:${id}:${pin}`, `admin_in:next:${id}:${pin}`],
       [`admin_all_walk:${pin}`, `admin_back:${pin}`],
+      [`admin_all_osm:${pin}`],
     ]);
-    expect(labels()).toEqual(["Approve", "Reject", "Next", "Approve all from the walk", "Back"]);
+    expect(labels()).toEqual(["Approve", "Reject", "Next", "Approve all from the walk", "Back", "Approve all from OSM"]);
     expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual([5]);
   });
   it("asks for the kind of an address of a user, keeping its pin, and approves with the chosen kind", async () => {
@@ -662,7 +664,7 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(last().text).toBe(
       "Incoming address 1 of 1\nA\nPoint (house), from the walk\nPossible duplicate: the same address is in the directory 40 m away",
     );
-    expect(labels()).toEqual(["Keep old", "Replace old", "Next", "Approve all from the walk", "Back"]);
+    expect(labels()).toEqual(["Keep old", "Replace old", "Next", "Approve all from the walk", "Back", "Approve all from OSM"]);
     const [screen, pin] = [lastId(), pinId()];
     await press(`admin_in:replace:${id}:${pin}`, screen);
     expect(decision()).toEqual([]);
@@ -686,6 +688,21 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(sqlite.prepare("SELECT text, kind FROM addresses").all()).toEqual([{ text: "A", kind: "house" }]);
     expect(last().text).toContain("Incoming address 1 of 1\nB");
     expect(of("deleteMessage").map((call) => call.body.message_id)).toContain(77);
+  });
+  it("approves all OSM addresses at once and leaves the walk addresses", async () => {
+    addIncoming("A", "osm", { type: "Point", coordinates: [-6.16, 53.405] });
+    addIncoming("B", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
+    await press("admin_all_osm:77");
+    expect(sqlite.prepare("SELECT text, decision FROM incoming_addresses ORDER BY id").all()).toEqual([
+      { text: "B", decision: null },
+    ]);
+    expect(sqlite.prepare("SELECT text, kind, source FROM addresses").all()).toEqual([{ text: "A", kind: "house", source: "osm" }]);
+    expect(last().text).toContain("Incoming address 1 of 1\nB");
+  });
+  it("says that an incoming address comes from OSM", async () => {
+    addIncoming("A", "osm", { type: "Point", coordinates: [-6.16, 53.405] });
+    await press("admin_incoming");
+    expect(last().text).toBe("Incoming address 1 of 1\nA\nPoint (house), from OSM");
   });
   it("Back removes the screen and its pin and shows the admin screen", async () => {
     await press("admin_back:77", 60);

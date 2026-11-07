@@ -4,7 +4,7 @@ import { M_PER_DEG } from "./area";
 import {
   addUserAddress,
   sameTextDistance,
-  approveAllWalk,
+  approveAllFrom,
   decideIncoming,
   moveIncomingAddresses,
   movePoint,
@@ -130,17 +130,23 @@ describe("incoming addresses", () => {
     await decideIncoming(db, user, "rejected");
     expect(all(sqlite, "SELECT kind, decision FROM incoming_addresses")).toEqual([{ kind: "temp", decision: "rejected" }]);
   });
-  it("approves all walk addresses except those whose text is in the directory and addresses of users", async () => {
+  it("approves all addresses of one source except those whose text is in the directory and the other sources", async () => {
     const { db, sqlite } = fakeD1();
     addDirectory(sqlite, "Duplicate", point(40, 0));
     addIncoming(sqlite, "Walk", point(0, 0), null);
     addIncoming(sqlite, " duplicate", point(0, 0), null, "walk");
     addIncoming(sqlite, "User", point(0, 0), null, "user");
-    await approveAllWalk(db);
+    addIncoming(sqlite, "Osm", point(0, 0), null, "osm");
+    await approveAllFrom(db, "walk");
     expect(all(sqlite, "SELECT text, decision FROM incoming_addresses ORDER BY id")).toEqual([
       { text: "Walk", decision: "approved" },
       { text: " duplicate", decision: null },
       { text: "User", decision: null },
+      { text: "Osm", decision: null },
+    ]);
+    await approveAllFrom(db, "osm");
+    expect(all(sqlite, "SELECT text, decision FROM incoming_addresses WHERE source = 'osm'")).toEqual([
+      { text: "Osm", decision: "approved" },
     ]);
   });
 });
