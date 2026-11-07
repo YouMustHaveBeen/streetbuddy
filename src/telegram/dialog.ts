@@ -13,6 +13,7 @@ import {
   isBotEnabled,
   logReport,
   isInArea,
+  MAP_PERIODS,
   nearestAddresses,
   sleep,
   PARKING_OPTIONS,
@@ -22,10 +23,11 @@ import {
   reverseGeocode,
   withoutPostalDistrict,
 } from "../core";
-import type { Defer, LoggedReport } from "../core";
+import type { Defer, Hotspot, LoggedReport } from "../core";
 import type { Env } from "../env";
 import { INSTALL_PATH } from "../install";
 import { MANUAL_PATH } from "../manual";
+import { REPORT_MAP_PATH } from "../maps";
 import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS, OUT_OF_AREA } from "./address";
 import { handleAdminInput } from "./admin";
 
@@ -126,8 +128,8 @@ const WRITE_FEEDBACK = "Write your feedback";
 const FEEDBACK_SENT = "Thank you for your feedback";
 const FEEDBACK_TOO_LONG = "The feedback must not be longer than 1000 characters";
 const NO_HOTSPOTS = "No hotspots yet";
-const MAP_STUB = "The map will be here";
 const REPORT_MAP = "Report map";
+const OPEN_MAP = "Open map";
 
 // The steps under the description in the final message.
 const REPORT_STEPS: Record<Phone, string> = {
@@ -167,6 +169,9 @@ const DELETE_BATCH = 100;
 
 const ROAD_USER_PREFIX = "road:";
 const PHONE_PREFIX = "phone:";
+const MAP_PREFIX = "map:";
+const HOTSPOT_PREFIX = "hot:";
+const HOTSPOTS_PER_PAGE = 10;
 const REVIEW_OK = "review_ok";
 
 const CANCEL: Button = { text: "Cancel", callback_data: "cancel" };
@@ -331,17 +336,44 @@ const COMMAND = /^\/(start|manual|setup|hotspots|reportmap|feedback|phone)(@\S+)
 
 const REPORT_MAP_BUTTONS: Button[][] = [
   [
-    { text: "Today", callback_data: "map:today" },
-    { text: "Week", callback_data: "map:week" },
+    { text: "Today", callback_data: `${MAP_PREFIX}today` },
+    { text: "Week", callback_data: `${MAP_PREFIX}week` },
   ],
   [
-    { text: "Last month", callback_data: "map:last_month" },
-    { text: "Month before", callback_data: "map:month_before" },
+    { text: "Last month", callback_data: `${MAP_PREFIX}last_month` },
+    { text: "Month before", callback_data: `${MAP_PREFIX}month_before` },
   ],
 ];
 
 // A link to a page of the Worker, for a message sent as HTML.
 const pageLink = (siteUrl: string, path: string, name: string) => `<a href="${siteUrl}${path}">${name}</a>`;
+
+// The text and the buttons of a page of the hotspots; a page out of range becomes the nearest one.
+function hotspotPage(hotspots: readonly Hotspot[], wanted: number): { text: string; buttons: Button[] } {
+  if (hotspots.length === 0) return { text: NO_HOTSPOTS, buttons: [] };
+  const pages = Math.ceil(hotspots.length / HOTSPOTS_PER_PAGE);
+  const page = Math.min(Math.max(Number.isInteger(wanted) ? wanted : 0, 0), pages - 1);
+  const first = page * HOTSPOTS_PER_PAGE;
+  const lines = hotspots
+    .slice(first, first + HOTSPOTS_PER_PAGE)
+    .map((spot, i) => `${first + i + 1}. ${spot.address.replace(/\s+/g, " ")} (${spot.plates})`);
+  const buttons: Button[] = [];
+  if (page > 0) buttons.push({ text: "Previous", callback_data: `${HOTSPOT_PREFIX}${page - 1}` });
+  if (page < pages - 1) buttons.push({ text: "Next", callback_data: `${HOTSPOT_PREFIX}${page + 1}` });
+  const title = pages === 1 ? "Hotspots" : `Hotspots (page ${page + 1} of ${pages})`;
+  return { text: `${title}\n${lines.join("\n")}`, buttons };
+}
+
+// Replaces the text and the buttons of the message with another page of the hotspots.
+async function showHotspotPage(c: Context, messageId: number, wanted: number): Promise<void> {
+  const page = hotspotPage(await getHotspots(c.env.DB), wanted);
+  await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "editMessageText", {
+    chat_id: c.chatId,
+    message_id: messageId,
+    text: page.text,
+    reply_markup: { inline_keyboard: page.buttons.length === 0 ? [] : [page.buttons] },
+  });
+}
 
 async function handleCommand(c: Context, command: string): Promise<void> {
   await stopReport(c.env, c.userId, c.chatId);
@@ -352,9 +384,8 @@ async function handleCommand(c: Context, command: string): Promise<void> {
   } else if (command === "setup") {
     await send(c, pageLink(c.env.SITE_URL, INSTALL_PATH, "Setup guide"), undefined, true);
   } else if (command === "hotspots") {
-    const hotspots = await getHotspots(c.env.DB);
-    const lines = hotspots.map((spot, i) => `${i + 1}. ${spot.address.replace(/\s+/g, " ")} (${spot.plates})`);
-    await send(c, hotspots.length === 0 ? NO_HOTSPOTS : `Hotspots\n${lines.join("\n")}`);
+    const page = hotspotPage(await getHotspots(c.env.DB), 0);
+    await send(c, page.text, page.buttons.length === 0 ? undefined : { inline_keyboard: [page.buttons] });
   } else if (command === "reportmap") {
     await send(c, REPORT_MAP, { inline_keyboard: REPORT_MAP_BUTTONS });
   } else if (command === "phone") {
@@ -866,8 +897,9 @@ async function handleFinalButton(c: Context, done: boolean, messageId: number): 
   if (edited !== null) await deleteFinalMessage(c.env.DB, c.chatId, messageId);
 }
 
-// The button that leads to the link: membership of the group is checked before it.
-export const checksMembership = (data: string | undefined): boolean => data === REVIEW_OK;
+// The buttons that lead to the link of a report or to a map: membership of the group is checked before them.
+export const checksMembership = (data: string | undefined): boolean =>
+  data === REVIEW_OK || data?.startsWith(MAP_PREFIX) === true;
 
 // Moves on from the review, asking for the phone when there is no answer yet.
 async function confirmReport(c: Context, draft: Draft): Promise<void> {
@@ -896,8 +928,16 @@ export async function handleButton(
   // here, at the same time as the work starts.
   const answered = data === "done" ? Promise.resolve() : answerButton(token, query.id);
 
-  if (data.startsWith("map:")) {
-    await Promise.all([answered, send(c, MAP_STUB)]);
+  if (data.startsWith(HOTSPOT_PREFIX)) {
+    const edit = query.messageId === undefined ? null : showHotspotPage(c, query.messageId, Number(data.slice(HOTSPOT_PREFIX.length)));
+    await Promise.all([answered, edit]);
+    return;
+  }
+
+  if (data.startsWith(MAP_PREFIX)) {
+    const period = MAP_PERIODS.find((name) => name === data.slice(MAP_PREFIX.length));
+    const link = [[{ text: OPEN_MAP, url: `${env.SITE_URL}${REPORT_MAP_PATH}?period=${period}` }]];
+    await Promise.all([answered, period ? send(c, REPORT_MAP, { inline_keyboard: link }) : null]);
     return;
   }
 

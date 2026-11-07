@@ -62,12 +62,18 @@ describe("cleanupExpired", () => {
     expect(rows(sqlite, "SELECT message_id FROM final_messages")).toEqual([2]);
   });
 
-  it("removes log lines and feedback older than 60 days and keeps the rest", async () => {
+  it("removes feedback older than 60 days and keeps the rest", async () => {
     const { db, sqlite } = fakeD1();
     seed(sqlite, GEOCODE_TTL);
     await cleanupExpired(db, NOW);
-    expect(rows(sqlite, "SELECT id FROM report_log")).toEqual([2]);
     expect(rows(sqlite, "SELECT id FROM feedback")).toEqual([2]);
+  });
+
+  it("removes log lines older than 66 days and keeps the rest", async () => {
+    const { db, sqlite } = fakeD1();
+    seed(sqlite, 66 * DAY);
+    await cleanupExpired(db, NOW);
+    expect(rows(sqlite, "SELECT id FROM report_log")).toEqual([2]);
   });
 
   it("removes cached addresses older than 60 days and keeps the rest", async () => {

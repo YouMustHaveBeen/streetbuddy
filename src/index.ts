@@ -4,6 +4,7 @@ import { dublinDateTime, moveIncomingAddresses, runNightlyStats } from "./core";
 import { runFormCheck } from "./dailyCheck";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
+import { DIRECTORY_PATH, REPORT_MAP_PATH, directoryPage, reportMapPage } from "./maps";
 import { closeExpiredFinalMessages, handleWebhook } from "./telegram";
 import type { Env } from "./env";
 
@@ -18,6 +19,8 @@ export default {
     if (reads && url.pathname === INSTALL_PATH) return installPage();
     if (reads && url.pathname === MANUAL_PATH) return manualPage();
     if (reads && url.pathname === SCRIPT_PATH) return userscriptFile();
+    if (reads && url.pathname === REPORT_MAP_PATH) return reportMapPage(env, url.searchParams.get("period"));
+    if (reads && url.pathname === DIRECTORY_PATH) return directoryPage(env);
     return new Response("Not Found", { status: 404 });
   },
 

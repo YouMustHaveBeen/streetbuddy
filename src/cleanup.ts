@@ -2,6 +2,7 @@
 import { USER_ADDRESS_TTL_MS } from "./core/directory";
 import { GEOCODE_CACHE_TTL_MS } from "./core/geocode";
 import { DAY_MS } from "./core/shared";
+import { TWO_MONTHS_MS } from "./core/shared";
 import { REPORT_LOG_TTL_MS } from "./core/stats";
 import { FINAL_MESSAGE_TTL_MS } from "./telegram/draft";
 import { PHONE_TTL_MS } from "./telegram/phone";
@@ -16,7 +17,7 @@ export async function cleanupExpired(db: D1Database, now: number = Date.now()): 
     db.prepare("DELETE FROM geocode_cache WHERE created_at <= ?1").bind(now - GEOCODE_CACHE_TTL_MS),
     db.prepare("DELETE FROM final_messages WHERE created_at <= ?1").bind(now - FINAL_MESSAGE_TTL_MS),
     db.prepare("DELETE FROM report_log WHERE created_at <= ?1").bind(now - REPORT_LOG_TTL_MS),
-    db.prepare("DELETE FROM feedback WHERE created_at <= ?1").bind(now - REPORT_LOG_TTL_MS),
+    db.prepare("DELETE FROM feedback WHERE created_at <= ?1").bind(now - TWO_MONTHS_MS),
     db.prepare("DELETE FROM user_phones WHERE last_used_at <= ?1").bind(now - PHONE_TTL_MS),
     db
       .prepare("DELETE FROM incoming_addresses WHERE source = 'user' AND decision IS NULL AND created_at <= ?1")

@@ -186,12 +186,46 @@ describe("the commands of the menu", () => {
     await text("/hotspots");
     expect(lastSent().text).toBe("Hotspots\n1. 12 Main Street, D13 (7)\n2. 3 Other Road, D13 (4)");
   });
+  it("/hotspots shows ten places a page, with Next and Previous buttons that edit the same message", async () => {
+    const insert = sqlite.prepare("INSERT INTO hotspots (rank, address, plates) VALUES (?, ?, ?)");
+    for (let i = 1; i <= 25; i++) insert.run(i, `Place ${i}`, 100 - i);
+    await text("/hotspots");
+    expect(lastSent().text.split("\n")[0]).toBe("Hotspots (page 1 of 3)");
+    expect(lastSent().text.split("\n")).toHaveLength(11);
+    expect(lastSent().reply_markup.inline_keyboard).toEqual([[{ text: "Next", callback_data: "hot:1" }]]);
+    await press("hot:1", 7);
+    const lastEdit = () => called("editMessageText").at(-1)!.body as { message_id: number; text: string; reply_markup: any };
+    let edit = lastEdit();
+    expect(edit.message_id).toBe(7);
+    expect(edit.text.split("\n")[0]).toBe("Hotspots (page 2 of 3)");
+    expect(edit.text.split("\n")[1]).toBe("11. Place 11 (89)");
+    expect(edit.reply_markup.inline_keyboard).toEqual([
+      [
+        { text: "Previous", callback_data: "hot:0" },
+        { text: "Next", callback_data: "hot:2" },
+      ],
+    ]);
+    await press("hot:2", 7);
+    edit = lastEdit();
+    expect(edit.text.split("\n")).toHaveLength(6);
+    expect(edit.reply_markup.inline_keyboard).toEqual([[{ text: "Previous", callback_data: "hot:1" }]]);
+    await press("hot:9", 7);
+    expect(lastEdit().text.split("\n")[0]).toBe("Hotspots (page 3 of 3)");
+    await press("hot:x", 7);
+    expect(lastEdit().text.split("\n")[0]).toBe("Hotspots (page 1 of 3)");
+  });
+  it("/hotspots has no buttons and no page number when everything fits on one page", async () => {
+    sqlite.prepare("INSERT INTO hotspots (rank, address, plates) VALUES (1, 'A', 12)").run();
+    await text("/hotspots");
+    expect(lastSent().text).toBe("Hotspots\n1. A (12)");
+    expect(lastSent().reply_markup).toBeUndefined();
+  });
   it("/hotspots shows an address with line breaks on one line", async () => {
     sqlite.prepare("INSERT INTO hotspots (rank, address, plates) VALUES (1, '12 Main\nStreet', 7)").run();
     await text("/hotspots");
     expect(lastSent().text).toBe("Hotspots\n1. 12 Main Street (7)");
   });
-  it("/reportmap shows the four buttons, and each answers that the map will be here", async () => {
+  it("/reportmap shows the four buttons, and each answers with a link to the map of its period", async () => {
     await text("/reportmap");
     expect(lastSent().text).toBe("Report map");
     expect(lastSent().reply_markup.inline_keyboard).toEqual([
@@ -204,8 +238,18 @@ describe("the commands of the menu", () => {
         { text: "Month before", callback_data: "map:month_before" },
       ],
     ]);
-    await press("map:week", 5);
-    expect(lastSent().text).toBe("The map will be here");
+    for (const period of ["today", "week", "last_month", "month_before"]) {
+      await press(`map:${period}`, 5);
+      expect(lastSent().text).toBe("Report map");
+      expect(lastSent().reply_markup.inline_keyboard).toEqual([
+        [{ text: "Open map", url: `https://site.example/reportmap?period=${period}` }],
+      ]);
+    }
+  });
+  it("a map button with an unknown period sends nothing", async () => {
+    const before = called("sendMessage").length;
+    await press("map:year", 5);
+    expect(called("sendMessage").length).toBe(before);
   });
   it("every command stops a report in progress without a word", async () => {
     for (const command of ["/manual", "/setup", "/hotspots", "/reportmap", "/feedback"]) {

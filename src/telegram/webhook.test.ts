@@ -18,6 +18,7 @@ const ADDRESS_ROW = [
   { text: "Incoming addresses", callback_data: "admin_incoming" },
   { text: "Edit directory", callback_data: "admin_directory" },
 ];
+const MAP_ROW = [{ text: "Directory map", url: "https://site.example/directory" }];
 let env: WebhookEnv;
 let rows: () => number;
 let sqlite: ReturnType<typeof fakeD1>["sqlite"];
@@ -244,7 +245,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW, MAP_ROW] },
     });
   });
   it("answers /admin written with the bot name", async () => {
@@ -262,7 +263,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: 03/11/2026 06:00 - form changed",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW, MAP_ROW] },
     });
   });
   it.each([
@@ -346,7 +347,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW, MAP_ROW] },
     });
     expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
   });
@@ -419,10 +420,6 @@ describe("which buttons check membership", () => {
       "plate_ok",
       "plate_edit",
       "time_edit",
-      "map:today",
-      "map:week",
-      "map:last_month",
-      "map:month_before",
       "final_cancel",
       "final_done",
       "phone:android",
@@ -454,6 +451,10 @@ describe("which buttons check membership", () => {
     "admin_move:1",
     "admin_del:1",
     "review_ok",
+    "map:today",
+    "map:week",
+    "map:last_month",
+    "map:month_before",
   ])(
     "checks on %s",
     async (data) => {

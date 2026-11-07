@@ -23,7 +23,7 @@ crons = ["0 2 * * *", "0 3 * * *", "0 5 * * *", "0 6 * * *"]
 SITE_URL = "https://streetbuddy.youmusthavebeen.workers.dev"
 
 # Secrets (set with `wrangler secret put`, not stored here): TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET,
-# OWNER_TELEGRAM_ID, GROUP_ID
+# OWNER_TELEGRAM_ID, GROUP_ID, MAPBOX_TOKEN
 
 # Lets src/core import config/area.geojson as text
 [[rules]]
