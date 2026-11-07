@@ -269,7 +269,7 @@ ${BASE_STYLE}
 <p>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш телефон (в первый раз), он спросит «Your phone?»: нажмите «Android». Затем нажмите кнопку «Open report» под описанием, затем «⋮» вверху справа и «Open in browser» (форма должна открыться в Chrome, см. шаг 1).</p>
 <p>Когда форма откроется, нажмите на адресную строку вверху, наберите qqqwww и выберите в подсказках закладку qqqwww (со значком звезды).</p>
 </div>
-<p data-for="iphone-bookmark" hidden>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш телефон (в первый раз), он спросит «Your phone?»: нажмите «iPhone bookmark».</p>
+<p data-for="iphone-bookmark" hidden>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш телефон (в первый раз), он спросит «Your phone?»: нажмите «iPhone».</p>
 <p data-for="iphone-bookmark" hidden>Нажмите кнопку «Open report» под описанием. Если форма открылась внутри Telegram, нажмите «⋯» вверху и «Open in Safari».</p>
 <p data-for="iphone-bookmark" hidden>Когда форма откроется, нажмите «⋯» внизу, «Bookmarks» и qqqwww.</p>
 <p>Затем поставьте две галочки на странице Traffic Watch Online Reporting: об отсутствии emergency и о явке в суд, нажмите «Click Here to Start» и проверьте, как заполнились поля формы. Проходить капчу и нажимать «Submit Report» для тестового репорта не надо.</p>

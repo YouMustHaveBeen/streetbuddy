@@ -3,7 +3,7 @@ import { TWO_MONTHS_MS } from "../core/shared";
 
 export const PHONE_TTL_MS = TWO_MONTHS_MS;
 
-export const PHONES = ["iphone_bookmark", "android"] as const;
+export const PHONES = ["iphone", "android"] as const;
 
 export type Phone = (typeof PHONES)[number];
 
