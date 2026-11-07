@@ -52,7 +52,7 @@ export async function getHotspots(db: D1Database): Promise<Hotspot[]> {
   return results;
 }
 
-interface PlaceRow {
+export interface PlaceRow {
   plate: string;
   address: string;
   lat: number;
@@ -64,9 +64,9 @@ interface PlaceRow {
 // Rows are in time order. Rows with the same directory address make one group. A row without one
 // joins the group of rows without one whose first row is nearest, within HOTSPOT_RADIUS_M, or else
 // starts a new group with itself as the first row. Groups come in the order of their last rows.
-export function groupPlaces(rows: readonly PlaceRow[]): PlaceRow[][] {
-  const byAddress = new Map<number, { rows: PlaceRow[]; last: number }>();
-  const loose: { rows: PlaceRow[]; last: number }[] = [];
+export function groupPlaces<T extends PlaceRow>(rows: readonly T[]): T[][] {
+  const byAddress = new Map<number, { rows: T[]; last: number }>();
+  const loose: { rows: T[]; last: number }[] = [];
   rows.forEach((row, i) => {
     if (row.address_id !== null) {
       const group = byAddress.get(row.address_id) ?? { rows: [], last: i };
@@ -75,7 +75,7 @@ export function groupPlaces(rows: readonly PlaceRow[]): PlaceRow[][] {
       byAddress.set(row.address_id, group);
       return;
     }
-    let nearest: { rows: PlaceRow[]; last: number } | null = null;
+    let nearest: { rows: T[]; last: number } | null = null;
     let least = Infinity;
     for (const group of loose) {
       const distance = distanceM(group.rows[0].lat, group.rows[0].lon, row.lat, row.lon);

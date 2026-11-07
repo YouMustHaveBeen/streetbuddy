@@ -1,7 +1,7 @@
 // The /admin screen for the administrators of the closed group: the bot's state, the result
 // of the last daily form check, the button that switches the bot on or off, the buttons of
-// the feedback and the statistics, which do nothing yet, the decisions on incoming addresses
-// and the editing of the address directory.
+// the feedback and the statistics, which do nothing yet, the decisions on incoming addresses,
+// the editing of the address directory and the link to its map page.
 import {
   CHOOSABLE_KINDS,
   approveAllWalk,
@@ -27,17 +27,19 @@ import {
 } from "../core";
 import type { Decision, FormCheckOutcome } from "../core";
 import type { Env } from "../env";
+import { DIRECTORY_PATH } from "../maps";
 import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS, OUT_OF_AREA } from "./address";
 import { answerButton, callTelegram, deleteMessage, sendMessage } from "./api";
 import { createDraft, deleteAdminDraft, deleteDraft, swapScreen } from "./draft";
 import type { Draft, Step } from "./draft";
 import { stopReport } from "./stop";
 
-type AdminEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN">;
+type AdminEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL">;
 
 interface Button {
   text: string;
-  callback_data: string;
+  callback_data?: string;
+  url?: string;
 }
 
 // The part of a Telegram message that /admin reads.
@@ -128,6 +130,7 @@ async function sendScreen(env: AdminEnv, chatId: number): Promise<number | null>
       { text: "Incoming addresses", callback_data: INCOMING },
       { text: "Edit directory", callback_data: DIRECTORY },
     ],
+    [{ text: "Directory map", url: `${env.SITE_URL}${DIRECTORY_PATH}` }],
   ]);
 }
 

@@ -37,4 +37,6 @@ export { disableBot, enableBot, getSwitchStatus, isBotEnabled, recordFormCheck }
 export type { FormCheckOutcome } from "./switch";
 export { DAY_MS, REQUEST_TIMEOUT_MS, sleep } from "./shared";
 export { dublinDay, getHotspots, logReport, runNightlyStats } from "./stats";
+export { getDirectoryItems, getReportPlaces, MAP_PERIODS } from "./maps";
+export type { MapPeriod } from "./maps";
 export type { LoggedReport } from "./stats";

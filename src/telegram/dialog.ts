@@ -13,6 +13,7 @@ import {
   isBotEnabled,
   logReport,
   isInArea,
+  MAP_PERIODS,
   nearestAddresses,
   sleep,
   PARKING_OPTIONS,
@@ -26,6 +27,7 @@ import type { Defer, LoggedReport } from "../core";
 import type { Env } from "../env";
 import { INSTALL_PATH } from "../install";
 import { MANUAL_PATH } from "../manual";
+import { REPORT_MAP_PATH } from "../maps";
 import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS, OUT_OF_AREA } from "./address";
 import { handleAdminInput } from "./admin";
 
@@ -126,8 +128,8 @@ const WRITE_FEEDBACK = "Write your feedback";
 const FEEDBACK_SENT = "Thank you for your feedback";
 const FEEDBACK_TOO_LONG = "The feedback must not be longer than 1000 characters";
 const NO_HOTSPOTS = "No hotspots yet";
-const MAP_STUB = "The map will be here";
 const REPORT_MAP = "Report map";
+const OPEN_MAP = "Open map";
 
 // The steps under the description in the final message.
 const REPORT_STEPS: Record<Phone, string> = {
@@ -866,8 +868,9 @@ async function handleFinalButton(c: Context, done: boolean, messageId: number): 
   if (edited !== null) await deleteFinalMessage(c.env.DB, c.chatId, messageId);
 }
 
-// The button that leads to the link: membership of the group is checked before it.
-export const checksMembership = (data: string | undefined): boolean => data === REVIEW_OK;
+// The buttons that lead to the link of a report or to a map: membership of the group is checked before them.
+export const checksMembership = (data: string | undefined): boolean =>
+  data === REVIEW_OK || data?.startsWith("map:") === true;
 
 // Moves on from the review, asking for the phone when there is no answer yet.
 async function confirmReport(c: Context, draft: Draft): Promise<void> {
@@ -897,7 +900,9 @@ export async function handleButton(
   const answered = data === "done" ? Promise.resolve() : answerButton(token, query.id);
 
   if (data.startsWith("map:")) {
-    await Promise.all([answered, send(c, MAP_STUB)]);
+    const period = MAP_PERIODS.find((name) => name === data.slice("map:".length));
+    const link = [[{ text: OPEN_MAP, url: `${env.SITE_URL}${REPORT_MAP_PATH}?period=${period}` }]];
+    await Promise.all([answered, period ? send(c, REPORT_MAP, { inline_keyboard: link }) : null]);
     return;
   }
 

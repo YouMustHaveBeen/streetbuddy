@@ -7,4 +7,5 @@ export interface Env {
   OWNER_TELEGRAM_ID: string;
   GROUP_ID: string;
   SITE_URL: string;
+  MAPBOX_TOKEN: string;
 }

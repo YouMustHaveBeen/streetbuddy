@@ -191,7 +191,7 @@ describe("the commands of the menu", () => {
     await text("/hotspots");
     expect(lastSent().text).toBe("Hotspots\n1. 12 Main Street (7)");
   });
-  it("/reportmap shows the four buttons, and each answers that the map will be here", async () => {
+  it("/reportmap shows the four buttons, and each answers with a link to the map of its period", async () => {
     await text("/reportmap");
     expect(lastSent().text).toBe("Report map");
     expect(lastSent().reply_markup.inline_keyboard).toEqual([
@@ -204,8 +204,18 @@ describe("the commands of the menu", () => {
         { text: "Month before", callback_data: "map:month_before" },
       ],
     ]);
-    await press("map:week", 5);
-    expect(lastSent().text).toBe("The map will be here");
+    for (const period of ["today", "week", "last_month", "month_before"]) {
+      await press(`map:${period}`, 5);
+      expect(lastSent().text).toBe("Report map");
+      expect(lastSent().reply_markup.inline_keyboard).toEqual([
+        [{ text: "Open map", url: `https://site.example/reportmap?period=${period}` }],
+      ]);
+    }
+  });
+  it("a map button with an unknown period sends nothing", async () => {
+    const before = called("sendMessage").length;
+    await press("map:year", 5);
+    expect(called("sendMessage").length).toBe(before);
   });
   it("every command stops a report in progress without a word", async () => {
     for (const command of ["/manual", "/setup", "/hotspots", "/reportmap", "/feedback"]) {
