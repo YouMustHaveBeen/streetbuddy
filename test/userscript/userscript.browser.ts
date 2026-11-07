@@ -183,10 +183,13 @@ describe("form-filling script on a copy of the report form", () => {
     expect(await page.isChecked("#NotAnEmergencyCheckbox")).toBe(false);
     expect(await page.isChecked("#AttendCourtCheckbox")).toBe(false);
     await expectNothingWritten(page);
+    await page.getByRole("status").filter({ hasText: /StreetBuddy is running/ }).waitFor();
 
     await tickAndStart(page);
     await waitUntilFilled(page);
     expect(await fieldValues(page)).toEqual(expectedValues(report));
+    await page.getByRole("status").filter({ hasText: /The form is filled in/ }).waitFor();
+    expect(await page.getByRole("status").filter({ hasText: /StreetBuddy is running/ }).count()).toBe(0);
 
     // The date picker must keep the date when it closes, and the form's own checks must pass.
     await page.click("h2");
@@ -386,6 +389,26 @@ describe("form-filling script on a copy of the report form", () => {
         .getByRole("alert")
         .filter({ hasText: /form has changed/ })
         .waitFor({ timeout: FIELDS_TIMEOUT_MS + 5000 });
+      expect(await page.getByRole("status").filter({ hasText: /StreetBuddy is running/ }).count()).toBe(0);
+      await expectNothingWritten(page);
+      await context.close();
+    },
+    FIELDS_TIMEOUT_MS + 20000,
+  );
+
+  it(
+    "tells the person to fill the form by hand when the start button is missing",
+    async () => {
+      const context = await newContext((html) => html.replace('id="startBtn"', 'id="startBtn_gone"'));
+      const page = await context.newPage();
+      await page.goto(linkTo(ordinaryReport()));
+      await page.getByRole("status").filter({ hasText: /StreetBuddy is running/ }).waitFor();
+
+      await page
+        .getByRole("alert")
+        .filter({ hasText: /form has changed/ })
+        .waitFor({ timeout: FIELDS_TIMEOUT_MS + 5000 });
+      expect(await page.getByRole("status").filter({ hasText: /StreetBuddy is running/ }).count()).toBe(0);
       await expectNothingWritten(page);
       await context.close();
     },

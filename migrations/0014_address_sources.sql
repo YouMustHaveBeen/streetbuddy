@@ -1,4 +1,4 @@
--- Migration number: 0013 	 2026-11-07T19:00:00.000Z
+-- Migration number: 0014 	 2026-11-07T19:00:00.000Z
 
 -- Every address has a source: walk (the owner's walk), user (written by a user) or osm (the OpenStreetMap
 -- extract). The addresses already in the directory get walk; the incoming table takes the value osm too.

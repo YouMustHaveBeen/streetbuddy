@@ -39,15 +39,15 @@ describe("migration 0011", () => {
   });
 });
 
-describe("migration 0013", () => {
+describe("migration 0014", () => {
   it("gives the addresses in the directory the source walk and keeps the incoming addresses", () => {
-    const sqlite = before("0013");
+    const sqlite = before("0014");
     sqlite.exec(`
       INSERT INTO addresses (text, kind, geometry, west, south, east, north) VALUES ('A', 'house', '{}', 0, 0, 0, 0);
       INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, decision, created_at) VALUES ('user', 'U', 'temp', '{}', 7, NULL, 1);
       INSERT INTO incoming_addresses (source, text, kind, geometry, decision, walk_file, created_at) VALUES ('walk', 'P', 'area', '{}', 'approved', 'walk-1.geojson', 2);
     `);
-    sqlite.exec(sql("0013_address_sources.sql"));
+    sqlite.exec(sql("0014_address_sources.sql"));
     expect(sqlite.prepare("SELECT text, source FROM addresses").all()).toEqual([{ text: "A", source: "walk" }]);
     expect(sqlite.prepare("SELECT id, source, text, kind, user_id, decision, walk_file, created_at FROM incoming_addresses ORDER BY id").all()).toEqual([
       { id: 1, source: "user", text: "U", kind: "temp", user_id: 7, decision: null, walk_file: null, created_at: 1 },
@@ -55,7 +55,7 @@ describe("migration 0013", () => {
     ]);
   });
   it("lets both tables take the source osm and refuses any other", () => {
-    const sqlite = before("0014");
+    const sqlite = before("0015");
     sqlite.exec("INSERT INTO addresses (text, kind, geometry, west, south, east, north, source) VALUES ('A', 'house', '{}', 0, 0, 0, 0, 'osm')");
     sqlite.exec("INSERT INTO incoming_addresses (source, text, kind, geometry, created_at) VALUES ('osm', 'B', 'house', '{}', 1)");
     expect(() => sqlite.exec("INSERT INTO addresses (text, kind, geometry, west, south, east, north, source) VALUES ('C', 'house', '{}', 0, 0, 0, 0, 'google')")).toThrow();

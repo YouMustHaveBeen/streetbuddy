@@ -1224,12 +1224,12 @@ describe("review, Edit and the phone", () => {
     await press("review_ok");
     expect(draft().step).toBe("phone");
     expect(lastSent().text).toBe("Your phone?");
-    expect(rowsOf()).toEqual([["iPhone bookmark"], ["Android"], ["Cancel"]]);
-    await press("phone:iphone_bookmark");
+    expect(rowsOf()).toEqual([["iPhone"], ["Android"], ["Cancel"]]);
+    await press("phone:iphone");
     expect(lastSent().text).toBe(
       `${FINAL}\n\n-> Press “Open report”,\n-> «⋯» on the top and “Open in Safari”,\n-> «⋯» on the bottom and “Bookmarks”,\n-> press qqqwww,\n-> fill and send the report,\n-> press “Done” to close the form.`,
     );
-    expect(sqlite.prepare("SELECT phone, reports FROM user_phones").get()).toEqual({ phone: "iphone_bookmark", reports: 1 });
+    expect(sqlite.prepare("SELECT phone, reports FROM user_phones").get()).toEqual({ phone: "iphone", reports: 1 });
 
     await toReview();
     await press("review_ok");
@@ -1247,7 +1247,7 @@ describe("review, Edit and the phone", () => {
   });
 
   it("shows the steps of the bookmark on an iPhone", async () => {
-    sqlite.exec("UPDATE user_phones SET phone = 'iphone_bookmark'");
+    sqlite.exec("UPDATE user_phones SET phone = 'iphone'");
     await toReview();
     await press("review_ok");
     expect(lastSent().text).toContain("-> «⋯» on the bottom and “Bookmarks”,\n-> press qqqwww,");
