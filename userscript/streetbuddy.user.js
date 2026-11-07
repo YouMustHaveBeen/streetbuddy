@@ -208,8 +208,8 @@
   }
 
   // Watches the page until a field is visible, then gives all fields a limited time to show
-  // up. If the start button goes out of view and no field shows up, the same time counts from
-  // the button.
+  // up. If the start button is not on the page or goes out of view and no field shows up, the
+  // same time counts from that moment.
   function waitAndFill(report, profile) {
     let fieldSeen = false;
     let startSeen = false;
@@ -247,7 +247,7 @@
         if (anyField) {
           fieldSeen = true;
           armTimer();
-        } else if (!startSeen && startButton && !isVisible(startButton)) {
+        } else if (!startSeen && (!startButton || !isVisible(startButton))) {
           startSeen = true;
           armTimer();
         }

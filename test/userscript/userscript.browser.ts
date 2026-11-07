@@ -389,6 +389,26 @@ describe("form-filling script on a copy of the report form", () => {
         .getByRole("alert")
         .filter({ hasText: /form has changed/ })
         .waitFor({ timeout: FIELDS_TIMEOUT_MS + 5000 });
+      expect(await page.getByRole("status").filter({ hasText: /StreetBuddy is running/ }).count()).toBe(0);
+      await expectNothingWritten(page);
+      await context.close();
+    },
+    FIELDS_TIMEOUT_MS + 20000,
+  );
+
+  it(
+    "tells the person to fill the form by hand when the start button is missing",
+    async () => {
+      const context = await newContext((html) => html.replace('id="startBtn"', 'id="startBtn_gone"'));
+      const page = await context.newPage();
+      await page.goto(linkTo(ordinaryReport()));
+      await page.getByRole("status").filter({ hasText: /StreetBuddy is running/ }).waitFor();
+
+      await page
+        .getByRole("alert")
+        .filter({ hasText: /form has changed/ })
+        .waitFor({ timeout: FIELDS_TIMEOUT_MS + 5000 });
+      expect(await page.getByRole("status").filter({ hasText: /StreetBuddy is running/ }).count()).toBe(0);
       await expectNothingWritten(page);
       await context.close();
     },
