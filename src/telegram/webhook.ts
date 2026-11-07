@@ -5,7 +5,10 @@ import { answerButton, callTelegram, sendMessage } from "./api";
 import { checksMembership, handleButton, handleMessage } from "./dialog";
 import type { Message } from "./dialog";
 
-export type WebhookEnv = Pick<Env, "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "WEBHOOK_SECRET" | "GROUP_ID" | "SITE_URL">;
+export type WebhookEnv = Pick<
+  Env,
+  "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "WEBHOOK_SECRET" | "GROUP_ID" | "SITE_URL" | "DIRECTORY_LINK_SECRET"
+>;
 
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 const NOT_MEMBER_TEXT = "This bot is only for members of the group";
@@ -46,7 +49,7 @@ interface Incoming {
 }
 
 // Compares in constant time.
-function secretMatches(received: string | null, expected: string): boolean {
+export function secretMatches(received: string | null, expected: string): boolean {
   if (!received || !expected || received.length !== expected.length) return false;
   let diff = 0;
   for (let i = 0; i < expected.length; i++) {

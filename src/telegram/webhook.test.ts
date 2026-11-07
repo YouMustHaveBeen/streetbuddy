@@ -18,7 +18,7 @@ const ADDRESS_ROW = [
   { text: "Incoming addresses", callback_data: "admin_incoming" },
   { text: "Edit directory", callback_data: "admin_directory" },
 ];
-const MAP_ROW = [{ text: "Directory map", url: "https://site.example/directory" }];
+const MAP_ROW = [{ text: "Directory map", url: expect.stringMatching(/^https:\/\/site\.example\/directory\?exp=\d+&sig=[0-9a-f]{64}$/) }];
 let env: WebhookEnv;
 let rows: () => number;
 let sqlite: ReturnType<typeof fakeD1>["sqlite"];
@@ -65,7 +65,7 @@ beforeEach(() => {
   rows = fake.count;
   sqlite = fake.sqlite;
   pending = [];
-  env = { AI: {} as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", WEBHOOK_SECRET: SECRET, GROUP_ID: "-100123", SITE_URL: "https://site.example" };
+  env = { AI: {} as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", WEBHOOK_SECRET: SECRET, GROUP_ID: "-100123", SITE_URL: "https://site.example", DIRECTORY_LINK_SECRET: "link-secret" };
 });
 afterEach(() => {
   vi.unstubAllGlobals();

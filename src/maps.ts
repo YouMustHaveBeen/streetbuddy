@@ -13,6 +13,7 @@ const MAP_STYLE = "mapbox://styles/mapbox/streets-v12";
 const GREEN = "#bacf5a";
 const VIOLET = "#b5a6eb";
 const FUCHSIA = "#e1c5cb";
+const WHITE = "#ffffff";
 const OUTLINE = "#555555";
 
 type MapEnv = Pick<Env, "DB" | "MAPBOX_TOKEN">;
@@ -64,7 +65,7 @@ ${STYLE}
 (function () {
   "use strict";
   var DATA = ${inlineJson({ ...data, ...outline })};
-  var GREEN = "${GREEN}", VIOLET = "${VIOLET}", FUCHSIA = "${FUCHSIA}", OUTLINE = "${OUTLINE}";
+  var GREEN = "${GREEN}", VIOLET = "${VIOLET}", FUCHSIA = "${FUCHSIA}", WHITE = "${WHITE}", OUTLINE = "${OUTLINE}";
   mapboxgl.accessToken = ${inlineJson(token)};
   var map = new mapboxgl.Map({
     container: "map",
@@ -111,7 +112,7 @@ const REPORT_MAP_SCRIPT = `DATA.places.forEach(function (place) {
     });`;
 
 const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
-      return { type: "Feature", properties: { text: item.text, kind: item.kind }, geometry: item.geometry };
+      return { type: "Feature", properties: { text: item.text, kind: item.kind, source: item.source }, geometry: item.geometry };
     });
     map.addSource("directory", { type: "geojson", data: { type: "FeatureCollection", features: features } });
     var isArea = ["==", ["geometry-type"], "Polygon"];
@@ -124,7 +125,7 @@ const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
       id: "points", type: "circle", source: "directory", filter: isPoint,
       paint: {
         "circle-radius": 7,
-        "circle-color": ["case", ["==", ["get", "kind"], "facility"], FUCHSIA, VIOLET],
+        "circle-color": ["case", ["==", ["get", "source"], "osm"], WHITE, ["==", ["get", "kind"], "facility"], FUCHSIA, VIOLET],
         "circle-stroke-color": OUTLINE,
         "circle-stroke-width": 1.5
       }

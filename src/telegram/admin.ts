@@ -27,14 +27,14 @@ import {
 } from "../core";
 import type { Decision, FormCheckOutcome } from "../core";
 import type { Env } from "../env";
-import { DIRECTORY_PATH } from "../maps";
+import { directoryLink } from "../directoryLink";
 import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS, OUT_OF_AREA } from "./address";
 import { answerButton, callTelegram, deleteMessage, sendMessage } from "./api";
 import { createDraft, deleteAdminDraft, deleteDraft, swapScreen } from "./draft";
 import type { Draft, Step } from "./draft";
 import { stopReport } from "./stop";
 
-type AdminEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL">;
+type AdminEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL" | "DIRECTORY_LINK_SECRET">;
 
 interface Button {
   text: string;
@@ -130,7 +130,7 @@ async function sendScreen(env: AdminEnv, chatId: number): Promise<number | null>
       { text: "Incoming addresses", callback_data: INCOMING },
       { text: "Edit directory", callback_data: DIRECTORY },
     ],
-    [{ text: "Directory map", url: `${env.SITE_URL}${DIRECTORY_PATH}` }],
+    [{ text: "Directory map", url: await directoryLink(env) }],
   ]);
 }
 
