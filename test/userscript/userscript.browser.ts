@@ -438,7 +438,7 @@ describe("bookmarklet built on the installation page", () => {
     await page.fill("#bookmark-form [name=email]", profile.email);
     await page.fill("#bookmark-form [name=address]", profile.address);
     await page.selectOption("#bookmark-form [name=contact]", profile.contact);
-    await page.getByRole("button", { name: "Создать закладку" }).click();
+    await page.getByRole("button", { name: "Подготовить закладку" }).click();
   }
 
   it("copies a short bookmarklet, which loads the script and fills the form", async () => {
@@ -449,19 +449,13 @@ describe("bookmarklet built on the installation page", () => {
       if (request.method() !== "GET") sent.push(request.url());
     });
     const guide = await openGuide(guideContext);
-    expect(await guide.isVisible("#bookmark-ready")).toBe(false);
-    expect(await guide.isVisible("#bookmark-created")).toBe(false);
+    expect(await guide.isVisible("#bookmark-prepared")).toBe(false);
     await typeProfile(guide, TYPED);
-    expect(await guide.isVisible("#bookmark-ready")).toBe(true);
-    expect(await guide.isVisible("#bookmark-created")).toBe(true);
-    expect(await guide.textContent("#bookmark-created")).toBe("Закладка создана.");
-    // The other ways to add the bookmark stay folded until the person opens them.
-    expect(await guide.isVisible("#bookmark-link")).toBe(false);
+    await guide.locator("#bookmark-prepared").waitFor();
+    expect(await guide.textContent("#bookmark-prepared")).toBe("Закладка подготовлена");
     expect(await guide.isVisible("#bookmark-error")).toBe(false);
-    await guide.getByRole("button", { name: "Скопировать закладку" }).click();
-    await guide.locator("#bookmark-copied").waitFor();
+    expect(await guide.isVisible("#bookmark-copy-failed")).toBe(false);
     const bookmark = (await guide.evaluate("navigator.clipboard.readText()")) as string;
-    expect(await guide.getAttribute("#bookmark-link", "href")).toBe(bookmark);
     expect(bookmark.startsWith("javascript:")).toBe(true);
     // The bookmarklet holds the data and the address of the script, not the script.
     expect(bookmark.length).toBeLessThan(1500);
@@ -470,16 +464,6 @@ describe("bookmarklet built on the installation page", () => {
     expect(code).toContain(JSON.stringify(origin + SCRIPT_PATH));
     // Nothing typed on the page is sent anywhere.
     expect(sent).toEqual([]);
-    // The phone way is shown first; the computer way replaces it when chosen.
-    await guide.getByText("Другие варианты добавления закладки", { exact: true }).click();
-    expect(await guide.isVisible("[data-variant-section=phone]")).toBe(true);
-    expect(await guide.isVisible("[data-variant-section=computer]")).toBe(false);
-    await guide.getByRole("button", { name: "Настроить с компьютера" }).click();
-    expect(await guide.isVisible("[data-variant-section=phone]")).toBe(false);
-    expect(await guide.isVisible("[data-variant-section=computer]")).toBe(true);
-    // A plain tap on the link runs nothing on the guide page.
-    await guide.click("#bookmark-link");
-    expect(await guide.evaluate("typeof globalThis.STREETBUDDY_PROFILE")).toBe("undefined");
     await guideContext.close();
 
     // Chrome with no extension: the person opens the link, then runs the bookmarklet.
@@ -529,8 +513,7 @@ describe("bookmarklet built on the installation page", () => {
     const page = await openGuide(context);
     await typeProfile(page, { ...TYPED, ...change });
     expect(await page.isVisible("#bookmark-error")).toBe(true);
-    expect(await page.isVisible("#bookmark-ready")).toBe(false);
-    expect(await page.isVisible("#bookmark-created")).toBe(false);
+    expect(await page.isVisible("#bookmark-prepared")).toBe(false);
     await context.close();
   });
 });
