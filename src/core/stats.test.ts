@@ -23,7 +23,7 @@ const many = (n: number, address: string, dLat = 0, from = 1, addressId: number 
 describe("topHotspots", () => {
   it("counts places within 20 m of the first report as one and shows the address that occurs most often", () => {
     const spots = topHotspots([row("1 Main Street", 1), ...many(HOTSPOT_MIN_REPORTS, "3 Main Street", 0.00015, 2)]);
-    expect(spots).toMatchObject([{ address: "3 Main Street", plates: HOTSPOT_MIN_REPORTS + 1 }]);
+    expect(spots).toEqual([{ address: "3 Main Street", plates: HOTSPOT_MIN_REPORTS + 1, addressId: null, lat: 53.4, lon: -6.1 }]);
   });
   it("shows the latest address when they occur equally often", () => {
     const half = HOTSPOT_MIN_REPORTS / 2;
@@ -33,7 +33,7 @@ describe("topHotspots", () => {
       row("3 Main Street", 50, 0.00015),
       row("1 Main Street", 49),
     ]);
-    expect(spots).toMatchObject([{ address: "3 Main Street", plates: HOTSPOT_MIN_REPORTS + 2 }]);
+    expect(spots).toEqual([{ address: "3 Main Street", plates: HOTSPOT_MIN_REPORTS + 2, addressId: null, lat: 53.4, lon: -6.1 }]);
   });
   it("keeps all places farther than 20 m apart, most plates first", () => {
     const n = HOTSPOT_MIN_REPORTS;
@@ -47,7 +47,7 @@ describe("topHotspots", () => {
     ];
     const spots = topHotspots(rows);
     expect(spots).toHaveLength(6);
-    expect(spots[0]).toMatchObject({ address: "B", plates: n + 2 });
+    expect(spots[0]).toEqual({ address: "B", plates: n + 2, addressId: null, lat: 53.4 + 0.002, lon: -6.1 });
   });
   it("does not join a chain: a report farther than 20 m from the first one opens a new place", () => {
     // 0.00015 degrees are about 17 m: B is near A, C is near B but not near A.
@@ -71,10 +71,10 @@ describe("topHotspots", () => {
       ...many(n, "1 Parkside Drive, D13", 0, 100, 8),
       ...many(n, "3 Parkside Drive, D13", 0, 200, 9),
     ];
-    expect(topHotspots(rows)).toMatchObject([
-      { address: "Parkside Square, D13", plates: n, addressId: 7 },
-      { address: "1 Parkside Drive, D13", plates: n, addressId: 8 },
-      { address: "3 Parkside Drive, D13", plates: n, addressId: 9 },
+    expect(topHotspots(rows)).toEqual([
+      { address: "Parkside Square, D13", plates: n, addressId: 7, lat: 53.4, lon: -6.1 },
+      { address: "1 Parkside Drive, D13", plates: n, addressId: 8, lat: 53.4, lon: -6.1 },
+      { address: "3 Parkside Drive, D13", plates: n, addressId: 9, lat: 53.4, lon: -6.1 },
     ]);
   });
   it("keeps a report without a directory address out of the place of a directory address at the same spot", () => {
@@ -85,14 +85,14 @@ describe("topHotspots", () => {
     const same = Array.from({ length: HOTSPOT_MIN_REPORTS }, (_, i) => row("Same", i + 1, 0, "12-D-1"));
     expect(topHotspots(same)).toEqual([]);
     const different = [...same, ...many(HOTSPOT_MIN_REPORTS - 1, "Same")];
-    expect(topHotspots(different)).toMatchObject([{ address: "Same", plates: HOTSPOT_MIN_REPORTS }]);
+    expect(topHotspots(different)).toEqual([{ address: "Same", plates: HOTSPOT_MIN_REPORTS, addressId: null, lat: 53.4, lon: -6.1 }]);
   });
   it("leaves out places with fewer reports than the minimum, also of a directory address", () => {
     const rows = [
       ...many(HOTSPOT_MIN_REPORTS - 1, "Few", 0, 1, 3),
       ...many(HOTSPOT_MIN_REPORTS, "Enough", 0.002),
     ];
-    expect(topHotspots(rows)).toMatchObject([{ address: "Enough", plates: HOTSPOT_MIN_REPORTS }]);
+    expect(topHotspots(rows)).toEqual([{ address: "Enough", plates: HOTSPOT_MIN_REPORTS, addressId: null, lat: 53.4 + 0.002, lon: -6.1 }]);
   });
   it("gives the directory address of a place, or else the coordinates of its first report", () => {
     const n = HOTSPOT_MIN_REPORTS;
@@ -162,7 +162,7 @@ describe("runNightlyStats", () => {
         .run(NOW - 25 * HOUR + i, `P${i}`, 53.4 + i * 0.001);
     }
     await runNightlyStats(db, NOW);
-    expect(await getHotspots(db)).toMatchObject([{ address: "Square", plates: HOTSPOT_MIN_REPORTS, addressId: 4 }]);
+    expect(await getHotspots(db)).toEqual([{ address: "Square", plates: HOTSPOT_MIN_REPORTS, addressId: 4, lat: 53.4, lon: -6.1 }]);
   });
 
   it("stores every place with enough plates, the most plates first", async () => {
