@@ -4,6 +4,7 @@ import { handleAdminButton, handleAdminCommand, isAdminButton, isAdminCommand } 
 import { answerButton, callTelegram, sendMessage } from "./api";
 import { checksMembership, handleButton, handleMessage } from "./dialog";
 import type { Message } from "./dialog";
+import { secretMatches } from "../secret";
 
 export type WebhookEnv = Pick<
   Env,
@@ -46,16 +47,6 @@ interface Incoming {
   userId: number;
   chatId: number;
   callbackQueryId?: string;
-}
-
-// Compares in constant time.
-export function secretMatches(received: string | null, expected: string): boolean {
-  if (!received || !expected || received.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++) {
-    diff |= received.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return diff === 0;
 }
 
 // Keeps only messages and button presses from private chats.

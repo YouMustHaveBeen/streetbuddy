@@ -1,7 +1,7 @@
 // The signed, expiring link to the address directory map page.
 import type { Env } from "./env";
 import { DIRECTORY_PATH } from "./maps";
-import { secretMatches } from "./telegram/webhook";
+import { secretMatches } from "./secret";
 
 export const DIRECTORY_LINK_TTL_MS = 60 * 60 * 1000;
 export const LINK_EXPIRED_TEXT = "This link has expired";
@@ -11,7 +11,7 @@ type LinkEnv = Pick<Env, "SITE_URL" | "DIRECTORY_LINK_SECRET">;
 const toHex = (bytes: ArrayBuffer): string =>
   [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 
-// The HMAC-SHA256 of the expiry time, as hex.
+// The HMAC-SHA256 of the directory path and the expiry time, as hex.
 async function sign(secret: string, expires: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return toHex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${DIRECTORY_PATH}:${expires}`)));

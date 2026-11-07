@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeD1 } from "../../test/fakeD1";
+import { isDirectoryLinkValid } from "../directoryLink";
 import { handleWebhook } from "./webhook";
 import type { WebhookEnv } from "./webhook";
 
@@ -18,7 +19,7 @@ const ADDRESS_ROW = [
   { text: "Incoming addresses", callback_data: "admin_incoming" },
   { text: "Edit directory", callback_data: "admin_directory" },
 ];
-const MAP_ROW = [{ text: "Directory map", url: expect.stringMatching(/^https:\/\/site\.example\/directory\?exp=\d+&sig=[0-9a-f]{64}$/) }];
+const MAP_ROW = [{ text: "Directory map", url: expect.stringContaining("https://site.example/directory?exp=") }];
 let env: WebhookEnv;
 let rows: () => number;
 let sqlite: ReturnType<typeof fakeD1>["sqlite"];
@@ -246,6 +247,25 @@ describe("/admin", () => {
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
       reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW, MAP_ROW] },
+    });
+  });
+  it("gives the map button a link that is signed with the secret and points at the directory page", async () => {
+    const mock = adminTelegram("administrator");
+    await send(textMessage("/admin"));
+    const link = new URL(bodyOf(mock, "sendMessage").reply_markup.inline_keyboard[3][0].url);
+    expect(`${link.origin}${link.pathname}`).toBe("https://site.example/directory");
+    expect(await isDirectoryLinkValid(env, link.searchParams)).toBe(true);
+    expect(await isDirectoryLinkValid({ DIRECTORY_LINK_SECRET: "another" }, link.searchParams)).toBe(false);
+  });
+  it.each([[""], [undefined]])("shows the screen without the map button when the link secret is %j", async (secret) => {
+    const mock = adminTelegram("administrator");
+    env = { ...env, DIRECTORY_LINK_SECRET: secret as unknown as string };
+    await send(textMessage("/admin"));
+    expect(methods(mock)).toEqual(["getChatMember", "sendMessage"]);
+    expect(bodyOf(mock, "sendMessage")).toEqual({
+      chat_id: 42,
+      text: "Admin console\nBot: on\nLast form check: none yet",
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW] },
     });
   });
   it("answers /admin written with the bot name", async () => {

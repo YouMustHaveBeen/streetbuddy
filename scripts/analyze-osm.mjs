@@ -52,11 +52,15 @@ let total = 0;
 let withStreet = 0;
 let withName = 0;
 let outside = 0;
+let withoutCoordinates = 0;
 
 for (const element of elements) {
   const lat = element.lat ?? element.center?.lat;
   const lon = element.lon ?? element.center?.lon;
-  if (lat === undefined || lon === undefined) continue;
+  if (lat === undefined || lon === undefined) {
+    withoutCoordinates++;
+    continue;
+  }
   if (!inside(lon, lat)) {
     outside++;
     continue;
@@ -72,6 +76,9 @@ for (const element of elements) {
 
 const lines = (map) => [...map].sort((a, b) => b[1] - a[1]).map(([key, n]) => `  ${key}: ${n}`);
 console.log(`Inside the district: ${total} (outside it: ${outside})`);
+if (withoutCoordinates > 0) {
+  console.log(`NOT analyzed, no coordinates: ${withoutCoordinates}. Ask Overpass for \`out tags center;\` so every object has a point.`);
+}
 console.log(`With a street: ${withStreet}, without a street: ${total - withStreet}, with a name: ${withName}`);
 console.log("By OSM type:");
 console.log(lines(byType).join("\n"));

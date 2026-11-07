@@ -105,6 +105,13 @@ describe("the routes of the map pages", () => {
     expect((await request(await signedPath())).status).toBe(200);
     expect((await request(await signedPath(), "HEAD")).status).toBe(200);
   });
+  it("answers /directory with 403 when the secret is not set, even for a link signed before", async () => {
+    const good = await signedPath();
+    env = { ...env, DIRECTORY_LINK_SECRET: "" };
+    const response = await request(good);
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe("This link has expired");
+  });
   it("answer /directory without a good link with 403 and the text that the link has expired", async () => {
     const good = await signedPath();
     const forged = good.replace(/sig=[0-9a-f]/, (match) => (match.endsWith("0") ? "sig=1" : "sig=0"));
