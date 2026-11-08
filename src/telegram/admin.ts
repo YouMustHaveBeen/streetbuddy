@@ -4,7 +4,7 @@
 // the editing of the address directory and the link to its map page.
 import {
   CHOOSABLE_KINDS,
-  approveAllWalk,
+  approveAllFrom,
   district,
   isInArea,
   moveIncomingAddresses,
@@ -68,6 +68,7 @@ const SET_KIND = "admin_setkind";
 const EDIT_KIND = "admin_editkind";
 const DIR_KIND = "admin_dirkind";
 const ALL_WALK = "admin_all_walk";
+const ALL_OSM = "admin_all_osm";
 const BACK = "admin_back";
 const ADDRESS = "admin_addr";
 const EDIT_TEXT = "admin_text";
@@ -92,6 +93,9 @@ const CHECK_RESULT_TEXT: Record<FormCheckOutcome, string> = {
 };
 
 const KIND_TEXT = { point: "Point", line: "Line", area: "Area" } as const;
+
+// What the incoming screen says about where an address comes from.
+const SOURCE_TEXT = { walk: "from the walk", osm: "from OSM" } as const;
 
 // The decisions of the incoming screen and what they store.
 const DECISIONS: Record<string, Decision> = { ok: "approved", no: "rejected", keep: "rejected", replace: "replace" };
@@ -163,7 +167,7 @@ async function sendIncoming(env: AdminEnv, chatId: number, afterId: number): Pro
   const lines = [
     `Incoming address ${item.position} of ${item.total}`,
     item.text,
-    item.source === "walk" ? `${form} (${item.kind}), from the walk` : `${form}, written by a user`,
+    item.source === "user" ? `${form}, written by a user` : `${form} (${item.kind}), ${SOURCE_TEXT[item.source]}`,
   ];
   if (duplicateM !== null) {
     lines.push(`Possible duplicate: the same address is in the directory ${Math.round(duplicateM)} m away`);
@@ -175,6 +179,7 @@ async function sendIncoming(env: AdminEnv, chatId: number, afterId: number): Pro
   const sent = await send(env, chatId, lines.join("\n"), [
     decisions,
     [{ text: "Approve all from the walk", callback_data: `${ALL_WALK}${tail}` }, backButton(pinId)],
+    [{ text: "Approve all from OSM", callback_data: `${ALL_OSM}${tail}` }],
   ]);
   if (sent === null && pinId !== null) await deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, pinId);
   return sent;
@@ -270,9 +275,9 @@ export async function handleAdminButton(
       await moveIncomingAddresses(env.DB);
     }
     next = sendIncoming(env, chatId, id);
-  } else if (name === ALL_WALK) {
+  } else if (name === ALL_WALK || name === ALL_OSM) {
     pinId = first ? Number(first) : null;
-    await approveAllWalk(env.DB);
+    await approveAllFrom(env.DB, name === ALL_WALK ? "walk" : "osm");
     await moveIncomingAddresses(env.DB);
     next = sendIncoming(env, chatId, 0);
   } else if (name === BACK) {
