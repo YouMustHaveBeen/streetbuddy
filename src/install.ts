@@ -218,7 +218,7 @@ ${BASE_STYLE}
 <p id="bookmark-prepared" class="ok" role="status" hidden>Закладка подготовлена</p>
 <p id="bookmark-error" role="alert" hidden>Заполните все поля. Email должен быть в виде name@example.com.</p>
 <p id="bookmark-copy-failed" class="warn" role="alert" hidden>Не получилось скопировать код автоматически. Скопируйте его из поля ниже: долгое нажатие на поле, «Select all», «Copy»</p>
-<textarea id="bookmark-code" rows="6" readonly hidden></textarea>
+<textarea id="bookmark-code" aria-label="Код закладки" rows="6" readonly hidden></textarea>
 </form>
 
 <div data-for="android">
