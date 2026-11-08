@@ -1,0 +1,19 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "address": "Block 1a, Parkside, Main St",
+        "kind": "appt"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -6.169389,
+          53.403452
+        ]
+      }
+    }
+  ]
+}
