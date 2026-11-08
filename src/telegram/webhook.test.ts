@@ -867,14 +867,15 @@ describe("/admin: incoming addresses and the directory", () => {
     await message({ text: "parkside" });
     expect(labels()).toEqual(["4 Parkside Avenue", "Back"]);
   });
-  it("says when nothing is found, keeps the screen on a blank text, and refuses a text that is too long", async () => {
+  it("says when nothing is found, shows the whole directory on a blank text, and refuses a text that is too long", async () => {
     addAddress("A Road", "point", 53.405, -6.16);
     await press("admin_directory");
     await message({ text: "zzz" });
     expect(last().text).toBe("No addresses found");
     expect(labels()).toEqual(["Back"]);
     await message({ text: "   " });
-    expect(last().text).toBe("No addresses found");
+    expect(last().text).toBe("Directory\nSend a text to search");
+    expect(labels()).toEqual(["A Road", "Back"]);
     await message({ text: "x".repeat(49) });
     expect(last().text).toBe("The search text is too long");
     expect(labels()).toEqual(["Back"]);

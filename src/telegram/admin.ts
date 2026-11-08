@@ -546,7 +546,7 @@ export async function handleAdminInput(
         await createDraft(env.DB, userId, shown, SEARCH_TOO_LONG, { step: "admin_search", address: draft.address }, []);
       }
     } else {
-      shown = await sendList(env, userId, chatId, searched === "" ? draft.address : searched, 0);
+      shown = await sendList(env, userId, chatId, searched === "" ? null : searched, 0);
     }
     if (shown !== null) {
       await Promise.all([
