@@ -1,8 +1,8 @@
 // Takes the file saved from geojson.io and the export of the directory (scripts/export-directory.mjs)
 // and writes the new walk file config/walks/walk-N.geojson with only the addresses that are not in the
 // export: the new ones and the ones whose text, kind or shape changed. Nothing is sent to the database.
-// Addresses with the source osm are skipped. If a changed address has the same text as several addresses
-// of the export, or two changed addresses are the same place with different kinds, nothing is written.
+// Addresses with the source osm are skipped. If a changed address has the same text as another address of
+// the export or as another changed address, nothing is written.
 // Run from the project folder: node scripts/diff-directory.mjs ~/Downloads/map.geojson
 // The export file can be given as the second name (the default is exports/directory.geojson).
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -48,7 +48,7 @@ const saved = readFeatures(SAVED);
 
 const changed = [];
 const seen = new Set();
-const kindsByPlace = new Map();
+const changedByText = new Map();
 const errors = [];
 let same = 0;
 let doubled = 0;
@@ -67,15 +67,14 @@ for (const feature of saved) {
     const { kind } = feature.properties ?? {};
     const count = textCounts.get(sameTextKey(feature)) ?? 0;
     if (count > 1) errors.push(`"${text}" is in the directory ${count} times: the script cannot tell which one you changed. Fix this address in /admin.`);
-    const place = placeKey(feature);
-    if (kindsByPlace.has(place) && kindsByPlace.get(place) !== kind) {
-      errors.push(`"${text}" is in ${SAVED} twice in the same place with different kinds: ${kindsByPlace.get(place)} and ${kind}.`);
-    }
-    kindsByPlace.set(place, kindsByPlace.get(place) ?? kind);
+    changedByText.set(sameTextKey(feature), [...(changedByText.get(sameTextKey(feature)) ?? []), text]);
     changed.push({ type: "Feature", properties: { address: text, kind }, geometry: feature.geometry });
   }
 }
 
+for (const texts of changedByText.values()) {
+  if (texts.length > 1) errors.push(`"${texts[0]}" is in ${SAVED} ${texts.length} times as new or changed: the script cannot tell which one is meant. Leave one of them.`);
+}
 if (errors.length > 0) {
   console.error(`No file written, fix ${SAVED} first:\n${errors.join("\n")}`);
   process.exit(1);
