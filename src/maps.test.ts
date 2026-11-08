@@ -73,6 +73,15 @@ describe("the directory map page", () => {
     expect(html).toContain('WHITE = "#ffffff"');
   });
 
+  it("shows only the address text in the popup and draws lines and areas violet", async () => {
+    addAddress("12 Main St", "house", { type: "Point", coordinates: [-6.1, 53.4] });
+    const html = await (await directoryPage(env)).text();
+    expect(html).toContain("textNode([properties.text])");
+    expect(html).not.toContain("properties.kind");
+    expect(html).toContain('"fill-color": VIOLET');
+    expect(html).toContain('addLine("lines", "directory", isLine, 4, ["case", ["==", ["get", "source"], "osm"], WHITE, ["==", ["get", "kind"], "facility"], FUCHSIA, VIOLET]);');
+  });
+
   it("cannot be broken out of its script by an address text", async () => {
     addAddress("</script><b>x", "house", { type: "Point", coordinates: [-6.1, 53.4] });
     const html = await (await directoryPage(env)).text();
