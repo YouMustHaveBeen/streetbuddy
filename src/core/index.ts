@@ -14,11 +14,13 @@ export {
   nearestAddresses,
   nextIncoming,
   renameAddress,
-  sameTextDistance,
+  searchPattern,
+  listDirectory,
+  keepFromGroup,
   setAddressKind,
   CHOOSABLE_KINDS,
 } from "./directory";
-export type { AddressKind, Decision } from "./directory";
+export type { AddressKind, Decision, DuplicateGroup, IncomingScreen } from "./directory";
 export { shapeFromGeometry, shapeMiddle } from "./shapes";
 export type { Defer } from "./geocode";
 export { PLATE_MAX_LENGTH, recognizePlates } from "./plate";

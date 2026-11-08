@@ -153,7 +153,7 @@ describe("scheduled", () => {
     expect(rows(sqlite, "SELECT day FROM daily_stats")).toEqual([]);
   });
 
-  it("moves the approved incoming addresses into the directory only in the run that is 3:00 in Dublin", async () => {
+  it("leaves the approved incoming addresses alone in every run, the night one included", async () => {
     const { db, sqlite } = fakeD1();
     sqlite
       .prepare(
@@ -162,7 +162,6 @@ describe("scheduled", () => {
       )
       .run();
     await worker.scheduled(OTHER_RUN, { DB: db } as Env, {} as ExecutionContext);
-    expect(rows(sqlite, "SELECT text FROM addresses")).toEqual([]);
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(NIGHT_WINTER.scheduledTime);
     try {
@@ -170,17 +169,8 @@ describe("scheduled", () => {
     } finally {
       vi.useRealTimers();
     }
-    expect(rows(sqlite, "SELECT text FROM addresses")).toEqual(["1 Main Street"]);
-    expect(rows(sqlite, "SELECT id FROM incoming_addresses")).toEqual([]);
-  });
-
-  it("logs a failed move of the incoming addresses and does not throw", async () => {
-    const { db, sqlite } = fakeD1();
-    sqlite.exec("DROP TABLE addresses");
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    await expect(worker.scheduled(NIGHT_WINTER, { DB: db } as Env, {} as ExecutionContext)).resolves.toBeUndefined();
-    expect(log).toHaveBeenCalledWith("scheduled: moving incoming addresses failed", expect.any(Error));
-    log.mockRestore();
+    expect(rows(sqlite, "SELECT text FROM addresses")).toEqual([]);
+    expect(rows(sqlite, "SELECT text FROM incoming_addresses")).toEqual(["1 Main Street"]);
   });
 
   it("logs a failed count and does not throw", async () => {

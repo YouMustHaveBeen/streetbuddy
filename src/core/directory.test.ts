@@ -3,13 +3,15 @@ import { fakeD1 } from "../../test/fakeD1";
 import { M_PER_DEG } from "./area";
 import {
   addUserAddress,
-  sameTextDistance,
   approveAllFrom,
   decideIncoming,
+  keepFromGroup,
+  listDirectory,
   moveIncomingAddresses,
   movePoint,
   nearestAddresses,
   nextIncoming,
+  searchPattern,
   setAddressKind,
 } from "./directory";
 import { shapeBounds, shapeFromGeometry } from "./shapes";
@@ -93,9 +95,22 @@ describe("incoming addresses", () => {
     const a = addIncoming(sqlite, "A", point(0, 0), null);
     addIncoming(sqlite, "Decided", point(0, 0), "approved");
     const b = addIncoming(sqlite, "B", point(0, 0), null, "user");
-    expect(await nextIncoming(db, 0)).toMatchObject({ id: a, text: "A", position: 1, total: 2, source: "walk" });
-    expect(await nextIncoming(db, a)).toMatchObject({ id: b, text: "B", position: 2, total: 2, source: "user" });
-    expect(await nextIncoming(db, b)).toMatchObject({ id: a });
+    expect(await nextIncoming(db, 0)).toMatchObject({ position: 1, total: 2, incoming: [{ id: a, text: "A", source: "walk" }], old: [] });
+    expect(await nextIncoming(db, a)).toMatchObject({ position: 2, total: 2, incoming: [{ id: b, text: "B", source: "user" }] });
+    expect(await nextIncoming(db, b)).toMatchObject({ incoming: [{ id: a }] });
+  });
+  it("shows addresses with the same text as one screen at the place of the lowest ID, together with the directory ones", async () => {
+    const { db, sqlite } = fakeD1();
+    const first = addIncoming(sqlite, "4 Parkside Avenue", point(0, 0), null, "osm");
+    const other = addIncoming(sqlite, "B", point(0, 0), null);
+    const second = addIncoming(sqlite, " 4 parkside  AVENUE", point(20, 0), null, "osm");
+    const old = addDirectory(sqlite, "4 Parkside Avenue", point(60, 0));
+    const screen = await nextIncoming(db, 0);
+    expect(screen).toMatchObject({ position: 1, total: 2 });
+    expect(screen?.incoming.map((address) => address.id)).toEqual([first, second]);
+    expect(screen?.old.map((address) => address.id)).toEqual([old]);
+    expect(await nextIncoming(db, first)).toMatchObject({ position: 2, total: 2, incoming: [{ id: other }], old: [] });
+    expect(await nextIncoming(db, other)).toMatchObject({ position: 1, incoming: [{ id: first }, { id: second }] });
   });
   it("gives null when nothing waits for a decision", async () => {
     const { db } = fakeD1();
@@ -151,14 +166,127 @@ describe("incoming addresses", () => {
   });
 });
 
-describe("sameTextDistance", () => {
-  it("gives the distance to the nearest directory address with the same text, ignoring case and spaces", async () => {
+describe("keepFromGroup", () => {
+  const texts = (sqlite: Sqlite, table: string) => all(sqlite, `SELECT id, decision FROM ${table} ORDER BY id`);
+  it("keeping the old address rejects all the new ones and deletes the other old ones", async () => {
     const { db, sqlite } = fakeD1();
-    addDirectory(sqlite, "1 Main Street", point(100, 0));
-    addDirectory(sqlite, "1  main street", point(30, 0));
-    addDirectory(sqlite, "2 Main Street", point(1, 0));
-    expect(await sameTextDistance(db, " 1 Main  Street", JSON.stringify(point(0, 0)))).toBeCloseTo(30, 1);
-    expect(await sameTextDistance(db, "3 Main Street", JSON.stringify(point(0, 0)))).toBeNull();
+    const old1 = addDirectory(sqlite, "4 Parkside Avenue", point(0, 0));
+    const old2 = addDirectory(sqlite, "4 Parkside Avenue", point(50, 0));
+    const new1 = addIncoming(sqlite, "4 Parkside Avenue", point(10, 0), null, "osm");
+    const new2 = addIncoming(sqlite, "4 Parkside Avenue", point(20, 0), null, "osm");
+    await keepFromGroup(db, { old: [old1, old2], incoming: [new1, new2] }, { from: "old", id: old2 });
+    expect(all(sqlite, "SELECT id FROM addresses")).toEqual([{ id: old2 }]);
+    expect(all(sqlite, "SELECT decision FROM incoming_addresses ORDER BY id")).toEqual([
+      { decision: "rejected" },
+      { decision: "rejected" },
+    ]);
+  });
+  it("keeping a new address replaces the nearest old one, keeping its ID, and removes the rest", async () => {
+    const { db, sqlite } = fakeD1();
+    const far = addDirectory(sqlite, "4 Parkside Avenue", point(200, 0));
+    const near = addDirectory(sqlite, "4 Parkside Avenue", point(30, 0));
+    const new1 = addIncoming(sqlite, "4 Parkside Avenue", point(0, 0), null, "osm");
+    const new2 = addIncoming(sqlite, "4 Parkside Avenue", point(10, 0), null, "osm");
+    await keepFromGroup(db, { old: [far, near], incoming: [new1, new2] }, { from: "incoming", id: new1 });
+    expect(all(sqlite, "SELECT id FROM addresses")).toEqual([{ id: near }]);
+    expect(texts(sqlite, "incoming_addresses")).toEqual([
+      { id: new1, decision: "replace" },
+      { id: new2, decision: "rejected" },
+    ]);
+    await moveIncomingAddresses(db);
+    expect(all(sqlite, "SELECT id, geometry FROM addresses")).toEqual([{ id: near, geometry: JSON.stringify(point(0, 0)) }]);
+    expect(all(sqlite, "SELECT id FROM incoming_addresses")).toEqual([]);
+  });
+  it("keeping a new address with no old one approves it", async () => {
+    const { db, sqlite } = fakeD1();
+    const new1 = addIncoming(sqlite, "4 Parkside Avenue", point(0, 0), null, "osm");
+    const new2 = addIncoming(sqlite, "4 Parkside Avenue", point(10, 0), null, "osm");
+    await keepFromGroup(db, { old: [], incoming: [new1, new2] }, { from: "incoming", id: new2 });
+    await moveIncomingAddresses(db);
+    expect(all(sqlite, "SELECT text, geometry FROM addresses")).toEqual([
+      { text: "4 Parkside Avenue", geometry: JSON.stringify(point(10, 0)) },
+    ]);
+    expect(all(sqlite, "SELECT id FROM incoming_addresses")).toEqual([]);
+  });
+  it("gives an address of a user the chosen kind, and does nothing for it without a kind", async () => {
+    const { db, sqlite } = fakeD1();
+    const old = addDirectory(sqlite, "4 Parkside Avenue", point(0, 0));
+    const user = addIncoming(sqlite, "4 Parkside Avenue", point(5, 0), null, "user");
+    await keepFromGroup(db, { old: [old], incoming: [user] }, { from: "incoming", id: user });
+    expect(all(sqlite, "SELECT id FROM addresses")).toEqual([{ id: old }]);
+    expect(all(sqlite, "SELECT decision FROM incoming_addresses")).toEqual([{ decision: null }]);
+    await keepFromGroup(db, { old: [old], incoming: [user] }, { from: "incoming", id: user }, "facility");
+    await moveIncomingAddresses(db);
+    expect(all(sqlite, "SELECT id, kind, geometry FROM addresses")).toEqual([
+      { id: old, kind: "facility", geometry: JSON.stringify(point(5, 0)) },
+    ]);
+  });
+  it("changes nothing for an address that is already decided", async () => {
+    const { db, sqlite } = fakeD1();
+    const old = addDirectory(sqlite, "4 Parkside Avenue", point(0, 0));
+    const decided = addIncoming(sqlite, "4 Parkside Avenue", point(5, 0), "rejected");
+    await keepFromGroup(db, { old: [old], incoming: [decided] }, { from: "incoming", id: decided });
+    expect(all(sqlite, "SELECT id FROM addresses")).toEqual([{ id: old }]);
+  });
+});
+
+describe("the directory list and search", () => {
+  it("builds a pattern that finds the text anywhere, escapes the wildcards and refuses what D1 would", () => {
+    expect(searchPattern("Main")).toBe("%Main%");
+    expect(searchPattern("50%_\\")).toBe("%50\\%\\_\\\\%");
+    expect(searchPattern("x".repeat(48))).not.toBeNull();
+    expect(searchPattern("x".repeat(49))).toBeNull();
+    expect(searchPattern("%".repeat(24))).not.toBeNull();
+    expect(searchPattern("%".repeat(25))).toBeNull();
+  });
+  it("lists the directory alphabetically by pages, and moves a page out of range to the nearest", async () => {
+    const { db, sqlite } = fakeD1();
+    for (const text of ["b 2", "A 1", "c 3", "a 2", "B 1"]) addDirectory(sqlite, text, point(0, 0));
+    const first = await listDirectory(db, null, 0, 2);
+    expect(first).toMatchObject({ total: 5, page: 0, pages: 3 });
+    expect(first.rows.map((row) => row.text)).toEqual(["A 1", "a 2"]);
+    expect((await listDirectory(db, null, 2, 2)).rows.map((row) => row.text)).toEqual(["c 3"]);
+    expect(await listDirectory(db, null, 9, 2)).toMatchObject({ page: 2, rows: [{ text: "c 3" }] });
+    expect(await listDirectory(db, null, -1, 2)).toMatchObject({ page: 0 });
+  });
+  it("finds the addresses that have the text in them, ignoring case, and treats wildcards as plain characters", async () => {
+    const { db, sqlite } = fakeD1();
+    for (const text of ["4 Parkside Avenue", "12 Main St", "100% Pizza", "Main_Street"]) addDirectory(sqlite, text, point(0, 0));
+    expect((await listDirectory(db, searchPattern("PARKSIDE"), 0, 10)).rows.map((row) => row.text)).toEqual(["4 Parkside Avenue"]);
+    expect((await listDirectory(db, searchPattern("%"), 0, 10)).rows.map((row) => row.text)).toEqual(["100% Pizza"]);
+    expect((await listDirectory(db, searchPattern("n_s"), 0, 10)).rows.map((row) => row.text)).toEqual(["Main_Street"]);
+    expect(await listDirectory(db, searchPattern("nothing"), 0, 10)).toMatchObject({ total: 0, rows: [], page: 0, pages: 1 });
+  });
+});
+
+describe("approveAllFrom with repeated texts", () => {
+  it("leaves addresses whose text another address without a decision has, from any source", async () => {
+    const { db, sqlite } = fakeD1();
+    addIncoming(sqlite, "4 Parkside Avenue", point(0, 0), null, "osm");
+    addIncoming(sqlite, "4 parkside avenue", point(20, 0), null, "osm");
+    addIncoming(sqlite, "6 Parkside Avenue", point(0, 0), null, "osm");
+    addIncoming(sqlite, "Shared", point(0, 0), null, "osm");
+    addIncoming(sqlite, "Shared", point(0, 0), null, "walk");
+    addIncoming(sqlite, "6 Parkside Avenue", point(0, 0), "rejected", "osm");
+    await approveAllFrom(db, "osm");
+    expect(all(sqlite, "SELECT text, decision FROM incoming_addresses ORDER BY id")).toEqual([
+      { text: "4 Parkside Avenue", decision: null },
+      { text: "4 parkside avenue", decision: null },
+      { text: "6 Parkside Avenue", decision: "approved" },
+      { text: "Shared", decision: null },
+      { text: "Shared", decision: null },
+      { text: "6 Parkside Avenue", decision: "rejected" },
+    ]);
+  });
+});
+
+describe("approveAllFrom with long runs of spaces", () => {
+  it("compares texts with tabs and any number of spaces like the transfer does", async () => {
+    const { db, sqlite } = fakeD1();
+    addIncoming(sqlite, `4${" ".repeat(30)}Parkside Avenue`, point(0, 0), null, "osm");
+    addIncoming(sqlite, "4\tParkside\nAvenue", point(20, 0), null, "osm");
+    await approveAllFrom(db, "osm");
+    expect(all(sqlite, "SELECT decision FROM incoming_addresses ORDER BY id")).toEqual([{ decision: null }, { decision: null }]);
   });
 });
 

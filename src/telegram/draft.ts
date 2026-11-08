@@ -61,7 +61,8 @@ export type Step =
   | "finishing"
   | "feedback_input" // Not a report: waiting for the text of a feedback.
   | "phone_choice" // Not a report: /phone.
-  | "admin_location" // Not a report: /admin waits for the location of a directory address.
+  | "admin_search" // Not a report: /admin shows the directory (all of it or a search) and waits for a search text.
+  | "admin_group" // Not a report: /admin shows a group of duplicate incoming addresses; cleanup holds the map pins.
   | "admin_text" // Not a report: /admin waits for the new text of a directory address.
   | "admin_move"; // Not a report: /admin waits for the new location of a directory point.
 
@@ -280,25 +281,67 @@ export async function deleteDraft(db: D1Database, userId: number, draftId: numbe
   await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2").bind(userId, draftId).run();
 }
 
-// Stops a report that has buttons on screen and returns the message with them; a report on
-// the step that gives the link stays.
-export async function deleteDraftWithButtons(db: D1Database, userId: number): Promise<number | null> {
+// Stops a report that has buttons on screen and returns the message with them, and the map pins above
+// it when it is a group of duplicates; a report on the step that gives the link stays.
+export async function deleteDraftWithButtons(
+  db: D1Database,
+  userId: number,
+): Promise<{ messageId: number; pins: number[] } | null> {
   const row = await db
-    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND step != 'finishing' RETURNING buttons_message_id")
+    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND step != 'finishing' RETURNING buttons_message_id, step, cleanup")
     .bind(userId)
-    .first<{ buttons_message_id: number }>();
-  return row?.buttons_message_id ?? null;
+    .first<{ buttons_message_id: number; step: string; cleanup: string }>();
+  if (!row) return null;
+  return { messageId: row.buttons_message_id, pins: row.step === "admin_group" ? (JSON.parse(row.cleanup) as number[]) : [] };
 }
 
-// Removes the question of /admin shown in the given message, if it is still waiting for an answer.
+// Removes the question or the directory screen of /admin shown in the given message, if it is still
+// waiting for an answer.
 export async function deleteAdminDraft(db: D1Database, userId: number, messageId: number): Promise<void> {
   await db
     .prepare(
       `DELETE FROM drafts WHERE user_id = ?1 AND buttons_message_id = ?2
-       AND step IN ('admin_location', 'admin_text', 'admin_move')`,
+       AND step LIKE 'admin\\_%' ESCAPE '\\' AND step != 'admin_group'`,
     )
     .bind(userId, messageId)
     .run();
+}
+
+// Removes the directory screen draft of /admin, whatever message it points to.
+export async function deleteSearchDraft(db: D1Database, userId: number): Promise<void> {
+  await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND step = 'admin_search'").bind(userId).run();
+}
+
+// Makes the directory screen draft of /admin point to the message that is on screen now, if the
+// draft still points to the screen the button was pressed on.
+export async function pointSearchDraft(
+  db: D1Database,
+  userId: number,
+  fromMessageId: number,
+  messageId: number,
+): Promise<void> {
+  await db
+    .prepare(
+      "UPDATE drafts SET buttons_message_id = ?3 WHERE user_id = ?1 AND step = 'admin_search' AND buttons_message_id = ?2",
+    )
+    .bind(userId, fromMessageId, messageId)
+    .run();
+}
+
+// Takes the group of duplicates screen of /admin in one statement: the map pins above it and the
+// addresses of the group as they were shown. Null when the screen is already gone.
+export async function takeAdminGroup(
+  db: D1Database,
+  userId: number,
+): Promise<{ pins: number[]; options: string } | null> {
+  const row = await db
+    .prepare(
+      `DELETE FROM drafts WHERE user_id = ?1 AND step = 'admin_group' AND address_options IS NOT NULL
+       RETURNING cleanup, address_options`,
+    )
+    .bind(userId)
+    .first<{ cleanup: string; address_options: string }>();
+  return row ? { pins: JSON.parse(row.cleanup) as number[], options: row.address_options } : null;
 }
 
 // Removes the draft only if it is still on the step that gives the link, and returns its list
