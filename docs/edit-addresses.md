@@ -39,7 +39,7 @@ node scripts/export-directory.mjs
 5. Что писать:
    1. `address`: номер дома первым (`34 Parkside Crescent`), `St` вместо Street, перекресток как `A & B`, до 100 символов, без почтового района.
    2. Адрес без номера дома: сначала объект, потом комплекс, в конце улица (`Block 9 New Priory, Main St`, `Bus stop, Block 1b, Parkside, Main St`). Слово `Block` пишется полностью.
-   2. `kind`: одно слово из списка `house`, `appt`, `facility`, `spot`, `area`. Для территории только `area`, и `area` только у территории.
+   3. `kind`: одно слово из списка `house`, `appt`, `facility`, `spot`, `area`. Для территории только `area`, и `area` только у территории.
 6. Поле `source` для нового адреса заполнять не нужно.
 
 ## Шаг 4. Исправить существующий адрес
