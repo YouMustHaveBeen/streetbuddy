@@ -462,12 +462,18 @@ describe("which buttons check membership", () => {
     "admin_in:ok:1:2",
     "admin_kind:ok:1:2",
     "admin_setkind:ok:house:1:2",
-    "admin_editkind:1",
+    "admin_editkind:1:0",
     "admin_dirkind:house:1",
+    "admin_list:0",
+    "admin_keep:0",
+    "admin_keepkind:0:1",
+    "admin_keepset:0:house",
     "admin_all_walk",
     "admin_all_osm",
+    "admin_all_walk:g",
     "admin_back",
-    "admin_addr:1",
+    "admin_back:g",
+    "admin_addr:1:0",
     "admin_text:1",
     "admin_move:1",
     "admin_del:1",
@@ -620,13 +626,6 @@ describe("/admin: incoming addresses and the directory", () => {
     await press(`admin_in:no:${id}:9`);
     expect(decision()).toEqual([]);
   });
-  it("Keep old of an address of a user rejects it without a kind", async () => {
-    addAddress("a", "point", 53.405 + 40 / 111195, -6.16);
-    const id = addIncoming("A", "user", { type: "Point", coordinates: [-6.16, 53.405] });
-    await press(`admin_in:keep:${id}:9`);
-    expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
-    expect(sqlite.prepare("SELECT text FROM addresses").all()).toEqual([{ text: "a" }]);
-  });
   it("approves an address of the walk without asking for a kind", async () => {
     const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
     await press("admin_incoming");
@@ -634,17 +633,6 @@ describe("/admin: incoming addresses and the directory", () => {
     await press(`admin_in:ok:${id}:${pinId()}`);
     expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
     expect(sqlite.prepare("SELECT text, kind FROM addresses").all()).toEqual([{ text: "A", kind: "house" }]);
-  });
-  it("asks for the kind on Replace old of an address of a user, and not on Keep old", async () => {
-    addAddress("a", "point", 53.405 + 40 / 111195, -6.16);
-    const id = addIncoming("A", "user", { type: "Point", coordinates: [-6.16, 53.405] });
-    await press("admin_incoming");
-    const pin = pinId();
-    expect(keys()[0]).toEqual([`admin_in:keep:${id}:${pin}`, `admin_kind:replace:${id}:${pin}`, `admin_in:next:${id}:${pin}`]);
-    await press(`admin_kind:replace:${id}:${pin}`);
-    await press(`admin_setkind:replace:appt:${id}:${pin}`);
-    expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
-    expect(sqlite.prepare("SELECT text, kind FROM addresses").all()).toEqual([{ text: "A", kind: "appt" }]);
   });
   it("rejects, and Next goes on without a decision", async () => {
     const a = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
@@ -657,26 +645,131 @@ describe("/admin: incoming addresses and the directory", () => {
     ]);
     expect(last().text).toContain("Incoming address 1 of 1\nA");
   });
-  it("offers Keep old and Replace old when the text is already in the directory", async () => {
-    addAddress("a", "point", 53.405 + 40 / 111195, -6.16);
-    const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
-    await press("admin_incoming");
+  const point = (lon: number, lat: number) => ({ type: "Point", coordinates: [lon, lat] });
+  const groupOf = () => {
+    const old = addAddress("4 Parkside Avenue", "point", 53.405, -6.16);
+    const first = addIncoming("4 Parkside Avenue", "osm", point(-6.1599, 53.405));
+    const second = addIncoming("4 parkside  avenue", "user", point(-6.1598, 53.405));
+    return { old, first, second };
+  };
+  it("shows addresses with the same text as one group, a titled pin for each, and a Keep button for each", async () => {
+    const { first } = groupOf();
+    await press("admin_incoming", 5);
+    expect(of("sendVenue").map((call) => [call.body.title, call.body.address])).toEqual([
+      ["old", "4 Parkside Avenue"],
+      ["new1", "4 Parkside Avenue"],
+      ["new2", "4 Parkside Avenue"],
+    ]);
     expect(last().text).toBe(
-      "Incoming address 1 of 1\nA\nPoint (house), from the walk\nPossible duplicate: the same address is in the directory 40 m away",
+      "Incoming address 1 of 1\n4 Parkside Avenue\nSame address, 3 objects\nold: Point (house), in the directory\nnew1: Point (house), from OSM\nnew2: Point, written by a user",
     );
-    expect(labels()).toEqual(["Keep old", "Replace old", "Next", "Approve all from the walk", "Back", "Approve all from OSM"]);
-    const [screen, pin] = [lastId(), pinId()];
-    await press(`admin_in:replace:${id}:${pin}`, screen);
-    expect(decision()).toEqual([]);
-    expect(sqlite.prepare("SELECT text FROM addresses").all()).toEqual([{ text: "A" }]);
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, pin]));
-    expect(last().text).toBe("No incoming addresses");
-    expect(labels()).toEqual(["Back"]);
+    expect(labels()).toEqual(["Keep old", "Keep new1", "Keep new2", "Next", "Approve all from the walk", "Back", "Approve all from OSM"]);
+    expect(keys()).toEqual([
+      ["admin_keep:0"],
+      ["admin_keep:1"],
+      [`admin_keepkind:2:${first}`],
+      [`admin_in:next:${first}:g`],
+      ["admin_all_walk:g", "admin_back:g"],
+      ["admin_all_osm:g"],
+    ]);
+    expect(sqlite.prepare("SELECT step, cleanup FROM drafts").all()).toEqual([
+      { step: "admin_group", cleanup: JSON.stringify(of("sendVenue").map((call) => call.id)) },
+    ]);
   });
-  it("Keep old drops the new address", async () => {
-    const id = addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
-    await press(`admin_in:keep:${id}:101`);
-    expect(decision()).toEqual([]);
+  it("names several old addresses old1, old2", async () => {
+    addAddress("4 Parkside Avenue", "point", 53.405, -6.16);
+    addAddress("4 Parkside Avenue", "point", 53.406, -6.16);
+    addIncoming("4 Parkside Avenue", "walk", point(-6.159, 53.405));
+    await press("admin_incoming");
+    expect(of("sendVenue").map((call) => call.body.title)).toEqual(["old1", "old2", "new1"]);
+  });
+  it("Keep old rejects every new address, deletes the other old ones and removes the screen with its pins", async () => {
+    const { old } = groupOf();
+    addAddress("4 Parkside Avenue", "point", 53.407, -6.16);
+    await press("admin_incoming", 5);
+    const [screen, pins] = [lastId(), of("sendVenue").map((call) => call.id)];
+    await press("admin_keep:0", screen);
+    expect(sqlite.prepare("SELECT id FROM addresses").all()).toEqual([{ id: old }]);
+    expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+    expect(last().text).toBe("No incoming addresses");
+  });
+  it("Keep new replaces the old address, keeping its ID, and rejects the other new ones", async () => {
+    const { old } = groupOf();
+    await press("admin_incoming");
+    await press("admin_keep:1");
+    expect(sqlite.prepare("SELECT id, geometry, source FROM addresses").all()).toEqual([
+      { id: old, geometry: JSON.stringify(point(-6.1599, 53.405)), source: "osm" },
+    ]);
+    expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
+  });
+  it("Keep new of an address of a user asks for the kind, keeping the pins, and Back shows the group again", async () => {
+    const { first } = groupOf();
+    await press("admin_incoming", 5);
+    const [screen, pins] = [lastId(), of("sendVenue").map((call) => call.id)];
+    await press(`admin_keepkind:2:${first}`, screen);
+    expect(last().text).toBe("Choose the kind");
+    expect(keys()).toEqual([
+      ["admin_keepset:2:house"],
+      ["admin_keepset:2:appt"],
+      ["admin_keepset:2:facility"],
+      ["admin_keepset:2:spot"],
+      [`admin_in:same:${first}:g`],
+    ]);
+    expect(of("deleteMessage").map((call) => call.body.message_id)).not.toEqual(expect.arrayContaining(pins));
+    const kindScreen = lastId();
+    await press(`admin_in:same:${first}:g`, kindScreen);
+    expect(last().text).toContain("Same address, 3 objects");
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([kindScreen, ...pins]));
+    await press("admin_keepset:2:appt");
+    expect(sqlite.prepare("SELECT kind, source FROM addresses").all()).toEqual([{ kind: "appt", source: "user" }]);
+    expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
+  });
+  it("does nothing for Keep new of an address of a user without a kind", async () => {
+    groupOf();
+    await press("admin_incoming");
+    await press("admin_keep:2");
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM addresses").get()).toEqual({ n: 1 });
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 2 });
+  });
+  it("a Keep button of a screen that is gone only shows the incoming addresses again", async () => {
+    groupOf();
+    await press("admin_keep:0");
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM addresses").get()).toEqual({ n: 1 });
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 2 });
+    expect(last().text).toContain("Same address, 3 objects");
+  });
+  it("Approve all does not approve a group, and Next skips it with its pins removed", async () => {
+    const { first } = groupOf();
+    addIncoming("B", "osm", point(-6.16, 53.405));
+    await press("admin_all_osm:77");
+    expect(sqlite.prepare("SELECT text, decision FROM incoming_addresses ORDER BY id").all()).toEqual([
+      { text: "4 Parkside Avenue", decision: null },
+      { text: "4 parkside  avenue", decision: null },
+    ]);
+    expect(sqlite.prepare("SELECT text FROM addresses ORDER BY id").all()).toEqual([{ text: "4 Parkside Avenue" }, { text: "B" }]);
+    expect(last().text).toContain("Incoming address 1 of 1\n4 Parkside Avenue\nSame address");
+    const [screen, pins] = [lastId(), of("sendVenue").slice(-3).map((call) => call.id)];
+    await press(`admin_in:next:${first}:g`, screen);
+    expect(last().text).toContain("Incoming address 1 of 1\n4 Parkside Avenue");
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+  });
+  it("Back on a group shows the admin screen and removes its pins", async () => {
+    groupOf();
+    await press("admin_incoming");
+    const [screen, pins] = [lastId(), of("sendVenue").map((call) => call.id)];
+    await press("admin_back:g", screen);
+    expect(last().text).toContain("Admin console");
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
+  });
+  it("removes what is sent while a group is on screen and keeps the group", async () => {
+    groupOf();
+    await press("admin_incoming");
+    await message({ text: "hello" });
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toContain(500 + updateId);
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_group" }]);
   });
   it("approves all walk addresses at once and goes on with the rest", async () => {
     addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
@@ -709,21 +802,76 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(last().text).toContain("Admin console");
     expect(of("deleteMessage").map((call) => call.body.message_id).sort()).toEqual([60, 77]);
   });
-  it("finds directory addresses by location, five at most, and edits the text of one", async () => {
-    const ids = [1, 2, 3, 4, 5, 6].map((i) => addAddress(`${i} Main Street`, "point", 53.405 + i * 0.00002, -6.16));
+  const addRoads = () =>
+    "ABCDEFGHIJKL".split("").map((letter, i) => addAddress(`${letter} Road`, "point", 53.405 + i * 0.00002, -6.16));
+  it("lists the directory alphabetically by pages of ten, and the next page follows", async () => {
+    const ids = addRoads();
     await press("admin_directory", 5);
-    expect(last().text).toBe("Send the location of the address");
-    expect(labels()).toEqual(["Back"]);
+    expect(last().text).toBe("Directory (page 1 of 2)\nSend a text to search");
+    expect(labels()).toEqual(["A Road", "B Road", "C Road", "D Road", "E Road", "F Road", "G Road", "H Road", "I Road", "J Road", "Next", "Back"]);
+    expect(keys()[0]).toEqual([`admin_addr:${ids[0]}:0`]);
+    expect(keys().at(-2)).toEqual(["admin_list:1"]);
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual([5]);
+    await press("admin_list:1", lastId());
+    expect(last().text).toBe("Directory (page 2 of 2)\nSend a text to search");
+    expect(labels()).toEqual(["K Road", "L Road", "Previous", "Back"]);
+    expect(keys().at(-2)).toEqual(["admin_list:0"]);
+    expect(sqlite.prepare("SELECT step, address FROM drafts").all()).toEqual([{ step: "admin_search", address: null }]);
+  });
+  it("has no page line when the directory fits on one page", async () => {
+    addAddress("A Road", "point", 53.405, -6.16);
+    await press("admin_directory");
+    expect(last().text).toBe("Directory\nSend a text to search");
+    expect(labels()).toEqual(["A Road", "Back"]);
+  });
+  it("searches by the text sent, finds a part of an address in any case, and the next text is a new search", async () => {
+    addRoads();
+    addAddress("4 Parkside Avenue", "point", 53.41, -6.16);
+    await press("admin_directory", 5);
     const prompt = lastId();
-    await message({ location: { latitude: 53.405, longitude: -6.16 } });
+    await message({ text: "  B ROAD " });
+    expect(last().text).toBe("Found 1 address");
+    expect(labels()).toEqual(["B Road", "Back"]);
     expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([prompt, 500 + updateId]));
-    expect(last().text).toBe("Choose the address");
-    expect(labels()).toEqual(["1 Main Street", "2 Main Street", "3 Main Street", "4 Main Street", "5 Main Street", "Back"]);
-
-    await press(`admin_addr:${ids[0]}`);
-    expect(last().text).toBe("1 Main Street\nPoint (house)");
+    expect(sqlite.prepare("SELECT step, address FROM drafts").all()).toEqual([{ step: "admin_search", address: "B ROAD" }]);
+    await message({ text: "road" });
+    expect(last().text).toBe("Found 12 addresses (page 1 of 2)");
+    await press("admin_list:1", lastId());
+    expect(last().text).toBe("Found 12 addresses (page 2 of 2)");
+    expect(labels()).toEqual(["K Road", "L Road", "Previous", "Back"]);
+    await message({ text: "parkside" });
+    expect(labels()).toEqual(["4 Parkside Avenue", "Back"]);
+  });
+  it("says when nothing is found, keeps the screen on a blank text, and refuses a text that is too long", async () => {
+    addAddress("A Road", "point", 53.405, -6.16);
+    await press("admin_directory");
+    await message({ text: "zzz" });
+    expect(last().text).toBe("No addresses found");
+    expect(labels()).toEqual(["Back"]);
+    await message({ text: "   " });
+    expect(last().text).toBe("No addresses found");
+    await message({ text: "x".repeat(49) });
+    expect(last().text).toBe("The search text is too long");
+    expect(labels()).toEqual(["Back"]);
+    await message({ text: "road" });
+    expect(labels()).toEqual(["A Road", "Back"]);
+    await message({ location: { latitude: 53.405, longitude: -6.16 } });
+    expect(labels()).toEqual(["A Road", "Back"]);
+  });
+  it("opens an address from the list, Back returns to the same page of the same search, and the text is edited", async () => {
+    const ids = addRoads();
+    await press("admin_directory");
+    await message({ text: "road" });
+    await press("admin_list:1", lastId());
+    await press(`admin_addr:${ids[10]}:1`, lastId());
+    expect(last().text).toBe("K Road\nPoint (house)");
     expect(labels()).toEqual(["Edit text", "Edit kind", "Move", "Delete", "Back"]);
-    await press(`admin_text:${ids[0]}`);
+    expect(keys()[1]).toEqual(["admin_list:1"]);
+    await press("admin_list:1", lastId());
+    expect(last().text).toBe("Found 12 addresses (page 2 of 2)");
+
+    await press(`admin_addr:${ids[10]}:1`, lastId());
+    await press(`admin_text:${ids[10]}`);
     expect(last().text).toBe("Write the new address");
     await message({ text: "x".repeat(101) });
     expect(last().text).toBe("The address must be 100 characters or less");
@@ -732,19 +880,27 @@ describe("/admin: incoming addresses and the directory", () => {
       "Saved",
       "Admin console\nBot: on\nLast form check: none yet",
     ]);
-    expect(sqlite.prepare("SELECT text FROM addresses WHERE id = ?").get(ids[0])).toEqual({ text: "1A Main Street" });
+    expect(sqlite.prepare("SELECT text FROM addresses WHERE id = ?").get(ids[10])).toEqual({ text: "1A Main Street" });
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
   });
-  it("says when there is nothing within 30 m", async () => {
+  it("a text sent while an address is on screen is a new search and removes that screen", async () => {
+    const [id] = addRoads();
     await press("admin_directory");
-    await message({ location: { latitude: 53.405, longitude: -6.16 } });
-    expect(last().text).toBe("No addresses within 30 m");
-    expect(labels()).toEqual(["Back"]);
+    await press(`admin_addr:${id}:0`, lastId());
+    const screen = lastId();
+    await message({ text: "road" });
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toContain(screen);
+    expect(last().text).toBe("Found 12 addresses (page 1 of 2)");
+  });
+  it("shows the whole directory when the list is asked for after the search draft is gone", async () => {
+    addRoads();
+    await press("admin_list:1");
+    expect(last().text).toBe("Directory (page 2 of 2)\nSend a text to search");
   });
   it("moves a point to a new location and offers no Move for a line", async () => {
     const id = addAddress("1 Main Street", "point", 53.405, -6.16);
     const lineId = addAddress("Main Street", "line", 53.405, -6.16);
-    await press(`admin_addr:${lineId}`);
+    await press(`admin_addr:${lineId}:0`);
     expect(labels()).toEqual(["Edit text", "Edit kind", "Delete", "Back"]);
     await press(`admin_move:${id}`);
     expect(last().text).toBe("Send the new location");
@@ -758,14 +914,14 @@ describe("/admin: incoming addresses and the directory", () => {
   });
   it("changes the kind of a directory address, and offers no Edit kind for an area", async () => {
     const id = addAddress("1 Main Street", "point", 53.405, -6.16);
-    await press(`admin_editkind:${id}`);
+    await press(`admin_editkind:${id}:2`);
     expect(last().text).toBe("Choose the kind");
     expect(keys()).toEqual([
       [`admin_dirkind:house:${id}`],
       [`admin_dirkind:appt:${id}`],
       [`admin_dirkind:facility:${id}`],
       [`admin_dirkind:spot:${id}`],
-      [`admin_addr:${id}`],
+      [`admin_addr:${id}:2`],
     ]);
     await press(`admin_dirkind:appt:${id}`);
     expect(sqlite.prepare("SELECT kind FROM addresses WHERE id = ?").get(id)).toEqual({ kind: "appt" });
@@ -782,7 +938,7 @@ describe("/admin: incoming addresses and the directory", () => {
         .run(JSON.stringify({ type: "Polygon", coordinates: [[[-6.16, 53.405], [-6.159, 53.405], [-6.159, 53.406], [-6.16, 53.405]]] }))
         .lastInsertRowid,
     );
-    await press(`admin_addr:${area}`);
+    await press(`admin_addr:${area}:0`);
     expect(last().text).toBe("Park\nArea (area)");
     expect(labels()).toEqual(["Edit text", "Delete", "Back"]);
     await press(`admin_dirkind:spot:${area}`);
@@ -810,7 +966,7 @@ describe("/admin: incoming addresses and the directory", () => {
     const old = lastId();
     await press("admin_directory");
     await press("admin_back", old);
-    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_location" }]);
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_search" }]);
   });
   it("takes spaces and the postal district off an edited text, and asks again for a blank one", async () => {
     const id = addAddress("1 Main Street", "point", 53.405, -6.16);
@@ -841,7 +997,7 @@ describe("/admin: incoming addresses and the directory", () => {
     await press("admin_directory");
     status = "member";
     const count = sent.length;
-    await message({ location: { latitude: 53.405, longitude: -6.16 } });
+    await message({ text: "road" });
     expect(sent.slice(count).map((call) => call.method)).toEqual(["deleteMessage"]);
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
   });

@@ -28,8 +28,26 @@ interface IncomingAddress {
   text: string;
   kind: AddressKind | "temp";
   geometry: string;
+}
+
+// What the incoming screen shows: the addresses without a decision that have the same text (the
+// lowest ID first), the directory addresses with that text, and the place of the screen in the queue.
+// Two or more addresses in all make a group of duplicates.
+export interface IncomingScreen {
   position: number;
   total: number;
+  incoming: IncomingAddress[];
+  old: DirectoryAddress[];
+}
+
+// The IDs of the addresses a group of duplicates had on screen, and the one that stays.
+export interface DuplicateGroup {
+  old: number[];
+  incoming: number[];
+}
+export interface Keep {
+  from: "old" | "incoming";
+  id: number;
 }
 
 export type Decision = "approved" | "rejected" | "replace";
@@ -87,20 +105,37 @@ export async function addUserAddress(
     .run();
 }
 
-// The next incoming address without a decision after afterId, or the first one when there is
-// none after it, with its place in the queue and the length of the queue.
-export async function nextIncoming(db: D1Database, afterId: number): Promise<IncomingAddress | null> {
-  return db
-    .prepare(
-      `SELECT i.id, i.source, i.text, i.kind, i.geometry,
-         (SELECT count(*) FROM incoming_addresses WHERE decision IS NULL AND id <= i.id) AS position,
-         (SELECT count(*) FROM incoming_addresses WHERE decision IS NULL) AS total
-       FROM incoming_addresses i WHERE i.decision IS NULL
-       ORDER BY i.id <= ?1, i.id LIMIT 1`,
-    )
-    .bind(afterId)
-    .first<IncomingAddress>();
+// The next screen of the incoming addresses after afterId (the ID of the first address of the
+// previous screen), or the first one when there is none after it. Addresses without a decision that
+// have the same text are one screen, shown at the place of the lowest ID.
+export async function nextIncoming(db: D1Database, afterId: number): Promise<IncomingScreen | null> {
+  const { results } = await db
+    .prepare("SELECT id, source, text, kind, geometry FROM incoming_addresses WHERE decision IS NULL ORDER BY id")
+    .all<IncomingAddress>();
+  const groups = new Map<string, IncomingAddress[]>();
+  for (const row of results) {
+    const key = sameTextKey(row.text);
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const screens = [...groups.values()];
+  if (screens.length === 0) return null;
+  const index = Math.max(0, screens.findIndex((group) => group[0].id > afterId));
+  const incoming = screens[index];
+  const old = await db
+    .prepare(`SELECT id, text, kind, geometry FROM addresses WHERE ${sqlTextKey("text")} = ${sqlTextKey("?1")} ORDER BY id`)
+    .bind(incoming[0].text)
+    .all<DirectoryAddress>();
+  return { position: index + 1, total: screens.length, incoming, old: old.results };
 }
+
+const decideStatement = (db: D1Database, id: number, decision: Decision, kind: AddressKind | null) =>
+  db
+    .prepare(
+      `UPDATE incoming_addresses
+       SET decision = ?2, user_id = NULL, kind = CASE WHEN kind = 'temp' AND ?3 IS NOT NULL THEN ?3 ELSE kind END
+       WHERE id = ?1 AND decision IS NULL AND (?2 = 'rejected' OR kind != 'temp' OR ?3 IS NOT NULL)`,
+    )
+    .bind(id, decision, kind);
 
 // The decision also erases the author's Telegram ID. An address with the kind temp takes the chosen
 // kind; without a kind it cannot be approved.
@@ -110,42 +145,110 @@ export async function decideIncoming(
   decision: Decision,
   kind: AddressKind | null = null,
 ): Promise<void> {
-  await db
-    .prepare(
-      `UPDATE incoming_addresses
-       SET decision = ?2, user_id = NULL, kind = CASE WHEN kind = 'temp' AND ?3 IS NOT NULL THEN ?3 ELSE kind END
-       WHERE id = ?1 AND decision IS NULL AND (?2 = 'rejected' OR kind != 'temp' OR ?3 IS NOT NULL)`,
-    )
-    .bind(id, decision, kind)
-    .run();
+  await decideStatement(db, id, decision, kind).run();
 }
 
-// Metres from the shape to the nearest directory address with the same text, or null when there
-// is none.
-export async function sameTextDistance(db: D1Database, text: string, geometry: string): Promise<number | null> {
-  const shape = parseShape(geometry);
-  if (!shape) return null;
-  const { results } = await db
-    .prepare(`SELECT geometry FROM addresses WHERE ${sqlTextKey("text")} = ${sqlTextKey("?1")}`)
-    .bind(text)
-    .all<{ geometry: string }>();
-  const distances = results
-    .map((row) => parseShape(row.geometry))
-    .filter((other): other is Shape => other !== null)
-    .map((other) => distanceBetween(shape, other));
-  return distances.length > 0 ? Math.min(...distances) : null;
+// A group of duplicates is decided by keeping one of its addresses: the other incoming addresses
+// are rejected and the other directory addresses are deleted. A kept incoming address takes the
+// place of the nearest directory address of the group (which keeps its ID), or is approved when the
+// group has none. The caller moves the decided addresses into the directory afterwards.
+export async function keepFromGroup(
+  db: D1Database,
+  group: DuplicateGroup,
+  keep: Keep,
+  kind: AddressKind | null = null,
+): Promise<void> {
+  const list = (ids: number[]) => JSON.stringify(ids);
+  const rejectOthers = (exceptId: number) =>
+    db
+      .prepare(
+        `UPDATE incoming_addresses SET decision = 'rejected', user_id = NULL
+         WHERE decision IS NULL AND id IN (SELECT value FROM json_each(?1)) AND id != ?2`,
+      )
+      .bind(list(group.incoming), exceptId);
+  const deleteOld = (exceptId: number | null) =>
+    db
+      .prepare("DELETE FROM addresses WHERE id IN (SELECT value FROM json_each(?1)) AND id IS NOT ?2")
+      .bind(list(group.old), exceptId);
+
+  if (keep.from === "old") {
+    await db.batch([rejectOthers(0), deleteOld(keep.id)]);
+    return;
+  }
+  const [oldRows, keptRow] = await db.batch([
+    db.prepare("SELECT id, geometry FROM addresses WHERE id IN (SELECT value FROM json_each(?1))").bind(list(group.old)),
+    db.prepare("SELECT geometry, kind FROM incoming_addresses WHERE id = ?1 AND decision IS NULL").bind(keep.id),
+  ]);
+  const kept = keptRow.results[0] as { geometry: string; kind: string } | undefined;
+  // Nothing is decided for an address that is gone or still needs its kind.
+  if (!kept || (kept.kind === "temp" && kind === null)) return;
+  const shape = parseShape(kept.geometry);
+  const nearest = shape
+    ? (oldRows.results as { id: number; geometry: string }[])
+        .flatMap((row) => {
+          const other = parseShape(row.geometry);
+          return other ? [{ id: row.id, distance: distanceBetween(shape, other) }] : [];
+        })
+        .sort((a, b) => a.distance - b.distance)[0]
+    : undefined;
+  await db.batch([
+    rejectOthers(keep.id),
+    deleteOld(nearest?.id ?? null),
+    decideStatement(db, keep.id, nearest ? "replace" : "approved", kind),
+  ]);
 }
 
-// Approves every address of the source without a decision, except those whose text is already in the directory.
+// Approves every address of the source without a decision, except those whose text is already in the
+// directory and those whose text another address without a decision has: such duplicates are decided
+// one by one.
 export async function approveAllFrom(db: D1Database, source: "walk" | "osm"): Promise<void> {
   await db
     .prepare(
-      `UPDATE incoming_addresses SET decision = 'approved'
+      `WITH repeated AS (
+         SELECT ${sqlTextKey("text")} AS key FROM incoming_addresses WHERE decision IS NULL
+         GROUP BY key HAVING count(*) > 1
+       )
+       UPDATE incoming_addresses SET decision = 'approved'
        WHERE source = ?1 AND decision IS NULL
-         AND NOT EXISTS (SELECT 1 FROM addresses a WHERE ${sqlTextKey("a.text")} = ${sqlTextKey("incoming_addresses.text")})`,
+         AND NOT EXISTS (SELECT 1 FROM addresses a WHERE ${sqlTextKey("a.text")} = ${sqlTextKey("incoming_addresses.text")})
+         AND ${sqlTextKey("incoming_addresses.text")} NOT IN (SELECT key FROM repeated)`,
     )
     .bind(source)
     .run();
+}
+
+// D1 refuses a LIKE pattern longer than this many bytes.
+const SEARCH_PATTERN_MAX_BYTES = 50;
+
+// The LIKE pattern that finds the text anywhere in an address; null when D1 would refuse it.
+export function searchPattern(text: string): string | null {
+  const pattern = `%${text.replace(/[\\%_]/g, "\\$&")}%`;
+  return new TextEncoder().encode(pattern).length <= SEARCH_PATTERN_MAX_BYTES ? pattern : null;
+}
+
+// One page of the directory by text, alphabetically; a null pattern lists everything. A page out of
+// range becomes the nearest one.
+export async function listDirectory(
+  db: D1Database,
+  pattern: string | null,
+  page: number,
+  perPage: number,
+): Promise<{ rows: { id: number; text: string }[]; total: number; page: number; pages: number }> {
+  const where = "WHERE ?1 IS NULL OR text LIKE ?1 ESCAPE '\\'";
+  const rows = (wanted: number) =>
+    db
+      .prepare(`SELECT id, text FROM addresses ${where} ORDER BY lower(text), id LIMIT ?2 OFFSET ?3`)
+      .bind(pattern, perPage, wanted * perPage);
+  const wanted = Math.max(0, Math.floor(page));
+  const [counted, found] = await db.batch([
+    db.prepare(`SELECT count(*) AS n FROM addresses ${where}`).bind(pattern),
+    rows(wanted),
+  ]);
+  const total = (counted.results[0] as { n: number }).n;
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  const last = Math.min(wanted, pages - 1);
+  const results = last === wanted ? found.results : (await rows(last).all()).results;
+  return { rows: results as { id: number; text: string }[], total, page: last, pages };
 }
 
 export async function getAddress(db: D1Database, id: number): Promise<DirectoryAddress | null> {
@@ -188,7 +291,7 @@ interface Known {
 
 // The nightly move: approved addresses go into the directory, unless a directory address with the
 // same text is within DUPLICATE_M (then the incoming one is dropped) or farther away (then it stays
-// without a decision, and its screen offers Keep old and Replace old); "replace" puts the new shape and text in
+// without a decision, and its screen shows it with the directory address as a group of duplicates); "replace" puts the new shape and text in
 // place of the nearest directory address with the same text; rejected addresses are dropped.
 // Two reads and one batch of writes.
 export async function moveIncomingAddresses(db: D1Database): Promise<void> {
