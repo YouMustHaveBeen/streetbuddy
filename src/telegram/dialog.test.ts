@@ -238,8 +238,9 @@ describe("the commands of the menu", () => {
         { text: "Month before", callback_data: "map:month_before" },
       ],
     ]);
+    const menu = buttonId();
     for (const period of ["today", "week", "last_month", "month_before"]) {
-      await press(`map:${period}`, 5);
+      await press(`map:${period}`, menu);
       expect(lastSent().text).toBe("Report map");
       expect(lastSent().reply_markup.inline_keyboard).toEqual([
         [{ text: "Open map", url: `https://site.example/reportmap?period=${period}` }],
@@ -257,11 +258,60 @@ describe("the commands of the menu", () => {
       const screen = buttonId();
       await text(command);
       if (command === "/feedback") expect(draft()?.step).toBe("feedback_input");
-      else expect(draft()).toBeUndefined();
+      else expect(draft()?.step).toBe(command === "/reportmap" ? "screen" : undefined);
       expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
       expect(sentTexts()).not.toContain("Report cancelled");
       await press("cancel");
     }
+  });
+});
+
+describe("screens with buttons", () => {
+  it("a command removes the Report map screen of the command before it", async () => {
+    await text("/reportmap");
+    const screen = buttonId();
+    expect(draft()?.step).toBe("screen");
+    await text("/manual");
+    expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
+    expect(draft()).toBeUndefined();
+  });
+  it("a location sent while such a screen is open removes it and starts a report", async () => {
+    await text("/reportmap");
+    const screen = buttonId();
+    expect(draft()?.step).toBe("screen");
+    await toPhotos();
+    expect(draft()?.step).toBe("photos");
+    expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
+  });
+  it("a command removes the Report map screen together with the Open map messages sent by its buttons", async () => {
+    await text("/reportmap");
+    const menu = buttonId();
+    await press("map:today", menu);
+    const today = buttonId();
+    await press("map:week", menu);
+    const week = buttonId();
+    expect(new Set([menu, today, week]).size).toBe(3);
+    await text("/manual");
+    const deleted = called("deleteMessage").map((call) => call.body.message_id);
+    expect(deleted).toEqual(expect.arrayContaining([menu, today, week]));
+    expect(draft()).toBeUndefined();
+  });
+  it("a period button of a Report map screen that is not the remembered one only gets its answer", async () => {
+    await text("/reportmap");
+    const old = buttonId();
+    await text("/hotspots");
+    await text("/reportmap");
+    const before = called("sendMessage").length;
+    await press("map:today", old);
+    expect(called("sendMessage").length).toBe(before);
+    expect(called("answerCallbackQuery").length).toBeGreaterThan(0);
+  });
+  it("a screen is remembered over a report draft that has expired", async () => {
+    sqlite
+      .prepare("INSERT INTO drafts (user_id, step, prompt, buttons_message_id, created_at) VALUES (?, 'finishing', 'x', 5, ?)")
+      .run(USER, Date.now() - 25 * 60 * 60 * 1000);
+    await text("/reportmap");
+    expect(draft()?.step).toBe("screen");
   });
 });
 

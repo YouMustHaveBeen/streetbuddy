@@ -40,7 +40,10 @@ import {
   createDraft,
   deleteDraft,
   deleteFinishedDraft,
+  followScreen,
+  isCurrentScreen,
   loadDraft,
+  rememberScreen,
   moveStep,
   recordPhoto,
   saveFinalMessage,
@@ -385,9 +388,11 @@ async function handleCommand(c: Context, command: string): Promise<void> {
     await send(c, pageLink(c.env.SITE_URL, INSTALL_PATH, "Setup guide"), undefined, true);
   } else if (command === "hotspots") {
     const page = hotspotPage(await getHotspots(c.env.DB), 0);
-    await send(c, page.text, page.buttons.length === 0 ? undefined : { inline_keyboard: [page.buttons] });
+    const shown = await send(c, page.text, page.buttons.length === 0 ? undefined : { inline_keyboard: [page.buttons] });
+    if (shown !== null && page.buttons.length > 0) await rememberScreen(c.env.DB, c.userId, shown);
   } else if (command === "reportmap") {
-    await send(c, REPORT_MAP, { inline_keyboard: REPORT_MAP_BUTTONS });
+    const shown = await send(c, REPORT_MAP, { inline_keyboard: REPORT_MAP_BUTTONS });
+    if (shown !== null) await rememberScreen(c.env.DB, c.userId, shown);
   } else if (command === "phone") {
     await show(c, null, YOUR_PHONE, { step: "phone_choice" });
   } else {
@@ -670,7 +675,9 @@ export async function handleMessage(
     return;
   }
 
-  const draft = await loadDraft(env.DB, userId);
+  const stored = await loadDraft(env.DB, userId);
+  // A screen with buttons that a command removes is not a report.
+  const draft = stored?.step === "screen" ? null : stored;
 
   // /admin waiting for a location or a text; someone no longer an administrator only loses it.
   if (draft && isAdminStep(draft.step)) {
@@ -693,7 +700,8 @@ export async function handleMessage(
       await send(c, FORM_CHANGED_TEXT);
       return;
     }
-    if (restart) await stopReport(env, userId, chatId);
+    // A remembered screen goes away when a location starts the report.
+    if (restart || (stored?.step === "screen" && message.location)) await stopReport(env, userId, chatId);
     const current = restart ? null : draft;
     if (message.location) {
       await handleLocation(c, current, message, message.location.latitude, message.location.longitude);
@@ -934,10 +942,15 @@ export async function handleButton(
     return;
   }
 
+  // A period button works only on the remembered Report map screen; the screen and the messages sent
+  // by its buttons stay remembered, so that a command removes them all.
   if (data.startsWith(MAP_PREFIX)) {
     const period = MAP_PERIODS.find((name) => name === data.slice(MAP_PREFIX.length));
+    const [screen] = await Promise.all([loadDraft(env.DB, userId), answered]);
+    if (!period || !screen || !isCurrentScreen(screen, query.messageId)) return;
     const link = [[{ text: OPEN_MAP, url: `${env.SITE_URL}${REPORT_MAP_PATH}?period=${period}` }]];
-    await Promise.all([answered, period ? send(c, REPORT_MAP, { inline_keyboard: link }) : null]);
+    const shown = await send(c, REPORT_MAP, { inline_keyboard: link });
+    if (shown !== null && !(await followScreen(env.DB, screen, shown))) await deleteMessage(token, chatId, shown);
     return;
   }
 
@@ -949,7 +962,7 @@ export async function handleButton(
 
   const [draft] = await Promise.all([loadDraft(env.DB, userId), answered]);
   // A button of a finished report or of a replaced screen does nothing.
-  if (!draft || draft.buttons_message_id !== query.messageId) {
+  if (!draft || draft.step === "screen" || draft.buttons_message_id !== query.messageId) {
     if (data === "done") await answerButton(token, query.id);
     return;
   }

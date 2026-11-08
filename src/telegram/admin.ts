@@ -9,6 +9,7 @@ import {
   district,
   isInArea,
   keepFromGroup,
+  rejectGroup,
   listDirectory,
   moveIncomingAddresses,
   withoutPostalDistrict,
@@ -38,7 +39,8 @@ import {
   deleteDraft,
   deleteSearchDraft,
   loadDraft,
-  pointSearchDraft,
+  pointAdminDraft,
+  rememberScreen,
   swapScreen,
   takeAdminGroup,
 } from "./draft";
@@ -90,6 +92,7 @@ const DELETE = "admin_del";
 const LIST = "admin_list";
 const KEEP = "admin_keep";
 const KEEP_KIND = "admin_keepkind";
+const REJECT_GROUP = "admin_rejectgroup";
 const KEEP_SET = "admin_keepset";
 const GROUP = "g";
 
@@ -132,7 +135,7 @@ const backButton = (pinId: number | null = null): Button => ({
 const send = (env: AdminEnv, chatId: number, text: string, buttons?: Button[][]) =>
   sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, text, buttons ? { reply_markup: { inline_keyboard: buttons } } : {});
 
-async function sendScreen(env: AdminEnv, chatId: number): Promise<number | null> {
+async function sendScreen(env: AdminEnv, userId: number, chatId: number): Promise<number | null> {
   const status = await getSwitchStatus(env.DB);
   let lastCheck = "none yet";
   if (status.lastCheck) {
@@ -155,14 +158,14 @@ async function sendScreen(env: AdminEnv, chatId: number): Promise<number | null>
     ],
   ];
   if (env.DIRECTORY_LINK_SECRET) buttons.push([{ text: "Directory map", url: await directoryLink(env) }]);
-  return send(env, chatId, text, buttons);
+  return remember(env, userId, send(env, chatId, text, buttons));
 }
 
 // The next incoming screen after afterId. One address is shown with a pin on the map above it;
 // addresses with the same text, among themselves and in the directory, are shown together as a group.
 async function sendIncoming(env: AdminEnv, userId: number, chatId: number, afterId: number): Promise<number | null> {
   const item = await nextIncoming(env.DB, afterId);
-  if (!item) return send(env, chatId, NO_INCOMING, [[backButton()]]);
+  if (!item) return remember(env, userId, send(env, chatId, NO_INCOMING, [[backButton()]]));
   if (item.incoming.length + item.old.length > 1) return sendGroup(env, userId, chatId, item);
   const [address] = item.incoming;
 
@@ -195,6 +198,7 @@ async function sendIncoming(env: AdminEnv, userId: number, chatId: number, after
     [{ text: "Approve all from OSM", callback_data: `${ALL_OSM}${tail}` }],
   ]);
   if (sent === null && pinId !== null) await deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, pinId);
+  if (sent !== null) await rememberScreen(env.DB, userId, sent, pinId === null ? [] : [pinId]);
   return sent;
 }
 
@@ -228,21 +232,23 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
           : `${formOf(address.geometry).form} (${address.kind}), ${SOURCE_TEXT[address.source]}`,
     })),
   ];
-  const pins = await Promise.all(
-    members.map((member) => {
-      const shape = formOf(member.geometry).shape;
-      const middle = shape ? shapeMiddle(shape) : null;
-      return middle
-        ? callTelegram<{ message_id: number }>(env.TELEGRAM_BOT_TOKEN, "sendVenue", {
+  // One after another: sent together, the pins would arrive in any order.
+  const pins: ({ message_id: number } | null)[] = [];
+  for (const member of members) {
+    const shape = formOf(member.geometry).shape;
+    const middle = shape ? shapeMiddle(shape) : null;
+    pins.push(
+      middle
+        ? await callTelegram<{ message_id: number }>(env.TELEGRAM_BOT_TOKEN, "sendVenue", {
             chat_id: chatId,
             latitude: middle.lat,
             longitude: middle.lon,
             title: member.label,
             address: first.text,
           })
-        : null;
-    }),
-  );
+        : null,
+    );
+  }
   const pinIds = pins.flatMap((pin) => (pin ? [pin.message_id] : []));
 
   const text = [
@@ -258,6 +264,7 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
         callback_data: member.needsKind ? `${KEEP_KIND}:${i}:${first.id}` : `${KEEP}:${i}`,
       },
     ]),
+    [{ text: "Reject all", callback_data: REJECT_GROUP }],
     [{ text: "Next", callback_data: `${DECIDE}:next:${first.id}:${GROUP}` }],
     [{ text: "Approve all from the walk", callback_data: `${ALL_WALK}:${GROUP}` }, { text: "Back", callback_data: `${BACK}:${GROUP}` }],
     [{ text: "Approve all from OSM", callback_data: `${ALL_OSM}:${GROUP}` }],
@@ -278,9 +285,32 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
 // The addresses of a group as shown, and the ID that places the group in the queue.
 type DuplicateGroupScreen = DuplicateGroup & { first: number };
 
+// Remembers the screen that has just been sent, with the messages in cleanupIds, so that a command
+// of the menu removes them.
+const remember = (
+  env: AdminEnv,
+  userId: number,
+  screen: Promise<number | null>,
+  cleanupIds: number[] = [],
+): Promise<number | null> =>
+  screen.then(async (messageId) => {
+    if (messageId !== null) await rememberScreen(env.DB, userId, messageId, cleanupIds);
+    return messageId;
+  });
+
 // The screen with a button for each kind an administrator can give an address, and Back.
-const sendKindScreen = (env: AdminEnv, chatId: number, answer: (kind: string) => string, back: Button) =>
+const kindScreen = (env: AdminEnv, chatId: number, answer: (kind: string) => string, back: Button) =>
   send(env, chatId, CHOOSE_KIND, [...CHOOSABLE_KINDS.map((kind) => [{ text: kind, callback_data: answer(kind) }]), [back]]);
+
+// The kind screen, remembered with the messages in cleanupIds.
+const sendKindScreen = (
+  env: AdminEnv,
+  userId: number,
+  chatId: number,
+  answer: (kind: string) => string,
+  back: Button,
+  cleanupIds: number[] = [],
+) => remember(env, userId, kindScreen(env, chatId, answer, back), cleanupIds);
 
 // A page of the directory, alphabetically, or of the addresses that have the text in them. The
 // search text is kept in the draft, which also receives the next text as a new search.
@@ -313,9 +343,9 @@ async function sendList(
 }
 
 // The address screen from page `page` of the directory screen; its Back returns to that page.
-async function sendAddress(env: AdminEnv, chatId: number, id: number, page: number): Promise<number | null> {
+async function sendAddress(env: AdminEnv, userId: number, chatId: number, id: number, page: number): Promise<number | null> {
   const address = await getAddress(env.DB, id);
-  if (!address) return sendScreen(env, chatId);
+  if (!address) return sendScreen(env, userId, chatId);
   const shape = shapeFromGeometry(JSON.parse(address.geometry));
   const actions: Button[] = [{ text: "Edit text", callback_data: `${EDIT_TEXT}:${id}` }];
   if (address.kind !== "area") actions.push({ text: "Edit kind", callback_data: `${EDIT_KIND}:${id}:${page}` });
@@ -328,7 +358,8 @@ async function sendAddress(env: AdminEnv, chatId: number, id: number, page: numb
   ]);
 }
 
-// Makes the directory screen draft point to the screen that has just been sent.
+// Makes the directory screen draft point to the screen that has just been sent; without one, the
+// screen is remembered like any other.
 const pointDraft = (
   env: AdminEnv,
   userId: number,
@@ -336,7 +367,10 @@ const pointDraft = (
   screen: Promise<number | null>,
 ): Promise<number | null> =>
   screen.then(async (messageId) => {
-    if (messageId !== null) await pointSearchDraft(env.DB, userId, fromMessageId, messageId);
+    if (messageId !== null) {
+      await pointAdminDraft(env.DB, userId, "admin_search", fromMessageId, messageId);
+      await rememberScreen(env.DB, userId, messageId);
+    }
     return messageId;
   });
 
@@ -362,7 +396,7 @@ async function askInput(
 // A report in progress is stopped without a word (see stopReport).
 export async function handleAdminCommand(env: AdminEnv, userId: number, chatId: number): Promise<void> {
   await stopReport(env, userId, chatId);
-  await sendScreen(env, chatId);
+  await sendScreen(env, userId, chatId);
 }
 
 // Every button sends its next screen and removes the one it was pressed on, and the pin above it.
@@ -385,29 +419,43 @@ export async function handleAdminButton(
   // The pins above a group of duplicates; they are in its draft, which is taken once.
   let groupPins: number[] = [];
   const pinOf = (value: string | undefined) => (value && value !== GROUP ? Number(value) : null);
-  const takePins = async (value: string | undefined) =>
-    value === GROUP ? ((await takeAdminGroup(env.DB, userId))?.pins ?? []) : [];
+  // A button of a group of duplicates takes the draft of the group shown in its own message; null when
+  // that message is not the current group screen.
+  const takeGroup = () => takeAdminGroup(env.DB, userId, query.messageId);
+  const takePins = async (value: string | undefined) => (value === GROUP ? ((await takeGroup())?.pins ?? null) : []);
   let next: Promise<number | null>;
   if (name === SWITCH_ON || name === SWITCH_OFF) {
     await (name === SWITCH_ON ? enableBot(env.DB) : disableBot(env.DB));
-    next = sendScreen(env, chatId);
+    next = sendScreen(env, userId, chatId);
   } else if (name === INCOMING) {
     next = sendIncoming(env, userId, chatId, 0);
   } else if (name === DECIDE) {
     const id = Number(second);
     pinId = pinOf(third);
-    groupPins = await takePins(third);
+    const pins = await takePins(third);
+    if (pins === null) {
+      await answered;
+      return;
+    }
+    groupPins = pins;
     const decision = DECISIONS[first];
     if (decision) {
       await decideIncoming(env.DB, id, decision);
       await moveIncomingAddresses(env.DB);
     }
     next = sendIncoming(env, userId, chatId, first === "same" ? id - 1 : id);
-  } else if (name === KEEP || name === KEEP_SET) {
-    const taken = await takeAdminGroup(env.DB, userId);
-    if (taken) {
-      groupPins = taken.pins;
-      const shown = JSON.parse(taken.options) as DuplicateGroupScreen;
+  } else if (name === KEEP || name === KEEP_SET || name === REJECT_GROUP) {
+    const taken = await takeGroup();
+    if (!taken) {
+      await answered;
+      return;
+    }
+    groupPins = taken.pins;
+    const shown = JSON.parse(taken.options) as DuplicateGroupScreen;
+    if (name === REJECT_GROUP) {
+      await rejectGroup(env.DB, shown);
+      await moveIncomingAddresses(env.DB);
+    } else {
       const place = Number(first);
       const keepId = place < shown.old.length ? shown.old[place] : shown.incoming[place - shown.old.length];
       const kind = name === KEEP_SET ? CHOOSABLE_KINDS.find((chosen) => chosen === second) : undefined;
@@ -415,22 +463,38 @@ export async function handleAdminButton(
         await keepFromGroup(env.DB, shown, { from: place < shown.old.length ? "old" : "incoming", id: keepId }, kind ?? null);
         await moveIncomingAddresses(env.DB);
       }
-      next = sendIncoming(env, userId, chatId, shown.first - 1);
-    } else {
-      next = sendIncoming(env, userId, chatId, 0);
     }
+    next = sendIncoming(env, userId, chatId, shown.first - 1);
   } else if (name === KEEP_KIND) {
-    next = sendKindScreen(env, chatId, (kind) => `${KEEP_SET}:${first}:${kind}`, {
+    // The group draft, with its pins, moves to the kind screen; a button of another screen sends nothing.
+    const from = query.messageId;
+    const draft = await loadDraft(env.DB, userId);
+    if (from === undefined || draft?.step !== "admin_group" || draft.buttons_message_id !== from) {
+      await answered;
+      return;
+    }
+    next = kindScreen(env, chatId, (kind) => `${KEEP_SET}:${first}:${kind}`, {
       text: "Back",
       callback_data: `${DECIDE}:same:${second}:${GROUP}`,
+    }).then(async (messageId) => {
+      if (messageId === null) return null;
+      if (await pointAdminDraft(env.DB, userId, "admin_group", from, messageId)) return messageId;
+      await deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, messageId);
+      return null;
     });
   } else if (name === KIND) {
     const id = Number(second);
     const tail = third ? `:${third}` : "";
-    next = sendKindScreen(env, chatId, (kind) => `${SET_KIND}:${first}:${kind}:${id}${tail}`, {
-      text: "Back",
-      callback_data: `${DECIDE}:same:${id}${tail}`,
-    });
+    // The pin of the address stays above the kind screen and is remembered with it.
+    const pin = pinOf(third);
+    next = sendKindScreen(
+      env,
+      userId,
+      chatId,
+      (kind) => `${SET_KIND}:${first}:${kind}:${id}${tail}`,
+      { text: "Back", callback_data: `${DECIDE}:same:${id}${tail}` },
+      pin === null ? [] : [pin],
+    );
   } else if (name === SET_KIND) {
     const id = Number(third);
     pinId = fourth ? Number(fourth) : null;
@@ -443,15 +507,25 @@ export async function handleAdminButton(
     next = sendIncoming(env, userId, chatId, id);
   } else if (name === ALL_WALK || name === ALL_OSM) {
     pinId = pinOf(first);
-    groupPins = await takePins(first);
+    const pins = await takePins(first);
+    if (pins === null) {
+      await answered;
+      return;
+    }
+    groupPins = pins;
     await approveAllFrom(env.DB, name === ALL_WALK ? "walk" : "osm");
     await moveIncomingAddresses(env.DB);
     next = sendIncoming(env, userId, chatId, 0);
   } else if (name === BACK) {
     pinId = pinOf(first);
-    groupPins = await takePins(first);
+    const pins = await takePins(first);
+    if (pins === null) {
+      await answered;
+      return;
+    }
+    groupPins = pins;
     if (query.messageId !== undefined) await deleteAdminDraft(env.DB, userId, query.messageId);
-    next = sendScreen(env, chatId);
+    next = sendScreen(env, userId, chatId);
   } else if (name === DIRECTORY) {
     await stopReport(env, userId, chatId);
     next = sendList(env, userId, chatId, null, 0);
@@ -459,7 +533,7 @@ export async function handleAdminButton(
     const draft = await loadDraft(env.DB, userId);
     next = sendList(env, userId, chatId, draft?.step === "admin_search" ? draft.address : null, Number(first) || 0);
   } else if (name === ADDRESS) {
-    next = pointDraft(env, userId, query.messageId ?? 0, sendAddress(env, chatId, Number(first), Number(second) || 0));
+    next = pointDraft(env, userId, query.messageId ?? 0, sendAddress(env, userId, chatId, Number(first), Number(second) || 0));
   } else if (name === EDIT_KIND) {
     const id = Number(first);
     const page = Number(second) || 0;
@@ -467,13 +541,13 @@ export async function handleAdminButton(
       env,
       userId,
       query.messageId ?? 0,
-      sendKindScreen(env, chatId, (kind) => `${DIR_KIND}:${kind}:${id}`, { text: "Back", callback_data: `${ADDRESS}:${id}:${page}` }),
+      sendKindScreen(env, userId, chatId, (kind) => `${DIR_KIND}:${kind}:${id}`, { text: "Back", callback_data: `${ADDRESS}:${id}:${page}` }),
     );
   } else if (name === DIR_KIND) {
     const kind = CHOOSABLE_KINDS.find((chosen) => chosen === first);
     if (kind) await setAddressKind(env.DB, Number(second), kind);
     await deleteSearchDraft(env.DB, userId);
-    next = send(env, chatId, SAVED).then(() => sendScreen(env, chatId));
+    next = send(env, chatId, SAVED).then(() => sendScreen(env, userId, chatId));
   } else if (name === EDIT_TEXT) {
     next = askInput(env, userId, chatId, "admin_text", WRITE_NEW_ADDRESS, Number(first));
   } else if (name === MOVE) {
@@ -481,7 +555,7 @@ export async function handleAdminButton(
   } else if (name === DELETE) {
     await deleteAddress(env.DB, Number(first));
     await deleteSearchDraft(env.DB, userId);
-    next = send(env, chatId, SAVED).then(() => sendScreen(env, chatId));
+    next = send(env, chatId, SAVED).then(() => sendScreen(env, userId, chatId));
   } else {
     await answered;
     return;
@@ -494,7 +568,11 @@ export async function handleAdminButton(
     await Promise.all(groupPins.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
     throw error;
   }
-  if (messageId === null) return;
+  if (messageId === null) {
+    // The group draft is already taken, so its pins are removed even when the next screen is not sent.
+    await Promise.all(groupPins.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
+    return;
+  }
   const old = [query.messageId, pinId, ...groupPins].filter((id): id is number => typeof id === "number" && Number.isFinite(id));
   await Promise.all(old.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
 }
@@ -519,7 +597,7 @@ export async function handleAdminInput(
     ]);
   };
 
-  // A question of a former version (the location for the directory) shows the directory screen.
+  // A draft step that no /admin screen asks for any more shows the directory screen.
   if (!["admin_group", "admin_search", "admin_text", "admin_move"].includes(draft.step)) {
     await deleteDraft(env.DB, userId, draft.draft_id);
     const shown = await sendList(env, userId, chatId, null, 0);
@@ -578,5 +656,5 @@ export async function handleAdminInput(
   }
   await finish();
   await send(env, chatId, SAVED);
-  await sendScreen(env, chatId);
+  await sendScreen(env, userId, chatId);
 }
