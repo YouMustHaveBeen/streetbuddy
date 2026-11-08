@@ -63,6 +63,8 @@ cd ~/YouMustHaveBeen/StreetBuddy
 node scripts/diff-directory.mjs ~/Downloads/map.geojson
 ```
 
+Если пишет `EPERM: operation not permitted`, macOS не дает Terminal читать папку Downloads. Два выхода. Первый, один раз: System Settings → Privacy & Security → Files & Folders → у Terminal включи Downloads (если Terminal там нет — Full Disk Access), закрой Terminal через Cmd+Q и открой заново. Второй: в Finder перетащи файл из Downloads в папку `YouMustHaveBeen` и вставь команду с путем `~/YouMustHaveBeen/map.geojson` (имя файла свое).
+
 2. Скрипт сравнивает сохраненный файл с `exports/directory.geojson`. Все, что совпадает, он выбрасывает. Остальное пишет в следующий по номеру `config/walks/walk-N.geojson` и сообщает, сколько адресов записано.
 3. Если пишет `Nothing new`, значит ты ничего не изменила, файл не создан.
 4. Если пишет, что у адресов нет `address` или `kind`, открой файл `config/walks/walk-N.geojson` на geojson.io, заполни поля и сохрани (Save, GeoJSON). Скачанный файл скопируй из Downloads поверх `config/walks/walk-N.geojson` (в Finder: перетащи с зажатой клавишей Option, согласись на замену).
