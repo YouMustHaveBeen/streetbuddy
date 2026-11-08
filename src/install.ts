@@ -42,9 +42,6 @@ const PAGE_SCRIPT = `(function () {
   var SCRIPT_URL = location.origin + "${SCRIPT_PATH}";
   var CONTACT_METHODS = ["Email", "Phone Call", "Text Message"];
 
-  ${CHOICE_SCRIPT}
-  bindChoice("variant");
-
   // The phone decides which blocks (data-for) are shown.
   var os = "android";
 
@@ -89,40 +86,37 @@ const PAGE_SCRIPT = `(function () {
 
   var form = document.getElementById("bookmark-form");
   var error = document.getElementById("bookmark-error");
-  var created = document.getElementById("bookmark-created");
-  var ready = document.getElementById("bookmark-ready");
-  var link = document.getElementById("bookmark-link");
-  var copied = document.getElementById("bookmark-copied");
+  var prepared = document.getElementById("bookmark-prepared");
   var copyFailed = document.getElementById("bookmark-copy-failed");
-  var bookmark = "";
+  var code = document.getElementById("bookmark-code");
+
+  function showCode(text) {
+    copyFailed.hidden = false;
+    code.value = text;
+    code.hidden = false;
+  }
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     var profile = validProfile(form);
     error.hidden = profile !== null;
-    created.hidden = profile === null;
-    ready.hidden = profile === null;
-    copied.hidden = true;
+    prepared.hidden = true;
     copyFailed.hidden = true;
+    code.hidden = true;
     if (!profile) return;
     // The bookmarklet holds the data and the address of the script.
-    bookmark = "javascript:" + encodeURIComponent(
+    var bookmark = "javascript:" + encodeURIComponent(
       "void function () {globalThis.STREETBUDDY_PROFILE = " + JSON.stringify(profile) + ";" +
       "var s = document.createElement('script'); s.src = " + JSON.stringify(SCRIPT_URL) + ";" +
       "document.head.appendChild(s);}();"
     );
-    link.href = bookmark;
-  });
-
-  // A plain tap on the bookmarklet link does nothing.
-  link.addEventListener("click", function (event) { event.preventDefault(); });
-
-  document.getElementById("bookmark-copy").addEventListener("click", function () {
-    copied.hidden = true;
-    copyFailed.hidden = true;
+    if (!navigator.clipboard) {
+      showCode(bookmark);
+      return;
+    }
     navigator.clipboard.writeText(bookmark).then(
-      function () { copied.hidden = false; },
-      function () { copyFailed.hidden = false; }
+      function () { prepared.hidden = false; },
+      function () { showCode(bookmark); }
     );
   });
 })();`;
@@ -137,13 +131,11 @@ const PAGE = `<!doctype html>
 <style>
 ${BASE_STYLE}
   .install { display: inline-block; padding: 10px 20px; border: 2px solid; border-radius: 6px; font: inherit; font-weight: bold; text-decoration: none; }
-  /* Colors the bookmark link like the real buttons. */
-  #bookmark-link { color: ButtonText; background-color: ButtonFace; }
   .ok { color: #1a7f37; }
-  @media (prefers-color-scheme: dark) { .ok { color: #3fb950; } }
-  summary { cursor: pointer; font-weight: bold; margin: 1.5rem 0 0.75rem; }
+  .warn { color: #c62828; }
+  @media (prefers-color-scheme: dark) { .ok { color: #3fb950; } .warn { color: #ff6b6b; } }
   label { display: block; margin: 12px 0; }
-  input, select { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: 6px; }
+  input, select, textarea { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: 6px; }
 </style>
 </head>
 <body>
@@ -180,101 +172,103 @@ ${BASE_STYLE}
 
 <section>
 <div data-for="android">
-<p>Ваши личные данные будут храниться в закладке Chrome: при запуске закладка загружает с сайта StreetBuddy скрипт, который добавляет эти данные в форму репорта. Закладку нужно запускать на каждом репорте. Для запуска нужен интернет.</p>
 <p>Вам потребуется:</p>
 <ul>
-<li>Ввести ваши личные данные на этой странице и создать закладку.</li>
-<li>Добавить закладку в Chrome.</li>
-<li>Составить тестовый репорт.</li>
+<li>открыть браузер Chrome,</li>
+<li>ввести личные данные,</li>
+<li>подготовить закладку,</li>
+<li>добавить закладку в Chrome,</li>
+<li>составить и отменить тестовый репорт</li>
 </ul>
 
-<h3>1. Откройте руководство в Chrome</h3>
-<p>Нажмите «⋮» вверху справа и «Open in browser». Если руководство открылось не в Chrome, сделайте Chrome браузером по умолчанию (настройки телефона, «Apps», «Default apps», «Browser app», Chrome) или нажмите в этом же меню «Copy Link», откройте Chrome и вставьте адрес в адресную строку.</p>
+<h3>1. Откройте это руководство в Chrome</h3>
+<p>Если вы читаете это руководство с компьютера, время переключиться на телефон: бот работает и настраивается с телефона.</p>
+<p>По умолчанию телеграм открывает ссылки на телефоне в своем встроенном браузере, а вам нужен браузер Chrome. Промотайте этот текст немного вниз, чтобы сверху открылась панель, нажмите в ней «⋮» справа и выберите «Open in Chrome browser», руководство откроется в Chrome.</p>
 </div>
 
 <div data-for="iphone-bookmark" hidden>
-<p>Ваши личные данные будут храниться в закладке Safari: при запуске закладка загружает с сайта StreetBuddy скрипт, который добавляет эти данные в форму репорта. Закладку нужно запускать на каждом репорте. Для запуска нужен интернет.</p>
 <p>Вам потребуется:</p>
 <ul>
-<li>Ввести ваши личные данные на этой странице и создать закладку.</li>
-<li>Добавить закладку в Safari.</li>
-<li>Составить тестовый репорт.</li>
+<li>открыть браузер Safari,</li>
+<li>ввести личные данные,</li>
+<li>подготовить закладку,</li>
+<li>добавить закладку в Safari,</li>
+<li>составить и отменить тестовый репорт</li>
 </ul>
 
-<h3>1. Откройте руководство в Safari</h3>
+<h3>1. Откройте это руководство в Safari</h3>
+<p>Если вы читаете это руководство с компьютера, время переключиться на телефон: бот работает и настраивается с телефона.</p>
 <p>Если это руководство открылось внутри Telegram, нажмите «⋯» вверху и «Open in Safari».</p>
-<p>Это необязательно, но можно сделать так, чтобы страницы из Telegram сразу открывались в Safari: в Telegram откройте «Settings», «Data and Storage», «Open Links in» и выберите Safari. Настройка действует на все страницы, которые вы открываете из Telegram, а не только на бота.</p>
 </div>
 
-<div data-for="android iphone-bookmark">
-<h3>2. Создайте закладку</h3>
-<p>Введите ваши данные. Они нужны только для закладки: эта страница собирает закладку прямо в браузере и никуда данные не отправляет.</p>
 <form id="bookmark-form" novalidate>
+<h3>2. Введите личные данные</h3>
+<p>Чтобы создать закладку с вашими данными, боту нужно собрать данные вместе. Бот никуда их не отправляет, они остаются на этой странице в вашем телефоне.</p>
+<p>Введите ваши данные в поля ниже.</p>
 <label>Имя и фамилия (First Name and Last Name)<input name="name" type="text"></label>
 <label>Телефон (Phone)<input name="phone" type="tel"></label>
 <label>Email<input name="email" type="email"></label>
 <label>Адрес (Address)<input name="address" type="text"></label>
 <label>Как с вами связаться (How you wish to be contacted)<select name="contact"><option value="" selected></option><option>Email</option><option>Phone Call</option><option>Text Message</option></select></label>
-<p><button class="install" type="submit">Создать закладку</button></p>
-<p id="bookmark-created" class="ok" role="status" hidden>Закладка создана.</p>
+
+<h3>3. Подготовьте закладку</h3>
+<p>Кнопка «Подготовить закладку» проверяет введенные данные, собирает из них код и кладет этот код в буфер обмена, чтобы вы могли вставить его в закладку.</p>
+<p>Нажмите кнопку «Подготовить закладку».</p>
+<p><button class="install" type="submit">Подготовить закладку</button></p>
+<p id="bookmark-prepared" class="ok" role="status" hidden>Закладка подготовлена</p>
 <p id="bookmark-error" role="alert" hidden>Заполните все поля. Email должен быть в виде name@example.com.</p>
+<p id="bookmark-copy-failed" class="warn" role="alert" hidden>Не получилось скопировать код автоматически. Скопируйте его из поля ниже: долгое нажатие на поле, «Select all», «Copy»</p>
+<textarea id="bookmark-code" aria-label="Код закладки" rows="6" readonly hidden></textarea>
 </form>
 
-<div id="bookmark-ready" hidden>
-<h3 data-for="android">3. Добавьте закладку в Chrome</h3>
-<h3 data-for="iphone-bookmark" hidden>3. Добавьте закладку в Safari</h3>
-<p>Нажмите кнопку «Скопировать закладку»:</p>
-<p><button class="install" type="button" id="bookmark-copy">Скопировать закладку</button></p>
-<p id="bookmark-copied" class="ok" role="status" hidden>Закладка скопирована.</p>
-<p id="bookmark-copy-failed" role="alert" hidden>Скопировать не получилось. Попробуйте «Другие варианты добавления закладки» ниже.</p>
 <div data-for="android">
-<p>Добавьте эту страницу в закладки: нажмите «⋮» вверху справа и значок звезды ☆. Звезда станет закрашенной ★: нажмите «⋮» и ее еще раз, откроется окно закладки.</p>
-<p>В окне закладки в поле названия сотрите название и напишите qqqwww. В поле адреса сотрите адрес этой страницы и вставьте скопированное (долгое нажатие на поле, «Paste»). Вернитесь кнопкой «Назад»: закладка сохранится.</p>
+<h3>4. Добавьте закладку в Chrome</h3>
+<p>Добавьте страницу руководства, которую вы сейчас читаете, в закладки.</p>
+<p>Для этого промотайте этот текст немного вниз, чтобы сверху открылась панель, нажмите в ней «⋮» справа, затем ☆ Bookmarks.</p>
+<p>В Chrome будет добавлена закладка с именем StreetBuddy и ссылкой на это руководство.</p>
+<p>Далее нужно изменить название закладки и ее текст.</p>
+<p>Снова нажмите справа сверху «⋮», затем ★ Bookmarks, найдите в списке закладок StreetBuddy.</p>
+<p>Нажмите справа от названия закладки «⋮», затем Edit.</p>
+<p>В поле названия закладки сотрите StreetBuddy и напишите новое название: qqqwww. Можно использовать для названия любой другой удобный вам вариант, но учтите, что название должно быть максимально редким, иначе Chrome при поиске закладки будет предлагать другие варианты.</p>
+<p>В поле адреса закладки сотрите адрес руководства и вставьте находящийся в буфере код: долгое нажатие на старый адрес, «Paste».</p>
+<p>Вернитесь кнопкой «Назад» (треугольник): закладка сохранится в новом виде, настройка браузера завершена.</p>
+<p>Закладка содержит ваши личные данные, никому ее не пересылайте.</p>
+<p>Не открывайте закладку qqqwww из списка закладок: так она откроется на пустой странице и не сработает. Ее запускают на форме репорта.</p>
 </div>
+
 <div data-for="iphone-bookmark" hidden>
-<p>Добавьте эту страницу в закладки: нажмите кнопку «Share» (квадрат со стрелкой, на новых версиях iOS она в меню «⋯»), затем «Add Bookmark». Сотрите название, напишите qqqwww и нажмите «Save».</p>
-<p>Нажмите «⋯» внизу и «Bookmarks», затем «Edit» и выберите qqqwww. В поле адреса сотрите адрес этой страницы и вставьте скопированное (долгое нажатие на поле, «Paste»). Нажмите «Done».</p>
-</div>
-<details>
-<summary>Другие варианты добавления закладки</summary>
-<div data-for="android">
-<p class="choice"><button type="button" aria-pressed="true" data-variant="phone">Продолжить с телефона</button><button type="button" aria-pressed="false" data-variant="computer">Настроить с компьютера</button></p>
-<div data-variant-section="phone">
-<p>Если кнопка «Скопировать закладку» не сработала, долго нажмите на кнопку qqqwww и выберите «Copy link address», затем добавьте закладку так же, как описано выше.</p>
-</div>
-<div data-variant-section="computer" hidden>
-<p>Закладку можно добавить и с компьютера, если Chrome на компьютере и на телефоне подключен к одному аккаунту Google и в обоих включена синхронизация закладок (на телефоне: «⋮», «Settings», ваш аккаунт, «Sync», «Bookmarks»).</p>
-<p>Откройте это руководство в Chrome на компьютере, выберите Chrome, введите данные, нажмите «Создать закладку» и перетащите мышкой кнопку qqqwww на панель закладок (если панели не видно, нажмите Ctrl+Shift+B, на Mac Cmd+Shift+B). Через несколько минут закладка появится в Chrome на телефоне.</p>
-<p>Закладка с вашими данными будет храниться в вашем аккаунте Google.</p>
-</div>
-</div>
-<p data-for="iphone-bookmark" hidden>Если кнопка «Скопировать закладку» не сработала, долго нажмите на кнопку qqqwww и выберите «Copy Link», затем добавьте закладку так же, как описано выше.</p>
-<p><a class="install" id="bookmark-link" href="#">qqqwww</a></p>
-</details>
-<p data-for="android">Не открывайте закладку qqqwww из списка закладок: так она откроется на пустой странице и не сработает. Ее запускают на форме репорта, как описано в шаге 4.</p>
-<p data-for="iphone-bookmark" hidden>Запускайте закладку qqqwww только на открытой форме репорта, как описано в шаге 4.</p>
-<p>Закладка содержит ваши личные данные, не пересылайте ее другим. Чтобы изменить данные, создайте закладку на этой странице заново и вставьте ее в закладку qqqwww вместо прежней. Скрипт обновляется сам, ради этого закладку пересоздавать не нужно.</p>
-
-</div>
+<h3>4. Добавьте закладку в Safari</h3>
+<p>Добавьте страницу руководства в закладки: нажмите «Share» (квадрат со стрелкой, на новых версиях iOS он в меню «⋯»), затем «Add Bookmark». Сотрите название, напишите qqqwww и нажмите «Save».</p>
+<p>Нажмите «⋯» внизу и «Bookmarks», затем «Edit» и выберите qqqwww. В поле адреса сотрите адрес руководства и вставьте код из буфера (долгое нажатие на поле, «Paste»). Нажмите «Done».</p>
+<p>Закладка содержит ваши личные данные, никому ее не пересылайте.</p>
+<p>Запускайте закладку qqqwww только на открытой форме репорта.</p>
 </div>
 
-<h3>4. Составьте тестовый репорт</h3>
-<p>В Telegram отправьте боту StreetBuddy местоположение. Для тестового репорта выберите место в районе, где работает бот, иначе бот ответит, что в этом районе не работает.</p>
+<h3>5. Составьте и отмените тестовый репорт</h3>
+<p class="warn">ВНИМАНИЕ: не нажимайте “Submit Report” для тестового репорта.</p>
+<p>В Telegram отправьте боту StreetBuddy местоположение.</p>
+<p>Для тестового репорта выберите место в районе, где работает бот (область между Belmayne/Marrsfield Ave, Park Ave, Main Street и Belmayne ave), иначе бот ответит, что в этом районе не работает.</p>
 <p data-for="android">В чате с ботом нажмите скрепку справа в строке ввода, «Location», передвиньте указатель на нужное место и нажмите «Send selected location».</p>
 <p data-for="iphone-bookmark" hidden>В чате с ботом нажмите скрепку слева от строки ввода, «Location», передвиньте указатель на нужное место и нажмите «Send selected location».</p>
 <p>Бот напишет «Choose the address» и покажет адреса рядом с выбранным местом: нажмите подходящий. Если подходящего нет, нажмите «Other address» и напишите адрес сообщением.</p>
 <p>Затем бот запросит фото машины. Для тестового репорта вы можете прислать любое фото, например, своей машины.</p>
-<p>Далее бот запустит процесс подготовки репорта, пройдите его по шагам.</p>
+<p>Нажмите “Create report”, бот запустит процесс подготовки репорта, пройдите его по шагам.</p>
+<p data-for="android">В конце бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш тип телефона, он спросит «Your phone?»: нажмите «Android».</p>
+<p data-for="iphone-bookmark" hidden>В конце бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш тип телефона, он спросит «Your phone?»: нажмите «iPhone».</p>
+<p>Затем нажмите кнопку «Open report» под описанием, откроется страница Traffic Watch Online Reporting во встроенном браузере телеграма.</p>
 <div data-for="android">
-<p>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш телефон (в первый раз), он спросит «Your phone?»: нажмите «Android». Затем нажмите кнопку «Open report» под описанием, затем «⋮» вверху справа и «Open in browser» (форма должна открыться в Chrome, см. шаг 1).</p>
-<p>Когда форма откроется, нажмите на адресную строку вверху, наберите qqqwww и выберите в подсказках закладку qqqwww (со значком звезды).</p>
+<p>Нажмите «⋮» вверху справа и «Open in Chrome browser».</p>
+<p>Та же страница откроется в Chrome. Нажмите на адресную строку вверху (https://www.garda.ie/…) и наберите в ней qqqwww. Chrome покажет список подсказок, найдите в списке ☆ qqqwww (со звездочкой) и нажмите ее.</p>
 </div>
-<p data-for="iphone-bookmark" hidden>Бот покажет готовое описание и спросит «Is everything correct?»: нажмите «Yes, it’s correct». Если бот еще не знает ваш телефон (в первый раз), он спросит «Your phone?»: нажмите «iPhone».</p>
-<p data-for="iphone-bookmark" hidden>Нажмите кнопку «Open report» под описанием. Если форма открылась внутри Telegram, нажмите «⋯» вверху и «Open in Safari».</p>
-<p data-for="iphone-bookmark" hidden>Когда форма откроется, нажмите «⋯» внизу, «Bookmarks» и qqqwww.</p>
-<p>Затем поставьте две галочки на странице Traffic Watch Online Reporting: об отсутствии emergency и о явке в суд, нажмите «Click Here to Start» и проверьте, как заполнились поля формы. Проходить капчу и нажимать «Submit Report» для тестового репорта не надо.</p>
-<p data-for="android iphone-bookmark">На этом установка закончена, вы можете пользоваться ботом. Для каждого репорта запускайте закладку qqqwww так же: после того как форма откроется.</p>
-<p>Вернитесь в Telegram и под описанием тестового репорта нажмите «Cancel»: бот удалит это сообщение вместе с кнопками. После настоящего репорта нажимайте «Done»: бот уберет кнопки и допишет, когда репорт был отправлен.</p>
+<div data-for="iphone-bookmark" hidden>
+<p>Если форма открылась внутри Telegram, нажмите «⋯» вверху и «Open in Safari».</p>
+<p>Когда форма откроется, нажмите «⋯» внизу, «Bookmarks» и qqqwww.</p>
+</div>
+<p>Закладка покажет в верхней части страницы сообщение “StreetBuddy is running. Tick the two boxes below and press Click Here to Start”.</p>
+<p>Поставьте две галочки на странице Traffic Watch Online Reporting: об отсутствии emergency и о явке в суд, нажмите «Click Here to Start» и проверьте, как заполнились поля формы.</p>
+<p class="warn">ВНИМАНИЕ: проходить капчу и нажимать «Submit Report» для тестового репорта не нужно, иначе тестовые данные уйдут в Гарду.</p>
+<p>Вернитесь в Telegram и под описанием тестового репорта нажмите «Cancel»: бот удалит это сообщение вместе с кнопками.</p>
+<p>На этом установка закончена, теперь вы можете пользоваться ботом для отправки реальных репортов. Инструкция по использованию бота находится <a href="/manual">здесь</a>.</p>
 </section>
 
 <p>Бот не получает и не хранит ваши имя, фамилию, телефон, email и адрес.</p>
