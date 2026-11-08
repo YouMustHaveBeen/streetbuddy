@@ -204,6 +204,18 @@ export async function keepFromGroup(
   ]);
 }
 
+// Rejects every incoming address of a group, the directory addresses of the group stay. The caller
+// drops the rejected addresses afterwards.
+export async function rejectGroup(db: D1Database, group: DuplicateGroup): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE incoming_addresses SET decision = 'rejected', user_id = NULL
+       WHERE decision IS NULL AND id IN (SELECT value FROM json_each(?1))`,
+    )
+    .bind(JSON.stringify(group.incoming))
+    .run();
+}
+
 // Approves every address of the source without a decision, except those whose text is already in the
 // directory and those whose text another address without a decision has: such duplicates are decided
 // one by one.

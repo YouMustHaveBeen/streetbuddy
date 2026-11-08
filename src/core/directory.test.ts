@@ -6,6 +6,7 @@ import {
   approveAllFrom,
   decideIncoming,
   keepFromGroup,
+  rejectGroup,
   listDirectory,
   moveIncomingAddresses,
   movePoint,
@@ -287,6 +288,23 @@ describe("approveAllFrom with long runs of spaces", () => {
     addIncoming(sqlite, "4\tParkside\nAvenue", point(20, 0), null, "osm");
     await approveAllFrom(db, "osm");
     expect(all(sqlite, "SELECT decision FROM incoming_addresses ORDER BY id")).toEqual([{ decision: null }, { decision: null }]);
+  });
+});
+
+describe("rejectGroup", () => {
+  it("rejects every incoming address of the group and leaves the directory alone", async () => {
+    const { db, sqlite } = fakeD1();
+    const old = addDirectory(sqlite, "4 Parkside Avenue", point(0, 0));
+    const first = addIncoming(sqlite, "4 Parkside Avenue", point(1, 0), null, "osm");
+    const second = addIncoming(sqlite, "4 parkside avenue", point(2, 0), null, "osm");
+    const other = addIncoming(sqlite, "6 Parkside Avenue", point(3, 0), null, "osm");
+    await rejectGroup(db, { old: [old], incoming: [first, second] });
+    expect(all(sqlite, "SELECT id, decision FROM incoming_addresses ORDER BY id")).toEqual([
+      { id: first, decision: "rejected" },
+      { id: second, decision: "rejected" },
+      { id: other, decision: null },
+    ]);
+    expect(all(sqlite, "SELECT id FROM addresses")).toEqual([{ id: old }]);
   });
 });
 

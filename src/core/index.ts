@@ -17,6 +17,7 @@ export {
   searchPattern,
   listDirectory,
   keepFromGroup,
+  rejectGroup,
   setAddressKind,
   CHOOSABLE_KINDS,
 } from "./directory";

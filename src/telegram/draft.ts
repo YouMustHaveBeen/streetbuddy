@@ -61,6 +61,7 @@ export type Step =
   | "finishing"
   | "feedback_input" // Not a report: waiting for the text of a feedback.
   | "phone_choice" // Not a report: /phone.
+  | "screen" // Not a report: a screen with buttons (a command of the menu or /admin) that a command removes.
   | "admin_search" // Not a report: /admin shows the directory (all of it or a search) and waits for a search text.
   | "admin_group" // Not a report: /admin shows a group of duplicate incoming addresses; cleanup holds the map pins.
   | "admin_text" // Not a report: /admin waits for the new text of a directory address.
@@ -134,6 +135,26 @@ export async function createDraft(
     )
     .run();
   return draftId;
+}
+
+// Remembers a screen with buttons that no draft holds, so that the next command of the menu removes it
+// (and the messages in cleanupIds). It replaces the screen remembered before, and does nothing while
+// a report or a screen of /admin has a draft.
+export async function rememberScreen(
+  db: D1Database,
+  userId: number,
+  messageId: number,
+  cleanupIds: number[] = [],
+): Promise<void> {
+  const draftId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER) + 1;
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO drafts (user_id, draft_id, step, prompt, buttons_message_id, cleanup, failures, created_at)
+       SELECT ?1, ?2, 'screen', '', ?3, ?4, 0, ?5
+       WHERE NOT EXISTS (SELECT 1 FROM drafts WHERE user_id = ?1 AND step != 'screen')`,
+    )
+    .bind(userId, draftId, messageId, JSON.stringify(cleanupIds), Date.now())
+    .run();
 }
 
 // Puts the just sent message in place of the previous one, only if the draft is still on
@@ -292,7 +313,7 @@ export async function deleteDraftWithButtons(
     .bind(userId)
     .first<{ buttons_message_id: number; step: string; cleanup: string }>();
   if (!row) return null;
-  return { messageId: row.buttons_message_id, pins: row.step === "admin_group" ? (JSON.parse(row.cleanup) as number[]) : [] };
+  return { messageId: row.buttons_message_id, pins: row.step === "admin_group" || row.step === "screen" ? (JSON.parse(row.cleanup) as number[]) : [] };
 }
 
 // Removes the question or the directory screen of /admin shown in the given message, if it is still

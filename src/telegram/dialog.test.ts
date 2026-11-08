@@ -257,11 +257,28 @@ describe("the commands of the menu", () => {
       const screen = buttonId();
       await text(command);
       if (command === "/feedback") expect(draft()?.step).toBe("feedback_input");
-      else expect(draft()).toBeUndefined();
+      else expect(draft()?.step).toBe(command === "/reportmap" ? "screen" : undefined);
       expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
       expect(sentTexts()).not.toContain("Report cancelled");
       await press("cancel");
     }
+  });
+});
+
+describe("screens with buttons", () => {
+  it("a command removes the Report map screen of the command before it", async () => {
+    await text("/reportmap");
+    const screen = buttonId();
+    expect(draft()?.step).toBe("screen");
+    await text("/manual");
+    expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
+    expect(draft()).toBeUndefined();
+  });
+  it("a location sent while such a screen is open starts a report", async () => {
+    await text("/reportmap");
+    expect(draft()?.step).toBe("screen");
+    await toPhotos();
+    expect(draft()?.step).toBe("photos");
   });
 });
 
