@@ -53,6 +53,7 @@ node scripts/export-directory.mjs
 ## Шаг 5. Сохранить файл
 
 1. Нажми «Export» справа над картой и выбери формат GeoJSON (в меню пункт «GeoJSON»). Файл скачается в папку Downloads, обычно с именем `map.geojson`. Если сайт сохраняет под другим именем, смотри имя в списке загрузок браузера.
+2. Сразу перетащи файл в Finder из Downloads в папку `YouMustHaveBeen`: Terminal не может читать Downloads (ошибка `EPERM`), а эту папку читает.
 
 ## Шаг 6. Оставить только новое и исправленное
 
@@ -60,10 +61,8 @@ node scripts/export-directory.mjs
 
 ```
 cd ~/YouMustHaveBeen/StreetBuddy
-node scripts/diff-directory.mjs ~/Downloads/map.geojson
+node scripts/diff-directory.mjs ~/YouMustHaveBeen/map.geojson
 ```
-
-Если пишет `EPERM: operation not permitted`, macOS не дает Terminal читать папку Downloads. Два выхода. Первый, один раз: System Settings → Privacy & Security → Files & Folders → у Terminal включи Downloads (если Terminal там нет — Full Disk Access), закрой Terminal через Cmd+Q и открой заново. Второй: в Finder перетащи файл из Downloads в папку `YouMustHaveBeen` и вставь команду с путем `~/YouMustHaveBeen/map.geojson` (имя файла свое).
 
 2. Скрипт сравнивает сохраненный файл с `exports/directory.geojson`. Все, что совпадает, он выбрасывает. Остальное пишет в следующий по номеру `config/walks/walk-N.geojson` и сообщает, сколько адресов записано.
 3. Если пишет `Nothing new`, значит ты ничего не изменила, файл не создан.
