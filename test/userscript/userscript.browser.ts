@@ -499,6 +499,25 @@ describe("bookmarklet built on the installation page", () => {
     await context.close();
   });
 
+  const clipboardFailures: [string, string][] = [
+    ["rejects the write", "Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')) } });"],
+    ["is missing", "Object.defineProperty(navigator, 'clipboard', { value: undefined });"],
+  ];
+  it.each(clipboardFailures)("shows the code in a field when the clipboard %s", async (_name, script) => {
+    const context = await browser.newContext();
+    await context.addInitScript(script);
+    const page = await openGuide(context);
+    expect(await page.isVisible("#bookmark-code")).toBe(false);
+    await typeProfile(page, TYPED);
+    await page.locator("#bookmark-code").waitFor();
+    expect(await page.isVisible("#bookmark-copy-failed")).toBe(true);
+    expect(await page.isVisible("#bookmark-prepared")).toBe(false);
+    const code = await page.inputValue("#bookmark-code");
+    expect(code.startsWith("javascript:")).toBe(true);
+    expect(decodeURIComponent(code.slice("javascript:".length))).toContain(JSON.stringify(origin + SCRIPT_PATH));
+    await context.close();
+  });
+
   const badProfiles: [string, Partial<typeof TYPED>][] = [
     ["an empty name", { name: "   " }],
     ["an empty phone", { phone: "" }],
@@ -513,6 +532,7 @@ describe("bookmarklet built on the installation page", () => {
     await typeProfile(page, { ...TYPED, ...change });
     expect(await page.isVisible("#bookmark-error")).toBe(true);
     expect(await page.isVisible("#bookmark-prepared")).toBe(false);
+    expect(await page.isVisible("#bookmark-code")).toBe(false);
     await context.close();
   });
 });

@@ -88,6 +88,13 @@ const PAGE_SCRIPT = `(function () {
   var error = document.getElementById("bookmark-error");
   var prepared = document.getElementById("bookmark-prepared");
   var copyFailed = document.getElementById("bookmark-copy-failed");
+  var code = document.getElementById("bookmark-code");
+
+  function showCode(text) {
+    copyFailed.hidden = false;
+    code.value = text;
+    code.hidden = false;
+  }
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();
@@ -95,6 +102,7 @@ const PAGE_SCRIPT = `(function () {
     error.hidden = profile !== null;
     prepared.hidden = true;
     copyFailed.hidden = true;
+    code.hidden = true;
     if (!profile) return;
     // The bookmarklet holds the data and the address of the script.
     var bookmark = "javascript:" + encodeURIComponent(
@@ -102,9 +110,13 @@ const PAGE_SCRIPT = `(function () {
       "var s = document.createElement('script'); s.src = " + JSON.stringify(SCRIPT_URL) + ";" +
       "document.head.appendChild(s);}();"
     );
+    if (!navigator.clipboard) {
+      showCode(bookmark);
+      return;
+    }
     navigator.clipboard.writeText(bookmark).then(
       function () { prepared.hidden = false; },
-      function () { copyFailed.hidden = false; }
+      function () { showCode(bookmark); }
     );
   });
 })();`;
@@ -123,7 +135,7 @@ ${BASE_STYLE}
   .warn { color: #c62828; }
   @media (prefers-color-scheme: dark) { .ok { color: #3fb950; } .warn { color: #ff6b6b; } }
   label { display: block; margin: 12px 0; }
-  input, select { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: 6px; }
+  input, select, textarea { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: 6px; }
 </style>
 </head>
 <body>
@@ -205,7 +217,8 @@ ${BASE_STYLE}
 <p><button class="install" type="submit">Подготовить закладку</button></p>
 <p id="bookmark-prepared" class="ok" role="status" hidden>Закладка подготовлена</p>
 <p id="bookmark-error" role="alert" hidden>Заполните все поля. Email должен быть в виде name@example.com.</p>
-<p id="bookmark-copy-failed" role="alert" hidden>Не получилось скопировать код. Нажмите «Подготовить закладку» еще раз</p>
+<p id="bookmark-copy-failed" class="warn" role="alert" hidden>Не получилось скопировать код автоматически. Скопируйте его из поля ниже: долгое нажатие на поле, «Select all», «Copy»</p>
+<textarea id="bookmark-code" rows="6" readonly hidden></textarea>
 </form>
 
 <div data-for="android">
