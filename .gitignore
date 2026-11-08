@@ -153,3 +153,6 @@ vite.config.ts.timestamp-*
 
 # macOS
 .DS_Store
+
+# Exports of the address directory (contain OpenStreetMap data)
+exports/
