@@ -86,9 +86,9 @@ ${STYLE}
   }
 
   // Adds a line with a dark edge under it.
-  function addLine(id, source, filter, width) {
+  function addLine(id, source, filter, width, color) {
     map.addLayer({ id: id + "-edge", type: "line", source: source, filter: filter, paint: { "line-color": OUTLINE, "line-width": width + 2 } });
-    map.addLayer({ id: id, type: "line", source: source, filter: filter, paint: { "line-color": GREEN, "line-width": width } });
+    map.addLayer({ id: id, type: "line", source: source, filter: filter, paint: { "line-color": color || GREEN, "line-width": width } });
   }
 
   map.on("load", function () {
@@ -118,9 +118,9 @@ const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
     var isArea = ["==", ["geometry-type"], "Polygon"];
     var isLine = ["any", ["==", ["geometry-type"], "LineString"], ["==", ["geometry-type"], "MultiLineString"]];
     var isPoint = ["==", ["geometry-type"], "Point"];
-    map.addLayer({ id: "areas", type: "fill", source: "directory", filter: isArea, paint: { "fill-color": GREEN, "fill-opacity": 0.45 } });
+    map.addLayer({ id: "areas", type: "fill", source: "directory", filter: isArea, paint: { "fill-color": VIOLET, "fill-opacity": 0.45 } });
     map.addLayer({ id: "area-borders", type: "line", source: "directory", filter: isArea, paint: { "line-color": OUTLINE, "line-width": 1.5 } });
-    addLine("lines", "directory", isLine, 4);
+    addLine("lines", "directory", isLine, 4, ["case", ["==", ["get", "source"], "osm"], WHITE, ["==", ["get", "kind"], "facility"], FUCHSIA, VIOLET]);
     map.addLayer({
       id: "points", type: "circle", source: "directory", filter: isPoint,
       paint: {
@@ -133,7 +133,7 @@ const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
     ["areas", "lines-edge", "points"].forEach(function (layer) {
       map.on("click", layer, function (event) {
         var properties = event.features[0].properties;
-        new mapboxgl.Popup().setLngLat(event.lngLat).setDOMContent(textNode([properties.text, properties.kind])).addTo(map);
+        new mapboxgl.Popup().setLngLat(event.lngLat).setDOMContent(textNode([properties.text])).addTo(map);
       });
       map.on("mouseenter", layer, function () { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", layer, function () { map.getCanvas().style.cursor = ""; });
