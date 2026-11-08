@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreetBuddy
 // @namespace    streetbuddy
-// @version      1.4.0
+// @version      1.4.1
 // @description  Fills in the Garda Traffic Watch form from a StreetBuddy link
 // @match        https://www.garda.ie/en/trafficwatchreport*
 // @match        https://garda.ie/en/trafficwatchreport*
@@ -24,7 +24,6 @@
   const MESSAGE_FORM_CHANGED = "The Garda form has changed. Please fill in the fields manually.";
   const MESSAGE_LINK_INVALID = "The link is not valid. Please fill in the fields manually.";
   const MESSAGE_RUNNING = "StreetBuddy is running. Tick the two boxes below and press Click Here to Start";
-  const MESSAGE_FILLED = "The form is filled in. Check the details, pass the captcha and press Submit Report";
 
   // Same texts as on the form.
   const CRIME_TYPE = "Parking Offences";
@@ -223,8 +222,7 @@
       observer.disconnect();
       clearTimeout(timer);
       runningNotice.remove();
-      if (filled) showMessage(MESSAGE_FILLED, true);
-      else showMessage(MESSAGE_FORM_CHANGED);
+      if (!filled) showMessage(MESSAGE_FORM_CHANGED);
     }
 
     // Fills the form or shows the message when the time is up.
