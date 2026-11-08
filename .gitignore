@@ -155,4 +155,4 @@ vite.config.ts.timestamp-*
 .DS_Store
 
 # Exports of the address directory (contain OpenStreetMap data)
-exports/
+/exports/

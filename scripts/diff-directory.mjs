@@ -1,6 +1,8 @@
 // Takes the file saved from geojson.io and the export of the directory (scripts/export-directory.mjs)
 // and writes the new walk file config/walks/walk-N.geojson with only the addresses that are not in the
 // export: the new ones and the ones whose text, kind or shape changed. Nothing is sent to the database.
+// Addresses with the source osm are skipped. If a changed address has the same text as several addresses
+// of the export, or two changed addresses are the same place with different kinds, nothing is written.
 // Run from the project folder: node scripts/diff-directory.mjs ~/Downloads/map.geojson
 // The export file can be given as the second name (the default is exports/directory.geojson).
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -28,36 +30,59 @@ function readFeatures(file) {
   return collection.features;
 }
 
-// Coordinates are rounded to 6 digits (about 10 cm), because geojson.io may round them when it saves.
+// Coordinates are rounded to 6 digits.
 const round = (value) => (Array.isArray(value) ? value.map(round) : Math.round(value * 1e6) / 1e6);
-const keyOf = (feature) => {
+const textOf = (feature) => String(feature?.properties?.address ?? "").trim();
+const sameTextKey = (feature) => textOf(feature).toLowerCase().replace(/\s+/g, " ");
+const placeKey = (feature) => {
   const { type, coordinates } = feature?.geometry ?? {};
-  const text = String(feature?.properties?.address ?? "").trim();
-  return JSON.stringify([text, feature?.properties?.kind ?? null, type, round(coordinates ?? null)]);
+  return JSON.stringify([textOf(feature), type, round(coordinates ?? null)]);
 };
+const keyOf = (feature) => JSON.stringify([placeKey(feature), feature?.properties?.kind ?? null]);
 
-const known = new Set(readFeatures(EXPORT).map(keyOf));
+const exported = readFeatures(EXPORT);
+const known = new Set(exported.map(keyOf));
+const textCounts = new Map();
+for (const feature of exported) textCounts.set(sameTextKey(feature), (textCounts.get(sameTextKey(feature)) ?? 0) + 1);
 const saved = readFeatures(SAVED);
 
 const changed = [];
 const seen = new Set();
+const kindsByPlace = new Map();
+const errors = [];
 let same = 0;
 let doubled = 0;
+let fromOsm = 0;
 for (const feature of saved) {
   const key = keyOf(feature);
   if (known.has(key)) {
     same += 1;
+  } else if (feature?.properties?.source === "osm") {
+    fromOsm += 1;
   } else if (seen.has(key)) {
     doubled += 1;
   } else {
     seen.add(key);
-    const { address, kind } = feature.properties ?? {};
-    changed.push({ type: "Feature", properties: { address, kind }, geometry: feature.geometry });
+    const text = textOf(feature);
+    const { kind } = feature.properties ?? {};
+    const count = textCounts.get(sameTextKey(feature)) ?? 0;
+    if (count > 1) errors.push(`"${text}" is in the directory ${count} times: the script cannot tell which one you changed. Fix this address in /admin.`);
+    const place = placeKey(feature);
+    if (kindsByPlace.has(place) && kindsByPlace.get(place) !== kind) {
+      errors.push(`"${text}" is in ${SAVED} twice in the same place with different kinds: ${kindsByPlace.get(place)} and ${kind}.`);
+    }
+    kindsByPlace.set(place, kindsByPlace.get(place) ?? kind);
+    changed.push({ type: "Feature", properties: { address: text, kind }, geometry: feature.geometry });
   }
 }
 
+if (errors.length > 0) {
+  console.error(`No file written, fix ${SAVED} first:\n${errors.join("\n")}`);
+  process.exit(1);
+}
+if (fromOsm > 0) console.log(`${fromOsm} changed addresses from OSM skipped: fix them in /admin.`);
 if (changed.length === 0) {
-  console.log(`Nothing new: all ${same} addresses of ${SAVED} are in ${EXPORT}. No file written.`);
+  console.log(`Nothing new to write (${same} unchanged addresses skipped). No file written.`);
   process.exit(0);
 }
 
