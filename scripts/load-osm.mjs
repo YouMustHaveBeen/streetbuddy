@@ -70,12 +70,12 @@ for (const element of elements) {
   const tags = element.tags ?? {};
   const number = String(tags["addr:housenumber"] ?? "").trim();
   const street = String(tags["addr:street"] ?? "").trim();
-  if (street === "") {
-    withoutStreet++;
-    continue;
-  }
   if (number === "") {
     errors.push(`${where}: the house number is missing`);
+    continue;
+  }
+  if (street === "") {
+    withoutStreet++;
     continue;
   }
   const text = `${number} ${street}`.replace(/\bStreet\b/g, "St").replace(/\s+/g, " ");
