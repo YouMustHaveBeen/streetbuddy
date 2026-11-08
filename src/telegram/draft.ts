@@ -139,7 +139,9 @@ export async function createDraft(
 
 // Remembers a screen with buttons that no draft holds, so that the next command of the menu removes it
 // (and the messages in cleanupIds). It replaces the screen remembered before, and does nothing while
-// a report or a screen of /admin has a draft that has not expired.
+// a report or a screen of /admin has a draft that has not expired. An expired draft it replaces (other
+// than one giving the link) leaves its message with buttons, and the pins of a group of duplicates,
+// in the cleanup of the new screen.
 export async function rememberScreen(
   db: D1Database,
   userId: number,
@@ -151,7 +153,12 @@ export async function rememberScreen(
   await db
     .prepare(
       `INSERT OR REPLACE INTO drafts (user_id, draft_id, step, prompt, buttons_message_id, cleanup, failures, created_at)
-       SELECT ?1, ?2, 'screen', '', ?3, ?4, 0, ?5
+       SELECT ?1, ?2, 'screen', '', ?3,
+         (SELECT json_group_array(value) FROM (
+            SELECT value FROM json_each(?4)
+            UNION ALL SELECT buttons_message_id FROM drafts WHERE user_id = ?1 AND step NOT IN ('screen', 'finishing')
+            UNION ALL SELECT j.value FROM drafts d, json_each(d.cleanup) j WHERE d.user_id = ?1 AND d.step = 'admin_group')),
+         0, ?5
        WHERE NOT EXISTS (SELECT 1 FROM drafts WHERE user_id = ?1 AND step != 'screen' AND created_at > ?6)`,
     )
     .bind(userId, draftId, messageId, JSON.stringify(cleanupIds), now, now - DRAFT_TTL_MS)

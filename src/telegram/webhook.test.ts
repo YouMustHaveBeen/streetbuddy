@@ -821,6 +821,16 @@ describe("/admin: incoming addresses and the directory", () => {
     await message({ text: "/manual" });
     expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([kindScreen, pin]));
   });
+  it("a screen remembered over a group draft that has expired keeps the group screen and its pins for a command", async () => {
+    groupOf();
+    await press("admin_incoming", 5);
+    const [screen, pins] = [lastId(), of("sendVenue").map((call) => call.id)];
+    sqlite.prepare("UPDATE drafts SET created_at = ?").run(Date.now() - 25 * 60 * 60 * 1000);
+    await press("admin_back", 8);
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "screen" }]);
+    await message({ text: "/manual" });
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+  });
   it("removes the pins of a group when the next screen could not be sent", async () => {
     groupOf();
     await press("admin_incoming", 5);
