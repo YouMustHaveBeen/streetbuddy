@@ -329,9 +329,14 @@ async function sendAddress(env: AdminEnv, chatId: number, id: number, page: numb
 }
 
 // Makes the directory screen draft point to the screen that has just been sent.
-const pointDraft = (env: AdminEnv, userId: number, screen: Promise<number | null>): Promise<number | null> =>
+const pointDraft = (
+  env: AdminEnv,
+  userId: number,
+  fromMessageId: number,
+  screen: Promise<number | null>,
+): Promise<number | null> =>
   screen.then(async (messageId) => {
-    if (messageId !== null) await pointSearchDraft(env.DB, userId, messageId);
+    if (messageId !== null) await pointSearchDraft(env.DB, userId, fromMessageId, messageId);
     return messageId;
   });
 
@@ -454,13 +459,14 @@ export async function handleAdminButton(
     const draft = await loadDraft(env.DB, userId);
     next = sendList(env, userId, chatId, draft?.step === "admin_search" ? draft.address : null, Number(first) || 0);
   } else if (name === ADDRESS) {
-    next = pointDraft(env, userId, sendAddress(env, chatId, Number(first), Number(second) || 0));
+    next = pointDraft(env, userId, query.messageId ?? 0, sendAddress(env, chatId, Number(first), Number(second) || 0));
   } else if (name === EDIT_KIND) {
     const id = Number(first);
     const page = Number(second) || 0;
     next = pointDraft(
       env,
       userId,
+      query.messageId ?? 0,
       sendKindScreen(env, chatId, (kind) => `${DIR_KIND}:${kind}:${id}`, { text: "Back", callback_data: `${ADDRESS}:${id}:${page}` }),
     );
   } else if (name === DIR_KIND) {
@@ -480,7 +486,14 @@ export async function handleAdminButton(
     await answered;
     return;
   }
-  const [messageId] = await Promise.all([next, answered]);
+  let messageId: number | null;
+  try {
+    [messageId] = await Promise.all([next, answered]);
+  } catch (error) {
+    // The group draft is already taken, so its pins are removed even when the next screen is not sent.
+    await Promise.all(groupPins.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
+    throw error;
+  }
   if (messageId === null) return;
   const old = [query.messageId, pinId, ...groupPins].filter((id): id is number => typeof id === "number" && Number.isFinite(id));
   await Promise.all(old.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
@@ -506,6 +519,18 @@ export async function handleAdminInput(
     ]);
   };
 
+  // A question of a former version (the location for the directory) shows the directory screen.
+  if (!["admin_group", "admin_search", "admin_text", "admin_move"].includes(draft.step)) {
+    await deleteDraft(env.DB, userId, draft.draft_id);
+    const shown = await sendList(env, userId, chatId, null, 0);
+    if (shown !== null) {
+      await Promise.all([
+        deleteMessage(token, chatId, draft.buttons_message_id),
+        deleteMessage(token, chatId, message.message_id),
+      ]);
+    }
+    return;
+  }
   // Anything sent while a group of duplicates is on screen is removed: the buttons are the answer.
   if (draft.step === "admin_group") {
     await deleteMessage(token, chatId, message.message_id);

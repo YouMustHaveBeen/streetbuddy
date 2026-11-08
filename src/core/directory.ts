@@ -56,9 +56,15 @@ const parseShape = (geometry: string): Shape | null => shapeFromGeometry(JSON.pa
 
 // Case and extra spaces do not count when texts are compared.
 const sameTextKey = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
-// The same comparison in SQL, for a column or a parameter.
-const sqlTextKey = (expression: string) =>
-  `lower(trim(replace(replace(replace(${expression}, '    ', ' '), '  ', ' '), '  ', ' ')))`;
+// The same comparison in SQL, for a column or a parameter: tabs and line breaks become spaces, then
+// every run of spaces up to the 100 characters of an address is halved seven times down to one space.
+// lower() folds only the letters of ASCII.
+const sqlTextKey = (expression: string) => {
+  const spaced = `replace(replace(replace(${expression}, char(9), ' '), char(10), ' '), char(13), ' ')`;
+  let squeezed = spaced;
+  for (let pass = 0; pass < 7; pass++) squeezed = `replace(${squeezed}, '  ', ' ')`;
+  return `lower(trim(${squeezed}))`;
+};
 
 // Up to `limit` directory addresses of any kind within ADDRESS_RADIUS_M of the point, nearest first.
 // Only the rows whose rectangle comes within the radius are read.

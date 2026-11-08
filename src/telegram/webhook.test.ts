@@ -771,6 +771,31 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(of("deleteMessage").map((call) => call.body.message_id)).toContain(500 + updateId);
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_group" }]);
   });
+  it("/admin while a group is on screen removes the screen and its pins", async () => {
+    groupOf();
+    await press("admin_incoming");
+    const [screen, pins] = [lastId(), of("sendVenue").map((call) => call.id)];
+    await message({ text: "/admin" });
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
+  });
+  it("a question of a former version shows the directory screen", async () => {
+    sqlite
+      .prepare("INSERT INTO drafts (user_id, step, prompt, buttons_message_id, created_at) VALUES (42, 'admin_location', 'x', 5, ?)")
+      .run(Date.now());
+    await message({ location: { latitude: 53.405, longitude: -6.16 } });
+    expect(last().text).toContain("Directory");
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_search" }]);
+  });
+  it("an address screen that is no longer the current one does not move the directory draft", async () => {
+    const ids = addRoads();
+    await press("admin_directory");
+    const list = lastId();
+    await press("admin_directory");
+    const current = lastId();
+    await press(`admin_addr:${ids[0]}:0`, list);
+    expect(sqlite.prepare("SELECT buttons_message_id FROM drafts").all()).toEqual([{ buttons_message_id: current }]);
+  });
   it("approves all walk addresses at once and goes on with the rest", async () => {
     addIncoming("A", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
     addIncoming("B", "user", { type: "Point", coordinates: [-6.16, 53.405] });

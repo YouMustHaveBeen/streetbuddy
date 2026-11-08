@@ -280,6 +280,16 @@ describe("approveAllFrom with repeated texts", () => {
   });
 });
 
+describe("approveAllFrom with long runs of spaces", () => {
+  it("compares texts with tabs and any number of spaces like the transfer does", async () => {
+    const { db, sqlite } = fakeD1();
+    addIncoming(sqlite, `4${" ".repeat(30)}Parkside Avenue`, point(0, 0), null, "osm");
+    addIncoming(sqlite, "4\tParkside\nAvenue", point(20, 0), null, "osm");
+    await approveAllFrom(db, "osm");
+    expect(all(sqlite, "SELECT decision FROM incoming_addresses ORDER BY id")).toEqual([{ decision: null }, { decision: null }]);
+  });
+});
+
 describe("the directory IDs", () => {
   it("never gives the ID of a deleted address again", async () => {
     const { db, sqlite } = fakeD1();
