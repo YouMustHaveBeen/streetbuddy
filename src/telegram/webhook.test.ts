@@ -516,16 +516,20 @@ describe("/admin: incoming addresses and the directory", () => {
   let nextId = 0;
   let sent: { method: string; body: any; id: number }[] = [];
   let status = "administrator";
+  // While true, Telegram does not take sendMessage.
+  let failSend = false;
   beforeEach(() => {
     updateId = 0;
     nextId = 100;
     sent = [];
     status = "administrator";
+    failSend = false;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit) => {
         const method = String(url).split("/").pop() as string;
         if (method === "getChatMember") return new Response(JSON.stringify(memberOf(status)));
+        if (failSend && method === "sendMessage") return new Response(JSON.stringify({ ok: false, error_code: 400 }));
         nextId += 1;
         sent.push({ method, body: JSON.parse(String(init.body)), id: nextId });
         return new Response(JSON.stringify({ ok: true, result: { message_id: nextId } }));
@@ -718,7 +722,7 @@ describe("/admin: incoming addresses and the directory", () => {
   it("Keep new replaces the old address, keeping its ID, and rejects the other new ones", async () => {
     const { old } = groupOf();
     await press("admin_incoming");
-    await press("admin_keep:1");
+    await press("admin_keep:1", lastId());
     expect(sqlite.prepare("SELECT id, geometry, source FROM addresses").all()).toEqual([
       { id: old, geometry: JSON.stringify(point(-6.1599, 53.405)), source: "osm" },
     ]);
@@ -742,7 +746,8 @@ describe("/admin: incoming addresses and the directory", () => {
     await press(`admin_in:same:${first}:g`, kindScreen);
     expect(last().text).toContain("Same address, 3 objects");
     expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([kindScreen, ...pins]));
-    await press("admin_keepset:2:appt");
+    await press(`admin_keepkind:2:${first}`, lastId());
+    await press("admin_keepset:2:appt", lastId());
     expect(sqlite.prepare("SELECT kind, source FROM addresses").all()).toEqual([{ kind: "appt", source: "user" }]);
     expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
   });
@@ -764,12 +769,68 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM addresses").get()).toEqual({ n: 1 });
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 2 });
   });
-  it("a Keep button of a screen that is gone only shows the incoming addresses again", async () => {
+  it("a button of a group screen that is not the current one only gets its answer", async () => {
     groupOf();
-    await press("admin_keep:0");
+    await press("admin_incoming", 5);
+    const [screen, pins] = [lastId(), of("sendVenue").map((call) => call.id)];
+    const before = sent.length;
+    for (const data of ["admin_keep:0", "admin_rejectgroup", "admin_keepkind:2:1", "admin_keepset:2:appt", "admin_back:g", "admin_all_osm:g"]) {
+      await press(data, screen - 50);
+    }
+    expect(sent.slice(before).map((call) => call.method)).toEqual(Array(6).fill("answerCallbackQuery"));
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM addresses").get()).toEqual({ n: 1 });
-    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 2 });
-    expect(last().text).toContain("Same address, 3 objects");
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses WHERE decision IS NULL").get()).toEqual({ n: 2 });
+    expect(sqlite.prepare("SELECT step, buttons_message_id, cleanup FROM drafts").all()).toEqual([
+      { step: "admin_group", buttons_message_id: screen, cleanup: JSON.stringify(pins) },
+    ]);
+  });
+  it("Reject all pressed twice decides only the group it was pressed on", async () => {
+    groupOf();
+    addAddress("7 Main St", "point", 53.405, -6.16);
+    addIncoming("7 Main St", "walk", point(-6.1597, 53.405));
+    await press("admin_incoming", 5);
+    const screen = lastId();
+    await press("admin_rejectgroup", screen);
+    expect(last().text).toContain("7 Main St\nSame address, 2 objects");
+    await press("admin_rejectgroup", screen);
+    expect(sqlite.prepare("SELECT text FROM incoming_addresses WHERE decision IS NULL").all()).toEqual([{ text: "7 Main St" }]);
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_group" }]);
+  });
+  it("a command removes the kind screen of a group together with the pins of the group", async () => {
+    const { first } = groupOf();
+    await press("admin_incoming", 5);
+    const [screen, pins] = [lastId(), of("sendVenue").map((call) => call.id)];
+    await press(`admin_keepkind:2:${first}`, screen);
+    const kindScreen = lastId();
+    expect(sqlite.prepare("SELECT step, buttons_message_id FROM drafts").all()).toEqual([
+      { step: "admin_group", buttons_message_id: kindScreen },
+    ]);
+    await message({ text: "/manual" });
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([kindScreen, ...pins]));
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
+  });
+  it("a command removes the kind screen of a single address together with its pin", async () => {
+    const id = addIncoming("5 New Street", "user", point(-6.16, 53.405));
+    await press("admin_incoming", 5);
+    const [screen, pin] = [lastId(), pinId()];
+    await press(`admin_kind:ok:${id}:${pin}`, screen);
+    const kindScreen = lastId();
+    expect(sqlite.prepare("SELECT step, buttons_message_id, cleanup FROM drafts").all()).toEqual([
+      { step: "screen", buttons_message_id: kindScreen, cleanup: JSON.stringify([pin]) },
+    ]);
+    await message({ text: "/manual" });
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([kindScreen, pin]));
+  });
+  it("removes the pins of a group when the next screen could not be sent", async () => {
+    groupOf();
+    await press("admin_incoming", 5);
+    const [screen, pins] = [lastId(), of("sendVenue").map((call) => call.id)];
+    failSend = true;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await press("admin_back:g", screen);
+    const deleted = of("deleteMessage").map((call) => call.body.message_id);
+    expect(deleted).toEqual(expect.arrayContaining(pins));
+    expect(deleted).not.toContain(screen);
   });
   it("Approve all does not approve a group, and Next skips it with its pins removed", async () => {
     const { first } = groupOf();

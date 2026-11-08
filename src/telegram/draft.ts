@@ -139,7 +139,7 @@ export async function createDraft(
 
 // Remembers a screen with buttons that no draft holds, so that the next command of the menu removes it
 // (and the messages in cleanupIds). It replaces the screen remembered before, and does nothing while
-// a report or a screen of /admin has a draft.
+// a report or a screen of /admin has a draft that has not expired.
 export async function rememberScreen(
   db: D1Database,
   userId: number,
@@ -147,15 +147,35 @@ export async function rememberScreen(
   cleanupIds: number[] = [],
 ): Promise<void> {
   const draftId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER) + 1;
+  const now = Date.now();
   await db
     .prepare(
       `INSERT OR REPLACE INTO drafts (user_id, draft_id, step, prompt, buttons_message_id, cleanup, failures, created_at)
        SELECT ?1, ?2, 'screen', '', ?3, ?4, 0, ?5
-       WHERE NOT EXISTS (SELECT 1 FROM drafts WHERE user_id = ?1 AND step != 'screen')`,
+       WHERE NOT EXISTS (SELECT 1 FROM drafts WHERE user_id = ?1 AND step != 'screen' AND created_at > ?6)`,
     )
-    .bind(userId, draftId, messageId, JSON.stringify(cleanupIds), Date.now())
+    .bind(userId, draftId, messageId, JSON.stringify(cleanupIds), now, now - DRAFT_TTL_MS)
     .run();
 }
+
+// Puts the just sent message in the place of the remembered screen, which goes to cleanup, only if the
+// screen draft is still the one that was read. False when it has changed meanwhile.
+export async function followScreen(db: D1Database, draft: Draft, messageId: number): Promise<boolean> {
+  const result = await db
+    .prepare(
+      `UPDATE drafts SET ${appendCleanup("json_array(drafts.buttons_message_id)")}, buttons_message_id = ?4
+       WHERE user_id = ?1 AND draft_id = ?2 AND step = 'screen' AND buttons_message_id = ?3`,
+    )
+    .bind(draft.user_id, draft.draft_id, draft.buttons_message_id, messageId)
+    .run();
+  return result.meta.changes > 0;
+}
+
+// Whether fromMessageId is the remembered screen or a message that the screen's cleanup holds.
+export const isCurrentScreen = (draft: Draft | null, fromMessageId: number | undefined): boolean =>
+  draft?.step === "screen" &&
+  fromMessageId !== undefined &&
+  (draft.buttons_message_id === fromMessageId || (JSON.parse(draft.cleanup) as number[]).includes(fromMessageId));
 
 // Puts the just sent message in place of the previous one, only if the draft is still on
 // the expected step. Returns the previous message ID, or null when the step has moved on
@@ -333,34 +353,39 @@ export async function deleteSearchDraft(db: D1Database, userId: number): Promise
   await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND step = 'admin_search'").bind(userId).run();
 }
 
-// Makes the directory screen draft of /admin point to the message that is on screen now, if the
-// draft still points to the screen the button was pressed on.
-export async function pointSearchDraft(
+// Makes the directory screen draft or the group of duplicates draft of /admin point to the message
+// that is on screen now, if the draft still points to the screen the button was pressed on. False
+// when it does not.
+export async function pointAdminDraft(
   db: D1Database,
   userId: number,
+  step: "admin_search" | "admin_group",
   fromMessageId: number,
   messageId: number,
-): Promise<void> {
-  await db
-    .prepare(
-      "UPDATE drafts SET buttons_message_id = ?3 WHERE user_id = ?1 AND step = 'admin_search' AND buttons_message_id = ?2",
-    )
-    .bind(userId, fromMessageId, messageId)
+): Promise<boolean> {
+  const result = await db
+    .prepare("UPDATE drafts SET buttons_message_id = ?4 WHERE user_id = ?1 AND step = ?2 AND buttons_message_id = ?3")
+    .bind(userId, step, fromMessageId, messageId)
     .run();
+  return result.meta.changes > 0;
 }
 
-// Takes the group of duplicates screen of /admin in one statement: the map pins above it and the
-// addresses of the group as they were shown. Null when the screen is already gone.
+// Takes the group of duplicates screen of /admin shown in the given message, in one statement: the
+// map pins above it and the addresses of the group as they were shown. Null when that screen is not
+// the current group screen.
 export async function takeAdminGroup(
   db: D1Database,
   userId: number,
+  messageId: number | undefined,
 ): Promise<{ pins: number[]; options: string } | null> {
+  if (messageId === undefined) return null;
   const row = await db
     .prepare(
-      `DELETE FROM drafts WHERE user_id = ?1 AND step = 'admin_group' AND address_options IS NOT NULL
+      `DELETE FROM drafts WHERE user_id = ?1 AND step = 'admin_group' AND buttons_message_id = ?2
+         AND address_options IS NOT NULL
        RETURNING cleanup, address_options`,
     )
-    .bind(userId)
+    .bind(userId, messageId)
     .first<{ cleanup: string; address_options: string }>();
   return row ? { pins: JSON.parse(row.cleanup) as number[], options: row.address_options } : null;
 }
