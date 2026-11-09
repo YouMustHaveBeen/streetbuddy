@@ -46,6 +46,7 @@ import {
   rememberScreen,
   swapScreen,
   takeAdminGroup,
+  takeDraft,
 } from "./draft";
 import type { Draft, Step } from "./draft";
 import { stopReport } from "./stop";
@@ -678,16 +679,33 @@ export async function handleAdminInput(
     ]);
   };
   // The edited directory file: its new and changed addresses go to the incoming addresses, which are
-  // shown at once; a wrong file loads nothing and the file is asked for again.
+  // shown at once; a wrong file loads nothing and the file is asked for again. After the download the
+  // question is taken from the drafts before anything is written: a question already gone loads nothing.
   if (draft.step === "admin_import") {
-    const result = message.document
-      ? await importDirectoryFile(env.DB, new TextDecoder().decode(await downloadFile(token, message.document.file_id)))
-      : null;
-    if (!result?.ok) {
-      await askAgain(result?.reason === "errors" ? errorsText(result.errors) : SEND_AS_DOCUMENT);
+    let content: string | null = null;
+    if (message.document) {
+      try {
+        content = new TextDecoder().decode(await downloadFile(token, message.document.file_id));
+      } catch {
+        console.error("Telegram file download failed");
+      }
+    }
+    if (content === null) {
+      await askAgain(SEND_AS_DOCUMENT);
       return;
     }
-    await finish();
+    if (!(await takeDraft(env.DB, userId, draft.draft_id))) return;
+    const result = await importDirectoryFile(env.DB, content);
+    const removeOld = () =>
+      Promise.all([deleteMessage(token, chatId, draft.buttons_message_id), deleteMessage(token, chatId, message.message_id)]);
+    if (!result.ok) {
+      const prompt = result.reason === "errors" ? errorsText(result.errors) : SEND_AS_DOCUMENT;
+      const messageId = await send(env, chatId, prompt, [[backButton()]]);
+      if (messageId !== null) await createDraft(env.DB, userId, messageId, prompt, { step: "admin_import" }, []);
+      await removeOld();
+      return;
+    }
+    await removeOld();
     await send(env, chatId, `Loaded ${result.loaded} ${result.loaded === 1 ? "address" : "addresses"}, ${result.unchanged} unchanged skipped`);
     await sendIncoming(env, userId, chatId, 0);
     return;

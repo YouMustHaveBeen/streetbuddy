@@ -330,6 +330,15 @@ export async function deleteDraft(db: D1Database, userId: number, draftId: numbe
   await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2").bind(userId, draftId).run();
 }
 
+// Removes the draft with this ID; false when it is already gone or replaced.
+export async function takeDraft(db: D1Database, userId: number, draftId: number): Promise<boolean> {
+  const row = await db
+    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2 RETURNING draft_id")
+    .bind(userId, draftId)
+    .first();
+  return row !== null;
+}
+
 // Stops a report that has buttons on screen and returns the message with them, and the map pins above
 // it when it is a group of duplicates; a report on the step that gives the link stays.
 export async function deleteDraftWithButtons(

@@ -1140,7 +1140,9 @@ describe("/admin: the directory file", () => {
   let nextId = 0;
   let sent: { method: string; body: any; id: number }[] = [];
   let uploaded: string | null = null;
+  let duringDownload = () => {};
   beforeEach(() => {
+    duringDownload = () => {};
     updateId = 0;
     nextId = 100;
     sent = [];
@@ -1149,7 +1151,10 @@ describe("/admin: the directory file", () => {
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
         const address = String(url);
-        if (address.includes("/file/bot")) return new Response(uploaded ?? "");
+        if (address.includes("/file/bot")) {
+          duringDownload();
+          return uploaded === null ? new Response("", { status: 404 }) : new Response(uploaded);
+        }
         const method = address.split("/").pop() as string;
         if (method === "getChatMember") return new Response(JSON.stringify(memberOf("administrator")));
         if (method === "getFile") return new Response(JSON.stringify({ ok: true, result: { file_path: "documents/file_1" } }));
@@ -1229,6 +1234,23 @@ describe("/admin: the directory file", () => {
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 0 });
     await sendFile(collection(house("4 Main St", -6.16)));
     expect(texts().at(-2)).toBe("Loaded 1 address, 0 unchanged skipped");
+  });
+
+  it("asks for the file again when it cannot be downloaded", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await press("admin_import", 5);
+    await message({ document: { file_id: "doc1" } });
+    expect(texts()).toEqual(["Send the edited file", "Send the file as a document"]);
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_import" }]);
+  });
+
+  it("loads nothing and shows nothing when the question is cancelled while the file downloads", async () => {
+    await press("admin_import", 5);
+    duringDownload = () => sqlite.exec("DELETE FROM drafts");
+    const count = of("sendMessage").length;
+    await sendFile(collection(house("3 Main St", -6.1603)));
+    expect(of("sendMessage")).toHaveLength(count);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 0 });
   });
 
   it("keeps an error list within one message", async () => {

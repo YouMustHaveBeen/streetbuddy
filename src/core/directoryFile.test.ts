@@ -68,11 +68,27 @@ describe("importDirectoryFile", () => {
     expect(incoming(sqlite)).toHaveLength(1);
   });
 
-  it("does not insert an address twice when two loads read the same state", async () => {
+  it("does not insert an address twice when two loads read the same state, and counts only what was inserted", async () => {
     const { db, sqlite } = fakeD1();
     const sent = file(feature("3 Main St", "house", point(-6.1603, 53.405)));
-    await Promise.all([importDirectoryFile(db, sent), importDirectoryFile(db, sent)]);
+    const results = await Promise.all([importDirectoryFile(db, sent), importDirectoryFile(db, sent)]);
     expect(incoming(sqlite)).toHaveLength(1);
+    expect(results.map((result) => (result.ok ? result.loaded : null)).sort()).toEqual([0, 1]);
+  });
+
+  it("loads a line of several parts and an area", async () => {
+    const { db, sqlite } = fakeD1();
+    const lines = { type: "MultiLineString", coordinates: [[[-6.16, 53.405], [-6.159, 53.405]], [[-6.159, 53.405], [-6.159, 53.406]]] };
+    const area = { type: "Polygon", coordinates: [[[-6.16, 53.405], [-6.159, 53.405], [-6.159, 53.406], [-6.16, 53.405]]] };
+    expect(await importDirectoryFile(db, file(feature("Main St", "spot", lines), feature("Green", "area", area)))).toEqual({
+      ok: true,
+      loaded: 2,
+      unchanged: 0,
+    });
+    expect(incoming(sqlite).map((row: any) => [row.text, row.kind, row.geometry])).toEqual([
+      ["Main St", "spot", JSON.stringify(lines)],
+      ["Green", "area", JSON.stringify(area)],
+    ]);
   });
 
   it("says when the file is not a GeoJSON FeatureCollection", async () => {
@@ -98,6 +114,8 @@ describe("importDirectoryFile", () => {
         feature("Open", "area", { type: "Polygon", coordinates: [ring.slice(0, 3)] }),
         feature("Far", "house", point(-6.16, 95)),
         feature("Short line", "spot", { type: "LineString", coordinates: [[-6.16, 53.405]] }),
+        feature("Holes", "area", { type: "Polygon", coordinates: [ring, ring] }),
+        feature("Extra value", "house", { type: "Point", coordinates: [-6.16, 53.405, "x"] }),
       ),
     );
     expect(result).toEqual({
@@ -114,6 +132,8 @@ describe("importDirectoryFile", () => {
         "Feature 9 (Open): the polygon has no valid ring",
         "Feature 10 (Far): the point has no valid coordinates",
         "Feature 11 (Short line): the line needs at least 2 valid points",
+        "Feature 12 (Holes): the polygon must have one ring",
+        "Feature 13 (Extra value): the point has no valid coordinates",
       ],
     });
     expect(incoming(sqlite)).toEqual([]);

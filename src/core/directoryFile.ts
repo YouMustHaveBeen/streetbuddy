@@ -40,8 +40,7 @@ export async function exportDirectory(db: D1Database): Promise<string> {
 const isPosition = (p: unknown): p is number[] =>
   Array.isArray(p) &&
   p.length >= 2 &&
-  Number.isFinite(p[0]) &&
-  Number.isFinite(p[1]) &&
+  p.every((value) => Number.isFinite(value)) &&
   Math.abs(p[0]) <= 180 &&
   Math.abs(p[1]) <= 90;
 const isLine = (l: unknown): l is number[][] => Array.isArray(l) && l.length >= 2 && l.every(isPosition);
@@ -58,6 +57,7 @@ function geometryError(geometry: unknown): string | null {
     return "every line needs at least 2 valid points";
   }
   if (type === "Polygon") {
+    if (Array.isArray(coordinates) && coordinates.length > 1) return "the polygon must have one ring";
     const ring = Array.isArray(coordinates) ? coordinates[0] : null;
     if (!isLine(ring) || ring.length < 4) return "the polygon has no valid ring";
     const [first, last] = [ring[0], ring[ring.length - 1]];
@@ -119,7 +119,7 @@ function readFile(content: string): { addresses: FileAddress[]; errors: string[]
 // text, kind and shape as one in the directory or one without a decision is skipped, and so is a repeat
 // inside the file. Nothing is loaded when a feature is wrong, or when the text of a new or changed
 // address is in the directory more than once or belongs to two new or changed features of the file.
-// Two reads in one batch, and one batch of inserts.
+// Two reads in one batch, and one batch of inserts; loaded counts the rows actually inserted.
 export async function importDirectoryFile(db: D1Database, content: string): Promise<ImportResult> {
   const file = readFile(content);
   if (!file) return { ok: false, reason: "not_geojson" };
@@ -183,6 +183,7 @@ export async function importDirectoryFile(db: D1Database, content: string): Prom
         .bind(JSON.stringify(rows), now),
     );
   }
-  if (inserts.length > 0) await db.batch(inserts);
-  return { ok: true, loaded: changed.length, unchanged };
+  const written = inserts.length > 0 ? await db.batch(inserts) : [];
+  const loaded = written.reduce((sum, result) => sum + (result.meta.changes ?? 0), 0);
+  return { ok: true, loaded, unchanged };
 }
