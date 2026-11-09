@@ -14,6 +14,8 @@ export {
   nearestAddresses,
   nextIncoming,
   renameAddress,
+  renameIncoming,
+  setIncomingKind,
   searchPattern,
   listDirectory,
   keepFromGroup,

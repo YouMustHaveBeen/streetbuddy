@@ -62,9 +62,13 @@ export type Step =
   | "feedback_input" // Not a report: waiting for the text of a feedback.
   | "phone_choice" // Not a report: /phone.
   | "screen" // Not a report: a screen with buttons (a command of the menu or /admin) that a command removes.
+  | "add_location" // Not a report: /add_address waits for the location of the address.
+  | "add_text" // Not a report: /add_address waits for the address as text.
+  | "add_kind" // Not a report: /add_address waits for the kind of the address.
   | "admin_search" // Not a report: /admin shows the directory (all of it or a search) and waits for a search text.
   | "admin_group" // Not a report: /admin shows a group of duplicate incoming addresses; cleanup holds the map pins.
   | "admin_text" // Not a report: /admin waits for the new text of a directory address.
+  | "admin_intext" // Not a report: /admin waits for the new text of an incoming address.
   | "admin_move" // Not a report: /admin waits for the new location of a directory point.
   | "admin_import"; // Not a report: /admin waits for the edited directory file.
 

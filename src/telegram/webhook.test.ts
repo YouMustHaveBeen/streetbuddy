@@ -748,11 +748,33 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(last().text).toBe("Incoming address 1 of 2\n5 New Street\nPoint, written by a user");
     expect(keys()).toEqual([
       [`admin_kind:ok:${id}:${pin}`, `admin_in:no:${id}:${pin}`, `admin_in:next:${id}:${pin}`],
+      [`admin_intext:${id}:${pin}`, `admin_inkind:${id}:${pin}`],
       [`admin_all_walk:${pin}`, `admin_back:${pin}`],
       [`admin_all_osm:${pin}`],
     ]);
-    expect(labels()).toEqual(["Approve", "Reject", "Next", "Approve all from the walk", "Back", "Approve all from OSM"]);
+    expect(labels()).toEqual(["Approve", "Reject", "Next", "Edit text", "Edit kind", "Approve all from the walk", "Back", "Approve all from OSM"]);
     expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual([5]);
+  });
+  it("changes the kind of an incoming address and shows the same address again without deciding", async () => {
+    const id = addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.16, 53.405] });
+    await press("admin_incoming", 5);
+    const [screen, pin] = [lastId(), pinId()];
+    await press(`admin_inkind:${id}:${pin}`, screen);
+    expect(last().text).toBe("Choose the kind");
+    expect(labels()).toEqual(["house", "appt", "facility", "spot", "Back"]);
+    await press(`admin_insetkind:spot:${id}:${pin}`, lastId());
+    expect(sqlite.prepare("SELECT kind, decision FROM incoming_addresses WHERE id = ?").get(id)).toEqual({ kind: "spot", decision: null });
+    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint, written by a user");
+  });
+  it("changes the text of an incoming address and shows the same address again without deciding", async () => {
+    const id = addIncoming("5 New Street", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
+    await press("admin_incoming", 5);
+    const [screen, pin] = [lastId(), pinId()];
+    await press(`admin_intext:${id}:${pin}`, screen);
+    expect(last().text).toBe("Write the new address");
+    await message({ text: "  6 New Street, D13 " });
+    expect(sqlite.prepare("SELECT text, decision FROM incoming_addresses WHERE id = ?").get(id)).toEqual({ text: "6 New Street", decision: null });
+    expect(last().text.startsWith("Incoming address 1 of 1\n6 New Street")).toBe(true);
   });
   it("asks for the kind of an address of a user, keeping its pin, and approves with the chosen kind", async () => {
     const id = addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.16, 53.405] });
@@ -1464,13 +1486,11 @@ describe("/admin: the directory file", () => {
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_import" }]);
   });
 
-  it("lists the errors of a wrong file, loads nothing and waits for the file again", async () => {
+  it("skips a wrong feature, lists it and loads the others", async () => {
     await press("admin_import", 5);
     await sendFile(collection(house("", -6.16), house("4 Main St", -6.16)));
-    expect(texts().at(-1)).toBe("The file has errors, nothing was loaded\nFeature 1 (): the address is missing");
-    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 0 });
-    await sendFile(collection(house("4 Main St", -6.16)));
-    expect(texts().at(-2)).toBe("Loaded 1 address, 0 unchanged skipped");
+    expect(texts().at(-2)).toBe("Loaded 1 address, 0 unchanged skipped, 1 object with errors skipped\n\nObject 1: the address is missing");
+    expect(sqlite.prepare("SELECT text FROM incoming_addresses").all()).toEqual([{ text: "4 Main St" }]);
   });
 
   it("asks for the file again when it cannot be downloaded", async () => {
@@ -1508,11 +1528,11 @@ describe("/admin: the directory file", () => {
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 0 });
   });
 
-  it("keeps an error list within one message", async () => {
+  it("keeps the list of skipped objects within one message", async () => {
     await press("admin_import", 5);
     await sendFile(collection(...Array.from({ length: 200 }, (_, i) => ({ ...house(`${i} Main St`, -6.16), geometry: null }))));
-    const text = texts().at(-1) as string;
+    const text = texts().at(-2) as string;
     expect(text.length).toBeLessThanOrEqual(4096);
-    expect(text.startsWith("The file has errors, nothing was loaded\nFeature 1 (0 Main St)")).toBe(true);
+    expect(text.startsWith("Loaded 0 addresses, 0 unchanged skipped, 200 objects with errors skipped\n\nObject 1: ")).toBe(true);
   });
 });
