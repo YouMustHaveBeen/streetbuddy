@@ -142,7 +142,7 @@ const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
       },
       paint: { "text-color": FUCHSIA, "text-halo-color": "#fafafa", "text-halo-width": 1.5 }
     });
-    ["areas", "lines-edge", "points"].forEach(function (layer) {
+    ["areas", "lines-edge", "points", "facility-labels"].forEach(function (layer) {
       map.on("click", layer, function (event) {
         var properties = event.features[0].properties;
         new mapboxgl.Popup().setLngLat(event.lngLat).setDOMContent(textNode([properties.text])).addTo(map);

@@ -92,10 +92,12 @@ describe("the directory map page", () => {
   it("labels the facility points from zoom 16 and keeps the popup", async () => {
     addAddress("Little Rainbows", "facility", { type: "Point", coordinates: [-6.1, 53.4] });
     const html = await (await directoryPage(env)).text();
+    expect(html).toContain('"text":"Little Rainbows","kind":"facility"');
     expect(html).toContain('id: "facility-labels", type: "symbol", source: "directory", minzoom: 16');
     expect(html).toContain('filter: ["all", isPoint, ["==", ["get", "kind"], "facility"]]');
     expect(html).toContain('"text-field": ["get", "text"]');
     expect(html).toContain('"text-color": FUCHSIA');
+    expect(html).toContain('["areas", "lines-edge", "points", "facility-labels"].forEach');
     expect(html).toContain("textNode([properties.text])");
   });
 
