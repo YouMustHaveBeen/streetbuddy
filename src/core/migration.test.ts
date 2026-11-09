@@ -62,3 +62,18 @@ describe("migration 0014", () => {
     expect(() => sqlite.exec("INSERT INTO incoming_addresses (source, text, kind, geometry, created_at) VALUES ('google', 'D', 'house', '{}', 1)")).toThrow();
   });
 });
+
+describe("migration 0015", () => {
+  it("drops the walk file names and keeps the incoming addresses", () => {
+    const sqlite = before("0015");
+    sqlite.exec(`
+      INSERT INTO walk_files (name, loaded_at) VALUES ('walk-1.geojson', 1);
+      INSERT INTO incoming_addresses (source, text, kind, geometry, decision, walk_file, created_at) VALUES ('walk', 'P', 'house', '{}', NULL, 'walk-1.geojson', 2);
+    `);
+    sqlite.exec(sql("0015_drop_walk_files.sql"));
+    expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'walk_files'").all()).toEqual([]);
+    expect(sqlite.prepare("SELECT * FROM incoming_addresses").all()).toEqual([
+      { id: 1, source: "walk", text: "P", kind: "house", geometry: "{}", user_id: null, decision: null, created_at: 2 },
+    ]);
+  });
+});
