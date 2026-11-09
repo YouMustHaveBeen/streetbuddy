@@ -134,26 +134,129 @@ export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
     .sort((a, b) => b.plates - a.plates);
 }
 
+// The events the bot counts while it works, one number per event and day.
+export const STAT_EVENTS = [
+  "started",
+  "area_refused",
+  "plate_as_is",
+  "plate_edited",
+  "plate_manual",
+  "recognitions",
+  "ai_errors",
+  "nominatim_errors",
+  "outsiders",
+] as const;
+
+export type StatEvent = (typeof STAT_EVENTS)[number];
+
+// Adds one to the count of the event for today in Dublin. A failure is only logged.
+export async function countEvent(db: D1Database, event: StatEvent): Promise<void> {
+  try {
+    await db
+      .prepare("INSERT INTO daily_counts (day, event, n) VALUES (?1, ?2, 1) ON CONFLICT (day, event) DO UPDATE SET n = n + 1")
+      .bind(dublinDay(Date.now()), event)
+      .run();
+  } catch {
+    console.error("Counting an event failed");
+  }
+}
+
+// How many days the month column of the statistics covers, ending with yesterday.
+export const STATISTICS_MONTH_DAYS = 30;
+
+// A number for yesterday, for the last STATISTICS_MONTH_DAYS days up to yesterday, and for all days up to yesterday.
+export interface Count {
+  yesterday: number;
+  month: number;
+  all: number;
+}
+
+export interface Statistics {
+  links: Count;
+  options: Count[];
+  events: Record<StatEvent, Count>;
+  // Different users of yesterday, and of the last STATISTICS_MONTH_DAYS days up to now.
+  usersYesterday: number;
+  usersMonth: number;
+}
+
+const OPTION_COLUMNS = PARKING_OPTIONS.map((_, i) => `option_${i}`);
+
+// The sums of one column over the three periods; ?1 is yesterday and ?2 the first day of the month column.
+const periodSums = (column: string, alias: string) =>
+  `COALESCE(SUM(CASE WHEN day = ?1 THEN ${column} ELSE 0 END), 0) AS ${alias}_yesterday,
+   COALESCE(SUM(CASE WHEN day >= ?2 THEN ${column} ELSE 0 END), 0) AS ${alias}_month,
+   COALESCE(SUM(${column}), 0) AS ${alias}_all`;
+
+// The statistics screen: the nightly numbers of daily_stats, the counts of daily_counts and the
+// users of the last days. One batch, one round trip.
+export async function readStatistics(db: D1Database, now: number): Promise<Statistics> {
+  const yesterday = dublinDay(now - DAY_MS);
+  const monthStart = dublinDay(now - STATISTICS_MONTH_DAYS * DAY_MS);
+  const [counts, stats, users] = await db.batch([
+    db
+      .prepare(
+        `SELECT event, ${periodSums("n", "n")} FROM daily_counts WHERE day <= ?1 GROUP BY event`,
+      )
+      .bind(yesterday, monthStart),
+    db
+      .prepare(
+        `SELECT ${periodSums("reports", "links")},
+                ${OPTION_COLUMNS.map((column, i) => periodSums(column, `o${i}`)).join(",\n")},
+                COALESCE(SUM(CASE WHEN day = ?1 THEN users ELSE 0 END), 0) AS users_yesterday
+         FROM daily_stats WHERE day <= ?1`,
+      )
+      .bind(yesterday, monthStart),
+    db.prepare("SELECT COUNT(*) AS n FROM user_phones WHERE last_used_at > ?1").bind(now - STATISTICS_MONTH_DAYS * DAY_MS),
+  ]);
+
+  const count = (row: Record<string, number>, alias: string): Count => ({
+    yesterday: row[`${alias}_yesterday`],
+    month: row[`${alias}_month`],
+    all: row[`${alias}_all`],
+  });
+  const eventRows = new Map(
+    (counts.results as ({ event: string } & Record<string, number>)[]).map((row) => [row.event, row] as const),
+  );
+  const [statRow] = stats.results as Record<string, number>[];
+  return {
+    links: count(statRow, "links"),
+    options: PARKING_OPTIONS.map((_, i) => count(statRow, `o${i}`)),
+    events: Object.fromEntries(
+      STAT_EVENTS.map((event) => {
+        const row = eventRows.get(event);
+        return [event, row ? count(row, "n") : { yesterday: 0, month: 0, all: 0 }];
+      }),
+    ) as Record<StatEvent, Count>,
+    usersYesterday: statRow.users_yesterday,
+    usersMonth: (users.results as { n: number }[])[0].n,
+  };
+}
+
 // The nightly count: the statistics of the day before and the new hotspots. One read of the
-// whole log and one batch of writes; repeating it gives the same rows.
+// whole log, one read of the users and one batch of writes; repeating it gives the same rows.
 export async function runNightlyStats(db: D1Database, now: number): Promise<void> {
-  const { results } = await db
-    .prepare("SELECT plate, address, lat, lon, address_id, parking, day, created_at FROM report_log ORDER BY created_at")
-    .all<PlaceRow & { parking: number; day: string }>();
+  const [{ results }, phones] = await Promise.all([
+    db
+      .prepare("SELECT plate, address, lat, lon, address_id, parking, day, created_at FROM report_log ORDER BY created_at")
+      .all<PlaceRow & { parking: number; day: string }>(),
+    db.prepare("SELECT last_used_at FROM user_phones").all<{ last_used_at: number }>(),
+  ]);
 
   const yesterday = dublinDay(now - DAY_MS);
   // A row written between the migration and the deploy has no day yet.
   const ofYesterday = results.filter((row) => (row.day || dublinDay(row.created_at)) === yesterday);
   const perOption = PARKING_OPTIONS.map((_, i) => ofYesterday.filter((row) => row.parking & (1 << i)).length);
+  const users = phones.results.filter((row) => dublinDay(row.last_used_at) === yesterday).length;
 
   await db.batch([
     db
       .prepare(
         `INSERT OR REPLACE INTO daily_stats
-         (day, reports, option_0, option_1, option_2, option_3, option_4, option_5, option_6)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+         (day, reports, option_0, option_1, option_2, option_3, option_4, option_5, option_6, users)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
       )
-      .bind(yesterday, ofYesterday.length, ...perOption),
+      .bind(yesterday, ofYesterday.length, ...perOption, users),
     db.prepare("DELETE FROM hotspots"),
     ...topHotspots(results).map((spot, i) =>
       db

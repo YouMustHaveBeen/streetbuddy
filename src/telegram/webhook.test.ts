@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeD1 } from "../../test/fakeD1";
+import { PARKING_OPTIONS } from "../core";
 import { isDirectoryLinkValid } from "../directoryLink";
 import { handleWebhook } from "./webhook";
 import type { WebhookEnv } from "./webhook";
@@ -169,6 +170,15 @@ describe("membership", () => {
       });
     },
   );
+  it("counts the attempts of someone who is not a member, and a member does not add to it", async () => {
+    telegram(memberOf("left"));
+    await send(privateMessage(1, 42));
+    await send(privateMessage(2, 43));
+    expect(sqlite.prepare("SELECT event, n FROM daily_counts").all()).toEqual([{ event: "outsiders", n: 2 }]);
+    telegram(memberOf("member"));
+    await send(privateMessage(3, 44));
+    expect(sqlite.prepare("SELECT SUM(n) AS n FROM daily_counts").get()).toEqual({ n: 2 });
+  });
   it("does not check membership on an ordinary button", async () => {
     const mock = telegram(memberOf("left"));
     const press = privateButton() as any;
@@ -407,16 +417,153 @@ describe("/admin", () => {
     expect(enabled()).toBe(0);
     expect(bodyOf(mock, "sendMessage").text).toBe("Admin console\nBot: off\nLast form check: none yet");
   });
-  it("answers the Feedback and Statistics buttons and does nothing else", async () => {
-    for (const data of ["admin_feedback", "admin_statistics"]) {
+  describe("Feedback", () => {
+    const addFeedback = (userId: number, text: string, at: number) =>
+      sqlite.prepare("INSERT INTO feedback (user_id, text, created_at) VALUES (?, ?, ?)").run(userId, text, at);
+    const feedbackButtons = (id: number) => [
+      [
+        { text: "Delete", callback_data: `admin_fbdel:${id}` },
+        { text: "Next", callback_data: `admin_fbnext:${id}` },
+      ],
+      [{ text: "Back", callback_data: "admin_back" }],
+    ];
+    it("shows the oldest feedback first with the Telegram ID of its author and the Dublin time", async () => {
       const mock = adminTelegram("administrator");
-      await send(adminButton(data));
-      expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery"]);
-      expect(enabled()).toBe(1);
-      pending = [];
-      vi.unstubAllGlobals();
-      sqlite.prepare("DELETE FROM processed_updates").run();
-    }
+      addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
+      addFeedback(888, "Another one", Date.UTC(2026, 10, 4, 9, 0));
+      await send(adminButton("admin_feedback"));
+      expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery", "sendMessage", "deleteMessage"]);
+      expect(bodyOf(mock, "sendMessage")).toEqual({
+        chat_id: 42,
+        text: "Feedback 1 of 2\nFrom 777 on 03/11/2026 10:35\nGreat bot",
+        reply_markup: { inline_keyboard: feedbackButtons(1) },
+      });
+      expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
+    });
+    it("Next shows the next one and goes back to the first after the last", async () => {
+      const mock = adminTelegram("administrator");
+      addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
+      addFeedback(888, "Another one", Date.UTC(2026, 10, 4, 9, 0));
+      await send(adminButton("admin_fbnext:1"));
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 2 of 2\nFrom 888 on 04/11/2026 09:00\nAnother one");
+      mock.mockClear();
+      await send(adminButton("admin_fbnext:2", 2));
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 2\nFrom 777 on 03/11/2026 10:35\nGreat bot");
+    });
+    it("Next on the only feedback shows it again", async () => {
+      const mock = adminTelegram("administrator");
+      addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
+      await send(adminButton("admin_fbnext:1"));
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 1\nFrom 777 on 03/11/2026 10:35\nGreat bot");
+    });
+    it("Delete removes that feedback and shows the next one, and the last one is followed by No feedback", async () => {
+      const mock = adminTelegram("administrator");
+      addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
+      addFeedback(888, "Another one", Date.UTC(2026, 10, 4, 9, 0));
+      await send(adminButton("admin_fbdel:1"));
+      expect(sqlite.prepare("SELECT user_id FROM feedback").all()).toEqual([{ user_id: 888 }]);
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 1\nFrom 888 on 04/11/2026 09:00\nAnother one");
+      mock.mockClear();
+      await send(adminButton("admin_fbdel:2", 2));
+      expect(sqlite.prepare("SELECT COUNT(*) AS n FROM feedback").get()).toEqual({ n: 0 });
+      expect(bodyOf(mock, "sendMessage")).toEqual({
+        chat_id: 42,
+        text: "No feedback",
+        reply_markup: { inline_keyboard: [[{ text: "Back", callback_data: "admin_back" }]] },
+      });
+    });
+    it("Delete of a feedback that is already gone only shows the next one", async () => {
+      const mock = adminTelegram("administrator");
+      sqlite.prepare("INSERT INTO feedback (id, user_id, text, created_at) VALUES (2, 888, 'Another one', ?)").run(Date.UTC(2026, 10, 4, 9, 0));
+      await send(adminButton("admin_fbdel:1"));
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 1\nFrom 888 on 04/11/2026 09:00\nAnother one");
+      expect(sqlite.prepare("SELECT COUNT(*) AS n FROM feedback").get()).toEqual({ n: 1 });
+    });
+    it("says there is no feedback when there is none", async () => {
+      const mock = adminTelegram("administrator");
+      await send(adminButton("admin_feedback"));
+      expect(bodyOf(mock, "sendMessage").text).toBe("No feedback");
+    });
+    it("keeps the screen as a remembered one, so a command removes it", async () => {
+      adminTelegram("administrator");
+      addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
+      await send(adminButton("admin_feedback"));
+      expect(sqlite.prepare("SELECT step, buttons_message_id FROM drafts").all()).toEqual([
+        { step: "screen", buttons_message_id: SCREEN_ID },
+      ]);
+    });
+    it("gives a member who is not an administrator no answer to Delete and leaves the feedback", async () => {
+      const mock = adminTelegram("member");
+      addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
+      await send(adminButton("admin_fbdel:1"));
+      expect(methods(mock)).toEqual(["getChatMember"]);
+      expect(sqlite.prepare("SELECT COUNT(*) AS n FROM feedback").get()).toEqual({ n: 1 });
+    });
+  });
+  describe("Statistics", () => {
+    const NOW = Date.UTC(2026, 10, 10, 12, 0);
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(NOW);
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+    it("shows yesterday, the last 30 days and all days up to yesterday", async () => {
+      const mock = adminTelegram("administrator");
+      sqlite
+        .prepare("INSERT INTO daily_stats (day, reports, option_0, option_1, option_2, option_3, option_4, option_5, option_6, users) VALUES ('2026-11-09', 4, 2, 0, 0, 0, 0, 0, 1, 3)")
+        .run();
+      sqlite
+        .prepare("INSERT INTO daily_stats (day, reports, option_0, option_1, option_2, option_3, option_4, option_5, option_6, users) VALUES ('2026-09-01', 10, 5, 0, 0, 0, 0, 0, 0, 7)")
+        .run();
+      sqlite.prepare("INSERT INTO daily_counts (day, event, n) VALUES ('2026-11-09', 'started', 6), ('2026-09-01', 'started', 12), ('2026-11-09', 'outsiders', 1), ('2026-11-10', 'started', 50)").run();
+      sqlite.prepare("INSERT INTO user_phones (user_id, phone, reports, last_used_at) VALUES (1, 'android', 1, ?)").run(NOW - 3600000);
+      await send(adminButton("admin_statistics"));
+      expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery", "sendMessage", "deleteMessage"]);
+      expect(bodyOf(mock, "sendMessage")).toEqual({
+        chat_id: 42,
+        text: [
+          "Statistics",
+          "Yesterday / last 30 days / all days up to yesterday",
+          "Links given: 4 / 4 / 14",
+          "Reports started: 6 / 6 / 18",
+          "Left before the link: 2 / 2 / 4",
+          "Users: 3 / 1 / -",
+          "Out of area: 0 / 0 / 0",
+          "Plate accepted as is: 0 / 0 / 0",
+          "Plate corrected: 0 / 0 / 0",
+          "Plate written by the user: 0 / 0 / 0",
+          "Plate recognitions: 0 / 0 / 0",
+          "Workers AI errors: 0 / 0 / 0",
+          "Nominatim errors: 0 / 0 / 0",
+          "Not group members: 1 / 1 / 1",
+          "Parking options",
+          `${PARKING_OPTIONS[0]}: 2 / 2 / 7`,
+          ...PARKING_OPTIONS.slice(1, 6).map((option) => `${option}: 0 / 0 / 0`),
+          `${PARKING_OPTIONS[6]}: 1 / 1 / 1`,
+        ].join("\n"),
+        reply_markup: { inline_keyboard: [[{ text: "Back", callback_data: "admin_back" }]] },
+      });
+    });
+    it("shows zeros when nothing has been counted", async () => {
+      const mock = adminTelegram("administrator");
+      await send(adminButton("admin_statistics"));
+      expect(bodyOf(mock, "sendMessage").text).toContain("Links given: 0 / 0 / 0\nReports started: 0 / 0 / 0\nLeft before the link: 0 / 0 / 0\nUsers: 0 / 0 / -");
+    });
+    it("never shows a negative number of reports left before the link", async () => {
+      const mock = adminTelegram("administrator");
+      sqlite
+        .prepare("INSERT INTO daily_stats (day, reports, option_0, option_1, option_2, option_3, option_4, option_5, option_6, users) VALUES ('2026-11-09', 4, 1, 0, 0, 0, 0, 0, 0, 1)")
+        .run();
+      await send(adminButton("admin_statistics"));
+      expect(bodyOf(mock, "sendMessage").text).toContain("Links given: 4 / 4 / 4\nReports started: 0 / 0 / 0\nLeft before the link: 0 / 0 / 0");
+    });
+    it("gives a member who is not an administrator no answer", async () => {
+      const mock = adminTelegram("member");
+      await send(adminButton("admin_statistics"));
+      expect(methods(mock)).toEqual(["getChatMember"]);
+    });
   });
   it("gives a member who is not an administrator no answer to the Feedback button", async () => {
     const mock = adminTelegram("member");
@@ -478,6 +625,8 @@ describe("which buttons check membership", () => {
     "admin_on",
     "admin_off",
     "admin_feedback",
+    "admin_fbnext:1",
+    "admin_fbdel:1",
     "admin_statistics",
     "admin_incoming",
     "admin_directory",

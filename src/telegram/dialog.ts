@@ -6,6 +6,7 @@ import {
   buildLocation,
   buildReportLink,
   buildRoadUserLine,
+  countEvent,
   district,
   dublinDateTime,
   formAddress,
@@ -23,7 +24,7 @@ import {
   reverseGeocode,
   withoutPostalDistrict,
 } from "../core";
-import type { Defer, Hotspot, LoggedReport } from "../core";
+import type { Defer, Hotspot, LoggedReport, StatEvent } from "../core";
 import type { Env } from "../env";
 import { INSTALL_PATH } from "../install";
 import { MANUAL_PATH } from "../manual";
@@ -402,6 +403,7 @@ async function handleCommand(c: Context, command: string): Promise<void> {
 }
 
 async function refuseArea(c: Context, draft: Draft | null): Promise<void> {
+  c.defer(countEvent(c.env.DB, "area_refused"));
   if (draft) await dropDraft(c, draft);
   await send(c, OUT_OF_AREA);
 }
@@ -429,6 +431,7 @@ async function handleLocation(
       address = await reverseGeocode(c.env.DB, lat, lon, c.defer);
     } catch {
       console.error("Nominatim failed on coordinates");
+      c.defer(countEvent(c.env.DB, "nominatim_errors"));
       const failures = (draft?.failures ?? 0) + 1;
       if (failures === 1) {
         await show(c, draft, TRY_AGAIN, { step: "location", failures }, cleanupIds);
@@ -497,7 +500,7 @@ function pickPhoto(sizes: PhotoSize[]): PhotoSize {
 }
 
 // Runs next to the dialog. Any failure ends in an empty list.
-// QUERY BUDGET EXCEPTION: cache read, cache write, result write.
+// QUERY BUDGET EXCEPTION: cache read, cache write, result write, recognition and error counts.
 async function recognize(c: Context, draftId: number, photo: PhotoSize): Promise<void> {
   let plates: string[] = [];
   try {
@@ -507,7 +510,13 @@ async function recognize(c: Context, draftId: number, photo: PhotoSize): Promise
     } else {
       const image = await downloadFile(c.env.TELEGRAM_BOT_TOKEN, photo.file_id);
       const startedAt = Date.now();
-      plates = await recognizePlates(c.env.AI, image);
+      c.defer(countEvent(c.env.DB, "recognitions"));
+      try {
+        plates = await recognizePlates(c.env.AI, image);
+      } catch (error) {
+        c.defer(countEvent(c.env.DB, "ai_errors"));
+        throw error;
+      }
       // Logs the duration only.
       console.log(`Plate recognition took ${Date.now() - startedAt} ms`);
       await cachePlates(c.env.DB, photo.file_unique_id, plates);
@@ -529,7 +538,7 @@ async function answerPhoto(c: Context, draft: Draft, message: Message, count: nu
 }
 
 // QUERY BUDGET EXCEPTION: draft read, photo record, screen swap; one more read for an album,
-// and the statements of recognize for the first photo.
+// and the count of the started report and the statements of recognize for the first photo.
 async function handlePhoto(c: Context, draft: Draft, message: Message): Promise<void> {
   const photo = pickPhoto(message.photo as PhotoSize[]);
   const recorded = await recordPhoto(c.env.DB, c.userId, draft.draft_id, {
@@ -539,6 +548,7 @@ async function handlePhoto(c: Context, draft: Draft, message: Message): Promise<
     messageId: message.message_id,
   });
   if (recorded === null) return;
+  if (recorded.isFirst) c.defer(countEvent(c.env.DB, "started"));
   await Promise.all([
     answerPhoto(c, draft, message, recorded.photoCount),
     recorded.isFirst ? recognize(c, draft.draft_id, photo) : Promise.resolve(),
@@ -565,6 +575,14 @@ function reportBody(draft: Draft, parkingBits: number, address = draft.address a
 }
 
 const chosenParking = (bits: number) => PARKING_OPTIONS.filter((_, i) => bits & (1 << i));
+
+// The plate of a report that gets its link: one of the recognized plates, a changed one, or one
+// written when nothing was recognized.
+function plateKind(draft: Draft): StatEvent {
+  const recognized = parsePlateList(draft);
+  if (recognized.includes(draft.plate as string)) return "plate_as_is";
+  return recognized.length > 0 ? "plate_edited" : "plate_manual";
+}
 
 // The review screen or the Edit screen with the report as it is after the changes.
 async function showReport(
@@ -613,6 +631,7 @@ async function handlePlateInput(
   }
   // With no photo, the time of the report is the time of this message.
   const firstPlate = draft.step === "photos" ? { first_photo_at: message.date * 1000 } : {};
+  if (draft.step === "photos") c.defer(countEvent(c.env.DB, "started"));
   await showPlateTime(c, { ...draft, ...firstPlate }, { plate, ...firstPlate }, cleanupIds);
 }
 
@@ -810,7 +829,7 @@ async function deleteMessages(c: Context, ids: number[]): Promise<void> {
 
 // Moves the step first and moves it back if Telegram fails; the report is saved and the
 // dialog is cleared at the same time once the link is out.
-// QUERY BUDGET EXCEPTION: step, report log, final message, count of reports, written address, draft removal.
+// QUERY BUDGET EXCEPTION: step, report log, final message, count of reports, plate count, written address, draft removal.
 async function finish(c: Context, draft: Draft, from: Step, phone: UserPhone): Promise<void> {
   const chosen = await startFinishing(c.env.DB, c.userId, draft.draft_id, from);
   if (chosen === null) return;
@@ -865,6 +884,7 @@ async function finish(c: Context, draft: Draft, from: Step, phone: UserPhone): P
     addressId: draft.address_id,
   };
   const cleanup = JSON.parse(draft.cleanup) as number[];
+  c.defer(countEvent(c.env.DB, plateKind(draft)));
   await Promise.all([
     keepReport(c, report, sentId, body),
     keepCount(c),
