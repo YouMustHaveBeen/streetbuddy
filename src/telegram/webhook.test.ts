@@ -1139,7 +1139,7 @@ describe("/admin: the directory file", () => {
   let updateId = 0;
   let nextId = 0;
   let sent: { method: string; body: any; id: number }[] = [];
-  let uploaded: string | null = null;
+  let uploaded: string | Uint8Array | null = null;
   let duringDownload = () => {};
   beforeEach(() => {
     duringDownload = () => {};
@@ -1182,7 +1182,7 @@ describe("/admin: the directory file", () => {
     Object.assign(update.message, { message_id: 500 + updateId, date: 1793000000, ...fields });
     await send(update);
   };
-  const sendFile = (content: string) => {
+  const sendFile = (content: string | Uint8Array) => {
     uploaded = content;
     return message({ document: { file_id: "doc1", file_name: "map.geojson" } });
   };
@@ -1250,6 +1250,24 @@ describe("/admin: the directory file", () => {
     const count = of("sendMessage").length;
     await sendFile(collection(house("3 Main St", -6.1603)));
     expect(of("sendMessage")).toHaveLength(count);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 0 });
+  });
+
+  it("asks for the file again when it is not valid UTF-8", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await press("admin_import", 5);
+    const [before, after] = collection(house("3 Main X", -6.1603)).split("X");
+    const encode = (text: string) => [...new TextEncoder().encode(text)];
+    await sendFile(new Uint8Array([...encode(before), 0xff, ...encode(after)]));
+    expect(texts().at(-1)).toBe("Send the file as a document");
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 0 });
+  });
+
+  it("does not take a question that was asked again while the file downloaded", async () => {
+    await press("admin_import", 5);
+    duringDownload = () => sqlite.exec("UPDATE drafts SET buttons_message_id = 999");
+    await sendFile(collection(house("3 Main St", -6.1603)));
+    expect(sqlite.prepare("SELECT step, buttons_message_id FROM drafts").all()).toEqual([{ step: "admin_import", buttons_message_id: 999 }]);
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 0 });
   });
 

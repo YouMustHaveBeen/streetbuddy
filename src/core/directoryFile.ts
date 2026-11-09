@@ -22,6 +22,7 @@ interface FileAddress {
 export type ImportResult =
   | { ok: false; reason: "not_geojson" }
   | { ok: false; reason: "errors"; errors: string[] }
+  | { ok: false; reason: "gone" }
   | { ok: true; loaded: number; unchanged: number };
 
 // The whole directory as a FeatureCollection; every feature has address, kind and source.
@@ -119,8 +120,13 @@ function readFile(content: string): { addresses: FileAddress[]; errors: string[]
 // text, kind and shape as one in the directory or one without a decision is skipped, and so is a repeat
 // inside the file. Nothing is loaded when a feature is wrong, or when the text of a new or changed
 // address is in the directory more than once or belongs to two new or changed features of the file.
+// claim runs after every check and before the first write; when it returns false nothing is written.
 // Two reads in one batch, and one batch of inserts; loaded counts the rows actually inserted.
-export async function importDirectoryFile(db: D1Database, content: string): Promise<ImportResult> {
+export async function importDirectoryFile(
+  db: D1Database,
+  content: string,
+  claim: () => Promise<boolean>,
+): Promise<ImportResult> {
   const file = readFile(content);
   if (!file) return { ok: false, reason: "not_geojson" };
   if (file.errors.length > 0) return { ok: false, reason: "errors", errors: file.errors };
@@ -160,6 +166,7 @@ export async function importDirectoryFile(db: D1Database, content: string): Prom
     if (count > 1) errors.push(`"${text}" is in the file ${count} times as new or changed: leave one of them`);
   }
   if (errors.length > 0) return { ok: false, reason: "errors", errors };
+  if (!(await claim())) return { ok: false, reason: "gone" };
 
   const now = Date.now();
   const inserts: D1PreparedStatement[] = [];

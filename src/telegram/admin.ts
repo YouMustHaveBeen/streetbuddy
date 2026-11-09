@@ -679,33 +679,29 @@ export async function handleAdminInput(
     ]);
   };
   // The edited directory file: its new and changed addresses go to the incoming addresses, which are
-  // shown at once; a wrong file loads nothing and the file is asked for again. After the download the
-  // question is taken from the drafts before anything is written: a question already gone loads nothing.
+  // shown at once; a wrong file loads nothing and the file is asked for again. The question is taken
+  // from the drafts after every check and before the first write: a question gone or changed loads nothing.
   if (draft.step === "admin_import") {
     let content: string | null = null;
     if (message.document) {
       try {
-        content = new TextDecoder().decode(await downloadFile(token, message.document.file_id));
+        content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(await downloadFile(token, message.document.file_id));
       } catch {
-        console.error("Telegram file download failed");
+        console.error("Telegram file download or decoding failed");
       }
     }
     if (content === null) {
       await askAgain(SEND_AS_DOCUMENT);
       return;
     }
-    if (!(await takeDraft(env.DB, userId, draft.draft_id))) return;
-    const result = await importDirectoryFile(env.DB, content);
-    const removeOld = () =>
-      Promise.all([deleteMessage(token, chatId, draft.buttons_message_id), deleteMessage(token, chatId, message.message_id)]);
+    const result = await importDirectoryFile(env.DB, content, () =>
+      takeDraft(env.DB, userId, draft.draft_id, draft.buttons_message_id),
+    );
     if (!result.ok) {
-      const prompt = result.reason === "errors" ? errorsText(result.errors) : SEND_AS_DOCUMENT;
-      const messageId = await send(env, chatId, prompt, [[backButton()]]);
-      if (messageId !== null) await createDraft(env.DB, userId, messageId, prompt, { step: "admin_import" }, []);
-      await removeOld();
+      if (result.reason !== "gone") await askAgain(result.reason === "errors" ? errorsText(result.errors) : SEND_AS_DOCUMENT);
       return;
     }
-    await removeOld();
+    await Promise.all([deleteMessage(token, chatId, draft.buttons_message_id), deleteMessage(token, chatId, message.message_id)]);
     await send(env, chatId, `Loaded ${result.loaded} ${result.loaded === 1 ? "address" : "addresses"}, ${result.unchanged} unchanged skipped`);
     await sendIncoming(env, userId, chatId, 0);
     return;
