@@ -1,12 +1,12 @@
 // StreetBuddy Worker entry point.
 import { cleanupExpired } from "./cleanup";
-import { dublinDateTime, runNightlyStats } from "./core";
+import { runNightlyStats } from "./core";
 import { runFormCheck } from "./dailyCheck";
 import { LINK_EXPIRED_TEXT, isDirectoryLinkValid } from "./directoryLink";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
 import { DIRECTORY_PATH, REPORT_MAP_PATH, directoryPage, reportMapPage } from "./maps";
-import { closeExpiredFinalMessages, handleWebhook } from "./telegram";
+import { closeExpiredFinalMessages, handleWebhook, notifyInactiveUsers } from "./telegram";
 import type { Env } from "./env";
 
 export default {
@@ -40,20 +40,25 @@ export default {
     } catch (error) {
       console.error("scheduled: cleanup failed", error);
     }
-    // The statistics run in the trigger that is 3:00 in Dublin, the form check in the one that is 6:00.
-    const dublinTime = dublinDateTime(event.scheduledTime).time;
-    if (dublinTime.startsWith("03:")) {
+    // The statistics run in the trigger of 3:00 UTC, the form check and the notice of inactive users in the one of 6:00 UTC.
+    const utcHour = new Date(event.scheduledTime).getUTCHours();
+    if (utcHour === 3) {
       try {
         await runNightlyStats(env.DB, event.scheduledTime);
       } catch (error) {
         console.error("scheduled: statistics failed", error);
       }
     }
-    if (dublinTime.startsWith("06:")) {
+    if (utcHour === 6) {
       try {
         await runFormCheck(env);
       } catch (error) {
         console.error("scheduled: form check failed", error);
+      }
+      try {
+        await notifyInactiveUsers(env, event.scheduledTime);
+      } catch (error) {
+        console.error("scheduled: inactive users notice failed", error);
       }
     }
   },

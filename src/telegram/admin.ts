@@ -1,6 +1,7 @@
 // The /admin screen for the administrators of the closed group: the bot's state, the result
 // of the last daily form check, the button that switches the bot on or off, the feedback of the
-// users, which is read and deleted one item at a time, the statistics, the decisions on incoming addresses
+// users, which is read and deleted one item at a time, the statistics, the lists of repeat plates and of
+// possibly abandoned cars, the decisions on incoming addresses
 // (a group of addresses with the same text is decided by keeping one of them), the editing of the
 // address directory by a list and a text search, the directory as a file to edit on a computer and the
 // edited file sent back, and the link to its map page.
@@ -23,6 +24,7 @@ import {
   getAddress,
   importDirectoryFile,
   getSwitchStatus,
+  listPlates,
   movePoint,
   nextIncoming,
   PARKING_OPTIONS,
@@ -33,7 +35,7 @@ import {
   shapeFromGeometry,
   shapeMiddle,
 } from "../core";
-import type { Count, Decision, DuplicateGroup, FormCheckOutcome, IncomingScreen } from "../core";
+import type { Count, Decision, DuplicateGroup, FormCheckOutcome, IncomingScreen, PlateList } from "../core";
 import type { Env } from "../env";
 import { directoryLink } from "../directoryLink";
 import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, OUT_OF_AREA } from "./address";
@@ -79,6 +81,8 @@ const FEEDBACK_NEXT = "admin_fbnext";
 const FEEDBACK_DELETE = "admin_fbdel";
 const STATISTICS = "admin_statistics";
 const INCOMING = "admin_incoming";
+// With arguments ":<list>:<page>", the list being "repeat" or "abandoned".
+const PLATES = "admin_plates";
 const DIRECTORY = "admin_directory";
 const EXPORT = "admin_export";
 const IMPORT = "admin_import";
@@ -111,6 +115,13 @@ const GROUP = "g";
 
 // How many directory addresses a page of the directory screen has.
 const DIRECTORY_PAGE_SIZE = 10;
+// How many plates a page of a list of plates has.
+const PLATES_PAGE_SIZE = 10;
+
+const PLATE_LISTS: Record<PlateList, { title: string; empty: string }> = {
+  repeat: { title: "Repeat plates", empty: "No repeat plates" },
+  abandoned: { title: "Possibly abandoned cars", empty: "No cars found" },
+};
 
 const SEND_SEARCH_TEXT = "Send a text to search";
 const NO_ADDRESSES_FOUND = "No addresses found";
@@ -173,6 +184,10 @@ async function sendScreen(env: AdminEnv, userId: number, chatId: number): Promis
       { text: "Statistics", callback_data: STATISTICS },
     ],
     [
+      { text: "Repeat plates", callback_data: `${PLATES}:repeat:0` },
+      { text: "Possibly abandoned", callback_data: `${PLATES}:abandoned:0` },
+    ],
+    [
       { text: "Incoming addresses", callback_data: INCOMING },
       { text: "Edit directory", callback_data: DIRECTORY },
     ],
@@ -183,6 +198,36 @@ async function sendScreen(env: AdminEnv, userId: number, chatId: number): Promis
   ];
   if (env.DIRECTORY_LINK_SECRET) buttons.push([{ text: "Directory map", url: await directoryLink(env) }]);
   return remember(env, userId, send(env, chatId, text, buttons));
+}
+
+// A page of one of the lists of plates: the plate, the number of reports, the dates of the first and
+// of the last report and the address of the last report.
+async function sendPlates(
+  env: AdminEnv,
+  userId: number,
+  chatId: number,
+  list: PlateList,
+  requestedPage: number,
+): Promise<number | null> {
+  const entries = await listPlates(env.DB, list, Date.now());
+  const { title, empty } = PLATE_LISTS[list];
+  const pages = Math.max(1, Math.ceil(entries.length / PLATES_PAGE_SIZE));
+  const page = Math.min(Math.max(requestedPage, 0), pages - 1);
+  const buttons: Button[][] = [];
+  const paging: Button[] = [];
+  if (page > 0) paging.push({ text: "Previous", callback_data: `${PLATES}:${list}:${page - 1}` });
+  if (page < pages - 1) paging.push({ text: "Next", callback_data: `${PLATES}:${list}:${page + 1}` });
+  if (paging.length > 0) buttons.push(paging);
+  buttons.push([backButton()]);
+  if (entries.length === 0) return remember(env, userId, send(env, chatId, empty, buttons));
+  const lines = entries.slice(page * PLATES_PAGE_SIZE, (page + 1) * PLATES_PAGE_SIZE).map((entry, i) => {
+    const first = dublinDateTime(entry.first).date;
+    const last = dublinDateTime(entry.last).date;
+    const dates = first === last ? first : `${first} - ${last}`;
+    return `${page * PLATES_PAGE_SIZE + i + 1}. ${entry.plate}, ${entry.reports} reports, ${dates}, ${entry.address}`;
+  });
+  const heading = pages > 1 ? `${title} (page ${page + 1} of ${pages})` : title;
+  return remember(env, userId, send(env, chatId, `${heading}\n${lines.join("\n")}`, buttons));
 }
 
 // The feedback after the one with afterId, oldest first, with its author's Telegram ID and the time.
@@ -499,6 +544,8 @@ export async function handleAdminButton(
   if (name === SWITCH_ON || name === SWITCH_OFF) {
     await (name === SWITCH_ON ? enableBot(env.DB) : disableBot(env.DB));
     next = sendScreen(env, userId, chatId);
+  } else if (name === PLATES) {
+    next = sendPlates(env, userId, chatId, first === "abandoned" ? "abandoned" : "repeat", Number(second) || 0);
   } else if (name === FEEDBACK) {
     next = sendFeedback(env, userId, chatId, 0);
   } else if (name === FEEDBACK_NEXT) {

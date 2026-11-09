@@ -16,6 +16,10 @@ const ADMIN_ROW = [
   { text: "Feedback", callback_data: "admin_feedback" },
   { text: "Statistics", callback_data: "admin_statistics" },
 ];
+const PLATES_ROW = [
+  { text: "Repeat plates", callback_data: "admin_plates:repeat:0" },
+  { text: "Possibly abandoned", callback_data: "admin_plates:abandoned:0" },
+];
 const ADDRESS_ROW = [
   { text: "Incoming addresses", callback_data: "admin_incoming" },
   { text: "Edit directory", callback_data: "admin_directory" },
@@ -260,13 +264,13 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
     });
   });
   it("gives the map button a link that is signed with the secret and points at the directory page", async () => {
     const mock = adminTelegram("administrator");
     await send(textMessage("/admin"));
-    const link = new URL(bodyOf(mock, "sendMessage").reply_markup.inline_keyboard[4][0].url);
+    const link = new URL(bodyOf(mock, "sendMessage").reply_markup.inline_keyboard[5][0].url);
     expect(`${link.origin}${link.pathname}`).toBe("https://site.example/directory");
     expect(await isDirectoryLinkValid(env, link.searchParams)).toBe(true);
     expect(await isDirectoryLinkValid({ DIRECTORY_LINK_SECRET: "another" }, link.searchParams)).toBe(false);
@@ -279,7 +283,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW, FILE_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW] },
     });
   });
   it("answers /admin written with the bot name", async () => {
@@ -297,7 +301,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: 03/11/2026 06:00 - form changed",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
     });
   });
   it.each([
@@ -399,7 +403,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
     });
     expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
   });
@@ -1281,6 +1285,90 @@ describe("/admin: incoming addresses and the directory", () => {
     await message({ text: "road" });
     expect(sent.slice(count).map((call) => call.method)).toEqual(["deleteMessage"]);
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
+  });
+
+  describe("the lists of plates", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const START = Date.UTC(2026, 9, 1, 12);
+    // The lists read the log of the last 66 days from the clock.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.UTC(2026, 10, 10, 12));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+    const log = (plate: string, days: number, address: string, dLat = 0) =>
+      sqlite
+        .prepare("INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?, '', ?, 1, ?, ?, -6.1)")
+        .run(START + days * DAY, plate, address, 53.4 + dLat);
+
+    it("shows the repeat plates with the dates and the address of the last report", async () => {
+      for (let i = 0; i < 5; i++) log("12-D-3456", i * 8, i === 4 ? "7 Main St" : "3 Main St", i * 0.01);
+      for (let i = 0; i < 4; i++) log("99-D-1", i, "1 Main St");
+      await press("admin_plates:repeat:0");
+      expect(last().text).toBe("Repeat plates\n1. 12-D-3456, 5 reports, 01/10/2026 - 02/11/2026, 7 Main St");
+      expect(keys()).toEqual([["admin_back"]]);
+    });
+
+    it("shows the cars that stayed at one spot for 33 days or more, the longest first", async () => {
+      log("A-1", 0, "3 Main St");
+      log("A-1", 33, "3 Main St", 0.0002);
+      log("B-2", 0, "5 Main St");
+      log("B-2", 40, "5 Main St");
+      log("C-3", 0, "5 Main St");
+      log("C-3", 32, "5 Main St");
+      log("D-4", 0, "5 Main St");
+      log("D-4", 20, "9 Main St", 0.01);
+      log("D-4", 50, "5 Main St");
+      await press("admin_plates:abandoned:0");
+      expect(last().text).toBe(
+        "Possibly abandoned cars\n1. B-2, 2 reports, 01/10/2026 - 10/11/2026, 5 Main St\n2. A-1, 2 reports, 01/10/2026 - 03/11/2026, 3 Main St",
+      );
+    });
+
+    it("leaves out the reports older than 66 days", async () => {
+      for (let i = 0; i < 4; i++) log("12-D-3456", 20 + i, "3 Main St");
+      log("12-D-3456", -60, "3 Main St");
+      log("A-1", -60, "5 Main St");
+      log("A-1", 20, "5 Main St");
+      await press("admin_plates:repeat:0");
+      expect(last().text).toBe("No repeat plates");
+      await press("admin_plates:abandoned:0");
+      expect(last().text).toBe("No cars found");
+    });
+
+    it("takes the later row for the last report when two have the same time", async () => {
+      for (const address of ["1 A St", "2 B St", "3 C St", "4 D St", "5 E St"]) log("12-D-3456", 3, address);
+      await press("admin_plates:repeat:0");
+      expect(last().text).toBe("Repeat plates\n1. 12-D-3456, 5 reports, 04/10/2026, 5 E St");
+    });
+
+    it("says so when a list is empty", async () => {
+      await press("admin_plates:repeat:0");
+      expect(last().text).toBe("No repeat plates");
+      await press("admin_plates:abandoned:0");
+      expect(last().text).toBe("No cars found");
+      expect(keys()).toEqual([["admin_back"]]);
+    });
+
+    it("pages by ten with Previous and Next and keeps the numbers going", async () => {
+      for (let i = 0; i < 12; i++) for (let j = 0; j < 5; j++) log(`P-${String(i).padStart(2, "0")}`, i + j, "3 Main St");
+      await press("admin_plates:repeat:0");
+      expect(last().text.split("\n")[0]).toBe("Repeat plates (page 1 of 2)");
+      expect(last().text.split("\n")).toHaveLength(11);
+      expect(keys()).toEqual([["admin_plates:repeat:1"], ["admin_back"]]);
+      await press("admin_plates:repeat:1");
+      expect(last().text.split("\n")[0]).toBe("Repeat plates (page 2 of 2)");
+      expect(last().text.split("\n")[1].startsWith("11. ")).toBe(true);
+      expect(keys()).toEqual([["admin_plates:repeat:0"], ["admin_back"]]);
+    });
+
+    it("gives a member who is not an administrator no answer", async () => {
+      status = "member";
+      await press("admin_plates:repeat:0");
+      expect(of("sendMessage")).toHaveLength(0);
+    });
   });
 });
 

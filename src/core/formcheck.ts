@@ -1,6 +1,8 @@
 // Daily check of the Traffic Watch report form against config/form.json: the ids of the
 // fields the script fills, the option lists it picks from, and the code of the site's own
-// script that creates the date field after "Click Here to Start".
+// script that creates the date field after "Click Here to Start". Also whether the page limits
+// scripts with a script-src, script-src-elem or default-src directive of its Content-Security-Policy,
+// in the header or in a meta tag.
 import reference from "../../config/form.json";
 import { REQUEST_TIMEOUT_MS } from "./shared";
 
@@ -8,18 +10,40 @@ import { REQUEST_TIMEOUT_MS } from "./shared";
 export type FormCheck = { ok: true } | { ok: false; reason: string; unloaded?: true };
 
 // A failed request is repeated once; throws when it fails again.
-async function fetchText(url: string): Promise<string> {
+async function fetchPage(url: string): Promise<{ text: string; csp: string }> {
   let failure: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-      if (response.ok) return await response.text();
+      if (response.ok) return { text: await response.text(), csp: response.headers.get("Content-Security-Policy") ?? "" };
       failure = new Error(`responded ${response.status}`);
     } catch (error) {
       failure = error;
     }
   }
   throw failure;
+}
+
+const fetchText = async (url: string): Promise<string> => (await fetchPage(url)).text;
+
+const SCRIPT_DIRECTIVES = ["script-src", "script-src-elem", "default-src"];
+
+// Whether a Content-Security-Policy has a directive that can limit scripts. Several policies in one
+// header are separated by commas.
+const limitsScripts = (csp: string): boolean =>
+  csp.split(/[;,]/).some((directive) => SCRIPT_DIRECTIVES.includes(directive.trim().split(/\s+/)[0].toLowerCase()));
+
+// The policies given in <meta http-equiv="Content-Security-Policy" content="..."> tags of the page.
+function metaPolicies(html: string): string[] {
+  const policies: string[] = [];
+  for (const [tag] of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const attributes = new Map<string, string>();
+    for (const [, name, quoted, doubleQuoted, singleQuoted] of tag.matchAll(/([\w-]+)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
+      attributes.set(name.toLowerCase(), (quoted && (doubleQuoted ?? singleQuoted)) || "");
+    }
+    if (attributes.get("http-equiv")?.toLowerCase() === "content-security-policy") policies.push(attributes.get("content") ?? "");
+  }
+  return policies;
 }
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -79,10 +103,15 @@ const sameItems = (a: string[], b: string[]) =>
 
 export async function checkForm(): Promise<FormCheck> {
   let html: string;
+  let csp: string;
   try {
-    html = await fetchText(reference.url);
+    ({ text: html, csp } = await fetchPage(reference.url));
   } catch {
     return { ok: false, reason: "the form page could not be loaded", unloaded: true };
+  }
+
+  if ([csp, ...metaPolicies(html)].some(limitsScripts)) {
+    return { ok: false, reason: "the page now limits scripts in its Content-Security-Policy" };
   }
 
   for (const id of reference.fields) {

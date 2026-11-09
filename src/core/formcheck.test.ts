@@ -165,4 +165,42 @@ describe("checkForm", () => {
     serve({ [PAGE_URL]: withoutDatePrefix(FORM) });
     expect(await checkForm()).toEqual({ ok: false, reason: "a site script could not be loaded", unloaded: true });
   });
+
+  it("accepts a Content-Security-Policy that cannot limit scripts", async () => {
+    const headers = { "Content-Security-Policy": "frame-ancestors 'self'; object-src 'none'; img-src data: script-src" };
+    serve({ [PAGE_URL]: new Response(FORM, { headers }) });
+    expect(await checkForm()).toEqual({ ok: true });
+  });
+
+  const LIMITED = { ok: false, reason: "the page now limits scripts in its Content-Security-Policy" };
+
+  it.each([
+    "script-src 'self'",
+    "frame-ancestors 'self'; SCRIPT-SRC https://example.com",
+    "script-src-elem 'self'",
+    "img-src 'self'; default-src 'none'",
+    "default-src  'self' ",
+    "img-src 'self', script-src 'self'",
+  ])("reports a limiting directive in the header %s", async (policy) => {
+    serve({ [PAGE_URL]: new Response(FORM, { headers: { "Content-Security-Policy": policy } }) });
+    expect(await checkForm()).toEqual(LIMITED);
+  });
+
+  it.each([
+    `<meta http-equiv="Content-Security-Policy" content="script-src 'self'">`,
+    `<meta content="default-src 'self'; img-src data:" HTTP-EQUIV='content-security-policy'>`,
+    `<META name="x" http-equiv="Content-Security-Policy" content="script-src-elem https://a.example">`,
+  ])("reports a limiting directive in the meta tag %s", async (tag) => {
+    serve({ [PAGE_URL]: `${tag}${FORM}` });
+    expect(await checkForm()).toEqual(LIMITED);
+  });
+
+  it.each([
+    `<meta charset="utf-8"><meta name="viewport" content="default-src">`,
+    `<meta http-equiv="Content-Security-Policy" content="img-src data:">`,
+    `<meta http-equiv="refresh" content="script-src 'self'">`,
+  ])("does not take the meta tag %s for a limit", async (tag) => {
+    serve({ [PAGE_URL]: `${tag}${FORM}` });
+    expect(await checkForm()).toEqual({ ok: true });
+  });
 });

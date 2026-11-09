@@ -134,6 +134,79 @@ export function topHotspots(rows: readonly PlaceRow[]): Hotspot[] {
     .sort((a, b) => b.plates - a.plates);
 }
 
+// The least number of reports of a plate in the list of repeat plates.
+const REPEAT_PLATE_MIN_REPORTS = 5;
+// The least time between the first and the last report of a possibly abandoned car.
+const ABANDONED_MIN_MS = 33 * DAY_MS;
+// All reports of a possibly abandoned car are this close to its first report.
+const ABANDONED_RADIUS_M = 50;
+
+export type PlateList = "repeat" | "abandoned";
+
+export interface PlateEntry {
+  plate: string;
+  reports: number;
+  // The times of the first and of the last report.
+  first: number;
+  last: number;
+  // The address of the last report.
+  address: string;
+}
+
+interface PlateRow {
+  plate: string;
+  address: string;
+  lat: number;
+  lon: number;
+  created_at: number;
+}
+
+// Rows are in time order. One item for every plate; sameSpot tells whether every report of the plate
+// is within ABANDONED_RADIUS_M of its first report.
+function plateItems(rows: readonly PlateRow[]): { entry: PlateEntry; sameSpot: boolean }[] {
+  const byPlate = new Map<string, PlateRow[]>();
+  for (const row of rows) {
+    const group = byPlate.get(row.plate);
+    if (group) group.push(row);
+    else byPlate.set(row.plate, [row]);
+  }
+  return [...byPlate.values()].map((group) => {
+    const first = group[0];
+    const last = group[group.length - 1];
+    return {
+      entry: { plate: first.plate, reports: group.length, first: first.created_at, last: last.created_at, address: last.address },
+      sameSpot: group.every((row) => distanceM(first.lat, first.lon, row.lat, row.lon) <= ABANDONED_RADIUS_M),
+    };
+  });
+}
+
+// Plates with at least REPEAT_PLATE_MIN_REPORTS reports anywhere, the most reports first, then the
+// latest report first.
+function repeatPlates(rows: readonly PlateRow[]): PlateEntry[] {
+  return plateItems(rows)
+    .map((item) => item.entry)
+    .filter((entry) => entry.reports >= REPEAT_PLATE_MIN_REPORTS)
+    .sort((a, b) => b.reports - a.reports || b.last - a.last);
+}
+
+// Plates whose reports are all at one spot and span at least ABANDONED_MIN_MS from the first to the
+// last, the longest span first.
+function abandonedPlates(rows: readonly PlateRow[]): PlateEntry[] {
+  return plateItems(rows)
+    .filter((item) => item.sameSpot && item.entry.last - item.entry.first >= ABANDONED_MIN_MS)
+    .map((item) => item.entry)
+    .sort((a, b) => b.last - b.first - (a.last - a.first) || a.plate.localeCompare(b.plate));
+}
+
+// The plates of one of the lists of /admin, from one read of the log of the last REPORT_LOG_TTL_MS.
+export async function listPlates(db: D1Database, list: PlateList, now: number): Promise<PlateEntry[]> {
+  const { results } = await db
+    .prepare("SELECT plate, address, lat, lon, created_at FROM report_log WHERE created_at > ?1 ORDER BY created_at, id")
+    .bind(now - REPORT_LOG_TTL_MS)
+    .all<PlateRow>();
+  return (list === "repeat" ? repeatPlates : abandonedPlates)(results);
+}
+
 // The events the bot counts while it works, one number per event and day.
 export const STAT_EVENTS = [
   "started",

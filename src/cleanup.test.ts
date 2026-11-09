@@ -120,16 +120,16 @@ describe("cleanupExpired", () => {
 });
 
 describe("scheduled", () => {
-  // 3:00 in Dublin in winter, and in summer (when it is 2:00 UTC).
+  // The run of 3:00 UTC, in winter and in summer, and the run of 6:00 UTC.
   const NIGHT_WINTER = { scheduledTime: Date.UTC(2026, 11, 15, 3, 0) } as ScheduledController;
-  const NIGHT_SUMMER = { scheduledTime: Date.UTC(2026, 6, 15, 2, 0) } as ScheduledController;
-  const OTHER_RUN = { scheduledTime: Date.UTC(2026, 11, 15, 2, 0) } as ScheduledController;
+  const NIGHT_SUMMER = { scheduledTime: Date.UTC(2026, 6, 15, 3, 0) } as ScheduledController;
+  const OTHER_RUN = { scheduledTime: Date.UTC(2026, 11, 15, 6, 0) } as ScheduledController;
   const logLine = (sqlite: ReturnType<typeof fakeD1>["sqlite"], createdAt: number) =>
     sqlite
       .prepare("INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?, ?, 'p', 1, 'a', 53.4, -6.1)")
       .run(createdAt, dublinDay(createdAt));
 
-  it("counts the statistics in the run that is 3:00 in Dublin, winter or summer", async () => {
+  it("counts the statistics in the run of 3:00 UTC, winter or summer", async () => {
     for (const run of [NIGHT_WINTER, NIGHT_SUMMER]) {
       // The cleanup that runs first goes by the clock, so the clock is set to the run.
       vi.useFakeTimers({ toFake: ["Date"] });
@@ -146,7 +146,7 @@ describe("scheduled", () => {
     }
   });
 
-  it("does not count them in the other run of the pair", async () => {
+  it("does not count them in the run of 6:00 UTC", async () => {
     const { db, sqlite } = fakeD1();
     logLine(sqlite, OTHER_RUN.scheduledTime - 12 * 60 * 60 * 1000);
     await worker.scheduled(OTHER_RUN, { DB: db } as Env, {} as ExecutionContext);
