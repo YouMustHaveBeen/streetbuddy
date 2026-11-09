@@ -296,7 +296,7 @@ async function show(
   text: string,
   changes: DraftChanges,
   cleanupIds: number[] = [],
-): Promise<void> {
+): Promise<boolean> {
   const step = changes.step ?? (draft as Draft).step;
   const view = {
     photo_count: draft?.photo_count ?? 0,
@@ -306,10 +306,10 @@ async function show(
   };
   const replyTo = step === "review" || step === "edit" ? (draft?.last_photo_id ?? null) : null;
   const messageId = await send(c, text, { inline_keyboard: buttonsFor(step, view) }, false, replyTo);
-  if (messageId === null) return;
+  if (messageId === null) return false;
   if (!draft) {
     await createDraft(c.env.DB, c.userId, messageId, text, changes, cleanupIds);
-    return;
+    return true;
   }
   const previous = await swapScreen(
     c.env.DB,
@@ -322,6 +322,7 @@ async function show(
     cleanupIds,
   );
   await remove(c, previous ?? messageId);
+  return previous !== null;
 }
 
 // Shows the current screen again below whatever the user has just sent. A photo stays
@@ -548,7 +549,7 @@ async function handlePhoto(c: Context, draft: Draft, message: Message): Promise<
     messageId: message.message_id,
   });
   if (recorded === null) return;
-  if (recorded.isFirst) c.defer(countEvent(c.env.DB, "started"));
+  if (recorded.photoCount === 1) c.defer(countEvent(c.env.DB, "started"));
   await Promise.all([
     answerPhoto(c, draft, message, recorded.photoCount),
     recorded.isFirst ? recognize(c, draft.draft_id, photo) : Promise.resolve(),
@@ -602,11 +603,11 @@ async function showPlateTime(
   draft: Draft,
   changes: DraftChanges,
   cleanupIds: number[] = [],
-): Promise<void> {
+): Promise<boolean> {
   const next = { ...draft, plate: changes.plate ?? draft.plate, time: changes.time ?? draft.time };
   const moment = reportMoment(next);
   const text = `Plate: ${next.plate}\nTime: ${moment.date} ${moment.time}`;
-  await show(c, draft, text, { ...changes, step: "plate_time" }, cleanupIds);
+  return show(c, draft, text, { ...changes, step: "plate_time" }, cleanupIds);
 }
 
 async function handlePlateInput(
@@ -631,8 +632,8 @@ async function handlePlateInput(
   }
   // With no photo, the time of the report is the time of this message.
   const firstPlate = draft.step === "photos" ? { first_photo_at: message.date * 1000 } : {};
-  if (draft.step === "photos") c.defer(countEvent(c.env.DB, "started"));
-  await showPlateTime(c, { ...draft, ...firstPlate }, { plate, ...firstPlate }, cleanupIds);
+  const moved = await showPlateTime(c, { ...draft, ...firstPlate }, { plate, ...firstPlate }, cleanupIds);
+  if (moved && draft.step === "photos") c.defer(countEvent(c.env.DB, "started"));
 }
 
 // Before the first photo, a text counts as the plate only if it looks like one.

@@ -1571,6 +1571,17 @@ describe("statistics counters", () => {
   it("counts no plate when the report is cancelled before the link", async () => {
     await toPlateTime();
     await press("cancel");
-    expect(counts()).not.toHaveProperty("plate_as_is");
+    expect(counts()).toEqual({ started: 1, recognitions: 1 });
+  });
+  it("counts a report with an album once, whatever the order of its photos", async () => {
+    await toPhotos();
+    await photo("a", { message_id: 102 });
+    await photo("b", { message_id: 101 });
+    expect(counts()).toMatchObject({ started: 1 });
+  });
+  it("counts a report once when two plates are written at the same moment", async () => {
+    await toPhotos();
+    await Promise.all([text("12-D-3456"), text("99-D-1")]);
+    expect(counts()).toEqual({ started: 1 });
   });
 });

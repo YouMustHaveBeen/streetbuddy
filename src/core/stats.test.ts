@@ -236,9 +236,12 @@ describe("countEvent", () => {
       await countEvent(db, "outsiders");
       vi.setSystemTime(Date.UTC(2026, 6, 16, 12, 0));
       await countEvent(db, "started");
+      vi.setSystemTime(Date.UTC(2026, 6, 17, 12, 0));
+      await countEvent(db, "started");
       expect(sqlite.prepare("SELECT day, event, n FROM daily_counts ORDER BY day, event").all()).toEqual([
         { day: "2026-07-16", event: "outsiders", n: 1 },
         { day: "2026-07-16", event: "started", n: 3 },
+        { day: "2026-07-17", event: "started", n: 1 },
       ]);
     } finally {
       vi.useRealTimers();
