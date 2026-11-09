@@ -30,6 +30,9 @@ import {
   PARKING_OPTIONS,
   readStatistics,
   renameAddress,
+  renameIncoming,
+  incomingGroupStart,
+  setIncomingKind,
   searchPattern,
   setAddressKind,
   shapeFromGeometry,
@@ -99,6 +102,9 @@ const KIND = "admin_kind";
 const SET_KIND = "admin_setkind";
 const EDIT_KIND = "admin_editkind";
 const DIR_KIND = "admin_dirkind";
+const IN_TEXT = "admin_intext";
+const IN_KIND = "admin_inkind";
+const IN_SET_KIND = "admin_insetkind";
 const ALL_WALK = "admin_all_walk";
 const ALL_OSM = "admin_all_osm";
 const BACK = "admin_back";
@@ -134,7 +140,6 @@ const NO_INCOMING = "No incoming addresses";
 const NO_FEEDBACK = "No feedback";
 const SEND_FILE = "Send the edited file";
 const SEND_AS_DOCUMENT = "Send the file as a document";
-const FILE_HAS_ERRORS = "The file has errors, nothing was loaded";
 const DIRECTORY_FILE_NAME = "directory.geojson";
 // Telegram takes a message of up to 4096 characters.
 const MESSAGE_MAX_LENGTH = 4096;
@@ -282,6 +287,12 @@ async function sendStatistics(env: AdminEnv, userId: number, chatId: number): Pr
   return remember(env, userId, send(env, chatId, lines.join("\n"), [[backButton()]]));
 }
 
+// The form and the kind of an incoming address and where it comes from; the kind temp is not shown.
+const describeIncoming = (form: string, address: { source: "walk" | "user" | "osm"; kind: string }): string => {
+  if (address.source !== "user") return `${form} (${address.kind}), ${SOURCE_TEXT[address.source]}`;
+  return address.kind === "temp" ? `${form}, written by a user` : `${form} (${address.kind}), written by a user`;
+};
+
 // The next incoming screen after afterId. One address is shown with a pin on the map above it;
 // addresses with the same text, among themselves and in the directory, are shown together as a group.
 async function sendIncoming(env: AdminEnv, userId: number, chatId: number, afterId: number): Promise<number | null> {
@@ -311,10 +322,13 @@ async function sendIncoming(env: AdminEnv, userId: number, chatId: number, after
   const lines = [
     `Incoming address ${item.position} of ${item.total}`,
     address.text,
-    address.source === "user" ? `${form}, written by a user` : `${form} (${address.kind}), ${SOURCE_TEXT[address.source]}`,
+    describeIncoming(form, address),
   ];
+  const edit: Button[] = [{ text: "Edit text", callback_data: `${IN_TEXT}:${address.id}${tail}` }];
+  if (address.kind !== "area") edit.push({ text: "Edit kind", callback_data: `${IN_KIND}:${address.id}${tail}` });
   const sent = await send(env, chatId, lines.join("\n"), [
     [decide("Approve", "ok"), decide("Reject", "no"), decide("Next", "next")],
+    edit,
     [{ text: "Approve all from the walk", callback_data: `${ALL_WALK}${tail}` }, backButton(pinId)],
     [{ text: "Approve all from OSM", callback_data: `${ALL_OSM}${tail}` }],
   ]);
@@ -347,10 +361,7 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
       label: `new${i + 1}`,
       geometry: address.geometry,
       needsKind: address.kind === "temp",
-      description:
-        address.source === "user"
-          ? `${formOf(address.geometry).form}, written by a user`
-          : `${formOf(address.geometry).form} (${address.kind}), ${SOURCE_TEXT[address.source]}`,
+      description: describeIncoming(formOf(address.geometry).form, address),
     })),
   ];
   // One after another: sent together, the pins would arrive in any order.
@@ -633,6 +644,27 @@ export async function handleAdminButton(
       await moveIncomingAddresses(env.DB);
     }
     next = sendIncoming(env, userId, chatId, id);
+  } else if (name === IN_TEXT) {
+    pinId = pinOf(second);
+    next = askInput(env, userId, chatId, "admin_intext", WRITE_NEW_ADDRESS, Number(first));
+  } else if (name === IN_KIND) {
+    const id = Number(first);
+    const tail = second ? `:${second}` : "";
+    const pin = pinOf(second);
+    next = sendKindScreen(
+      env,
+      userId,
+      chatId,
+      (kind) => `${IN_SET_KIND}:${kind}:${id}${tail}`,
+      { text: "Back", callback_data: `${DECIDE}:same:${id}${tail}` },
+      pin === null ? [] : [pin],
+    );
+  } else if (name === IN_SET_KIND) {
+    const id = Number(second);
+    pinId = pinOf(third);
+    const kind = CHOOSABLE_KINDS.find((chosen) => chosen === first);
+    if (kind) await setIncomingKind(env.DB, id, kind);
+    next = sendIncoming(env, userId, chatId, id - 1);
   } else if (name === ALL_WALK || name === ALL_OSM) {
     pinId = pinOf(first);
     const pins = await takePins(first);
@@ -711,12 +743,14 @@ export async function handleAdminButton(
   await Promise.all(old.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
 }
 
-// The errors of a file under FILE_HAS_ERRORS, as many lines as fit in one message.
-function errorsText(errors: string[]): string {
-  let text = FILE_HAS_ERRORS;
-  for (const error of errors) {
-    if (text.length + 1 + error.length > MESSAGE_MAX_LENGTH) break;
-    text += `\n${error}`;
+// The answer to a loaded file: the counts, then the skipped objects, as many lines as fit in one message.
+function loadedText(loaded: number, unchanged: number, skipped: string[]): string {
+  let text = `Loaded ${loaded} ${loaded === 1 ? "address" : "addresses"}, ${unchanged} unchanged skipped`;
+  if (skipped.length === 0) return text;
+  text += `, ${skipped.length} ${skipped.length === 1 ? "object" : "objects"} with errors skipped\n`;
+  for (const line of skipped) {
+    if (text.length + 1 + line.length > MESSAGE_MAX_LENGTH) break;
+    text += `\n${line}`;
   }
   return text;
 }
@@ -743,7 +777,7 @@ export async function handleAdminInput(
   };
 
   // A draft step that no /admin screen asks for any more shows the directory screen.
-  if (!["admin_group", "admin_search", "admin_text", "admin_move", "admin_import"].includes(draft.step)) {
+  if (!["admin_group", "admin_search", "admin_text", "admin_intext", "admin_move", "admin_import"].includes(draft.step)) {
     await deleteDraft(env.DB, userId, draft.draft_id);
     const shown = await sendList(env, userId, chatId, null, 0);
     if (shown !== null) {
@@ -790,7 +824,7 @@ export async function handleAdminInput(
     ]);
   };
   // The edited directory file: its new and changed addresses go to the incoming addresses, which are
-  // shown at once; a wrong file loads nothing and the file is asked for again. The question is taken
+  // shown at once; a wrong feature is skipped and listed, a file that is not GeoJSON is asked for again. The question is taken
   // from the drafts after every check and before the first write: a question gone or changed loads nothing.
   if (draft.step === "admin_import") {
     let content: string | null = null;
@@ -809,24 +843,32 @@ export async function handleAdminInput(
       takeDraft(env.DB, userId, draft.draft_id, draft.buttons_message_id),
     );
     if (!result.ok) {
-      if (result.reason !== "gone") await askAgain(result.reason === "errors" ? errorsText(result.errors) : SEND_AS_DOCUMENT);
+      if (result.reason !== "gone") await askAgain(SEND_AS_DOCUMENT);
       return;
     }
     await Promise.all([deleteMessage(token, chatId, draft.buttons_message_id), deleteMessage(token, chatId, message.message_id)]);
-    await send(env, chatId, `Loaded ${result.loaded} ${result.loaded === 1 ? "address" : "addresses"}, ${result.unchanged} unchanged skipped`);
+    await send(env, chatId, loadedText(result.loaded, result.unchanged, result.skipped));
     await sendIncoming(env, userId, chatId, 0);
     return;
   }
   const trimmed = text?.trim() ?? "";
   const inArea = location !== undefined && isInArea(district, location.latitude, location.longitude);
+  const writesText = draft.step === "admin_text" || draft.step === "admin_intext";
+  if (draft.step === "admin_intext" && trimmed !== "" && trimmed.length <= ADDRESS_MAX_LENGTH) {
+    const id = draft.address_id as number;
+    await renameIncoming(env.DB, id, withoutPostalDistrict(trimmed, district));
+    await finish();
+    await sendIncoming(env, userId, chatId, ((await incomingGroupStart(env.DB, id)) ?? id) - 1);
+    return;
+  }
   if (draft.step === "admin_text" && trimmed !== "" && trimmed.length <= ADDRESS_MAX_LENGTH) {
     await renameAddress(env.DB, draft.address_id as number, withoutPostalDistrict(trimmed, district));
   } else if (draft.step === "admin_move" && location && inArea) {
     await movePoint(env.DB, draft.address_id as number, location.latitude, location.longitude);
   } else {
     let prompt = draft.prompt;
-    if (draft.step === "admin_text" && trimmed.length > ADDRESS_MAX_LENGTH) prompt = ADDRESS_TOO_LONG;
-    else if (draft.step === "admin_text") prompt = WRITE_NEW_ADDRESS;
+    if (writesText && trimmed.length > ADDRESS_MAX_LENGTH) prompt = ADDRESS_TOO_LONG;
+    else if (writesText) prompt = WRITE_NEW_ADDRESS;
     if (draft.step === "admin_move" && location) await send(env, chatId, OUT_OF_AREA);
     await askAgain(prompt);
     return;

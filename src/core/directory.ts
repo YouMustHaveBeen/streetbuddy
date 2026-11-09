@@ -94,20 +94,21 @@ export async function nearestAddresses(
     .map((found) => found.row);
 }
 
-// An address written by a user, as the point of the report's location.
+// An address written by a user, as the point of the report's location; its kind is temp unless the user chose one.
 export async function addUserAddress(
   db: D1Database,
   userId: number,
   text: string,
   lat: number,
   lon: number,
+  kind: (typeof CHOOSABLE_KINDS)[number] | "temp" = "temp",
 ): Promise<void> {
   await db
     .prepare(
       `INSERT INTO incoming_addresses (source, text, kind, geometry, user_id, created_at)
-       VALUES ('user', ?1, 'temp', ?2, ?3, ?4)`,
+       VALUES ('user', ?1, ?5, ?2, ?3, ?4)`,
     )
-    .bind(text, JSON.stringify(pointGeometry(lat, lon)), userId, Date.now())
+    .bind(text, JSON.stringify(pointGeometry(lat, lon)), userId, Date.now(), kind)
     .run();
 }
 
@@ -132,6 +133,18 @@ export async function nextIncoming(db: D1Database, afterId: number): Promise<Inc
     .bind(incoming[0].text)
     .all<DirectoryAddress>();
   return { position: index + 1, total: screens.length, incoming, old: old.results };
+}
+
+// The lowest ID among the incoming addresses without a decision that have the text of the address with
+// this ID: the place of its screen in the queue; null when the address has no screen.
+export async function incomingGroupStart(db: D1Database, id: number): Promise<number | null> {
+  const { results } = await db
+    .prepare("SELECT id, text FROM incoming_addresses WHERE decision IS NULL ORDER BY id")
+    .all<{ id: number; text: string }>();
+  const own = results.find((row) => row.id === id);
+  if (!own) return null;
+  const key = sameTextKey(own.text);
+  return results.find((row) => sameTextKey(row.text) === key)?.id ?? null;
 }
 
 const decideStatement = (db: D1Database, id: number, decision: Decision, kind: AddressKind | null) =>
@@ -275,6 +288,23 @@ export async function getAddress(db: D1Database, id: number): Promise<DirectoryA
 
 export async function renameAddress(db: D1Database, id: number, text: string): Promise<void> {
   await db.prepare("UPDATE addresses SET text = ?2 WHERE id = ?1").bind(id, text).run();
+}
+
+// The text of an incoming address that has no decision yet.
+export async function renameIncoming(db: D1Database, id: number, text: string): Promise<void> {
+  await db.prepare("UPDATE incoming_addresses SET text = ?2 WHERE id = ?1 AND decision IS NULL").bind(id, text).run();
+}
+
+// The kind of an incoming address that has no decision yet and is not an area.
+export async function setIncomingKind(
+  db: D1Database,
+  id: number,
+  kind: (typeof CHOOSABLE_KINDS)[number],
+): Promise<void> {
+  await db
+    .prepare("UPDATE incoming_addresses SET kind = ?2 WHERE id = ?1 AND decision IS NULL AND kind != 'area'")
+    .bind(id, kind)
+    .run();
 }
 
 // The kind of an address that is not an area.
