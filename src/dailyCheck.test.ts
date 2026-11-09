@@ -73,6 +73,13 @@ describe("runFormCheck", () => {
     ]);
   });
 
+  it("turns the bot off when the page gets a script-src policy", async () => {
+    page = () => new Response(FORM, { headers: { "Content-Security-Policy": "script-src 'self'" } });
+    await runFormCheck(env);
+    expect(enabled()).toBe(0);
+    expect(sent).toHaveLength(3);
+  });
+
   it("turns the bot off when the page cannot be loaded", async () => {
     page = () => new Response("", { status: 503 });
     await runFormCheck(env);

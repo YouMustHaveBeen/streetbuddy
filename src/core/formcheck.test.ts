@@ -165,4 +165,24 @@ describe("checkForm", () => {
     serve({ [PAGE_URL]: withoutDatePrefix(FORM) });
     expect(await checkForm()).toEqual({ ok: false, reason: "a site script could not be loaded", unloaded: true });
   });
+
+  it("accepts a Content-Security-Policy without script-src", async () => {
+    const headers = { "Content-Security-Policy": "frame-ancestors 'self'; object-src 'none'" };
+    serve({ [PAGE_URL]: new Response(FORM, { headers }) });
+    expect(await checkForm()).toEqual({ ok: true });
+  });
+
+  it.each(["script-src 'self'", "frame-ancestors 'self'; SCRIPT-SRC https://example.com", "default-src 'self';  script-src  'none' "])(
+    "reports a script-src directive in %s",
+    async (policy) => {
+      serve({ [PAGE_URL]: new Response(FORM, { headers: { "Content-Security-Policy": policy } }) });
+      expect(await checkForm()).toEqual({ ok: false, reason: "the page now limits scripts with script-src" });
+    },
+  );
+
+  it("does not take script-src-elem or a name inside a value for script-src", async () => {
+    const headers = { "Content-Security-Policy": "script-src-elem 'self'; img-src data: script-src" };
+    serve({ [PAGE_URL]: new Response(FORM, { headers }) });
+    expect(await checkForm()).toEqual({ ok: true });
+  });
 });
