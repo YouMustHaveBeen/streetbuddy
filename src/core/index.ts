@@ -22,6 +22,7 @@ export {
   CHOOSABLE_KINDS,
 } from "./directory";
 export type { AddressKind, Decision, DuplicateGroup, IncomingScreen } from "./directory";
+export { exportDirectory, importDirectoryFile } from "./directoryFile";
 export { shapeFromGeometry, shapeMiddle } from "./shapes";
 export type { Defer } from "./geocode";
 export { PLATE_MAX_LENGTH, recognizePlates } from "./plate";

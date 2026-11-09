@@ -2,7 +2,8 @@
 // of the last daily form check, the button that switches the bot on or off, the buttons of
 // the feedback and the statistics, which do nothing yet, the decisions on incoming addresses
 // (a group of addresses with the same text is decided by keeping one of them), the editing of the
-// address directory by a list and a text search, and the link to its map page.
+// address directory by a list and a text search, the directory as a file to edit on a computer and the
+// edited file sent back, and the link to its map page.
 import {
   CHOOSABLE_KINDS,
   approveAllFrom,
@@ -18,7 +19,9 @@ import {
   disableBot,
   dublinDateTime,
   enableBot,
+  exportDirectory,
   getAddress,
+  importDirectoryFile,
   getSwitchStatus,
   movePoint,
   nextIncoming,
@@ -32,7 +35,7 @@ import type { Decision, DuplicateGroup, FormCheckOutcome, IncomingScreen } from 
 import type { Env } from "../env";
 import { directoryLink } from "../directoryLink";
 import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, OUT_OF_AREA } from "./address";
-import { answerButton, callTelegram, deleteMessage, sendMessage } from "./api";
+import { answerButton, callTelegram, deleteMessage, downloadFile, sendDocument, sendMessage } from "./api";
 import {
   createDraft,
   deleteAdminDraft,
@@ -43,6 +46,7 @@ import {
   rememberScreen,
   swapScreen,
   takeAdminGroup,
+  takeDraft,
 } from "./draft";
 import type { Draft, Step } from "./draft";
 import { stopReport } from "./stop";
@@ -61,6 +65,7 @@ interface AdminMessage {
   text?: string;
   location?: { latitude: number; longitude: number };
   photo?: unknown[];
+  document?: { file_id: string };
 }
 
 const SWITCH_ON = "admin_on";
@@ -69,6 +74,8 @@ const FEEDBACK = "admin_feedback";
 const STATISTICS = "admin_statistics";
 const INCOMING = "admin_incoming";
 const DIRECTORY = "admin_directory";
+const EXPORT = "admin_export";
+const IMPORT = "admin_import";
 // With arguments: ":<decision>:<incoming id>:<pin message id>" for the incoming screen (the
 // decision "same" shows the same address again), ":<decision>:<incoming id>:<pin message id>" for
 // the kind screen of an incoming address, ":<decision>:<kind>:<incoming id>:<pin message id>" for
@@ -107,6 +114,12 @@ const SEND_NEW_LOCATION = "Send the new location";
 const SAVED = "Saved";
 const CHOOSE_KIND = "Choose the kind";
 const NO_INCOMING = "No incoming addresses";
+const SEND_FILE = "Send the edited file";
+const SEND_AS_DOCUMENT = "Send the file as a document";
+const FILE_HAS_ERRORS = "The file has errors, nothing was loaded";
+const DIRECTORY_FILE_NAME = "directory.geojson";
+// Telegram takes a message of up to 4096 characters.
+const MESSAGE_MAX_LENGTH = 4096;
 
 const CHECK_RESULT_TEXT: Record<FormCheckOutcome, string> = {
   ok: "OK",
@@ -155,6 +168,10 @@ async function sendScreen(env: AdminEnv, userId: number, chatId: number): Promis
     [
       { text: "Incoming addresses", callback_data: INCOMING },
       { text: "Edit directory", callback_data: DIRECTORY },
+    ],
+    [
+      { text: "Export directory", callback_data: EXPORT },
+      { text: "Import file", callback_data: IMPORT },
     ],
   ];
   if (env.DIRECTORY_LINK_SECRET) buttons.push([{ text: "Directory map", url: await directoryLink(env) }]);
@@ -548,6 +565,12 @@ export async function handleAdminButton(
     if (kind) await setAddressKind(env.DB, Number(second), kind);
     await deleteSearchDraft(env.DB, userId);
     next = send(env, chatId, SAVED).then(() => sendScreen(env, userId, chatId));
+  } else if (name === EXPORT) {
+    next = exportDirectory(env.DB)
+      .then((content) => sendDocument(env.TELEGRAM_BOT_TOKEN, chatId, DIRECTORY_FILE_NAME, content))
+      .then(() => sendScreen(env, userId, chatId));
+  } else if (name === IMPORT) {
+    next = askInput(env, userId, chatId, "admin_import", SEND_FILE, null);
   } else if (name === EDIT_TEXT) {
     next = askInput(env, userId, chatId, "admin_text", WRITE_NEW_ADDRESS, Number(first));
   } else if (name === MOVE) {
@@ -577,8 +600,19 @@ export async function handleAdminButton(
   await Promise.all(old.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
 }
 
+// The errors of a file under FILE_HAS_ERRORS, as many lines as fit in one message.
+function errorsText(errors: string[]): string {
+  let text = FILE_HAS_ERRORS;
+  for (const error of errors) {
+    if (text.length + 1 + error.length > MESSAGE_MAX_LENGTH) break;
+    text += `\n${error}`;
+  }
+  return text;
+}
+
 // The answer to a question of /admin. Anything else sends the question again below it.
-// QUERY BUDGET EXCEPTION: draft read, address change, draft removal, switch state for the /admin screen.
+// QUERY BUDGET EXCEPTION: draft read, address change, draft removal, switch state for the /admin screen;
+// for the file: draft read, directory and incoming reads, inserts, draft removal, the incoming screen (two reads, its draft).
 export async function handleAdminInput(
   env: AdminEnv,
   userId: number,
@@ -598,7 +632,7 @@ export async function handleAdminInput(
   };
 
   // A draft step that no /admin screen asks for any more shows the directory screen.
-  if (!["admin_group", "admin_search", "admin_text", "admin_move"].includes(draft.step)) {
+  if (!["admin_group", "admin_search", "admin_text", "admin_move", "admin_import"].includes(draft.step)) {
     await deleteDraft(env.DB, userId, draft.draft_id);
     const shown = await sendList(env, userId, chatId, null, 0);
     if (shown !== null) {
@@ -634,6 +668,44 @@ export async function handleAdminInput(
     }
     return;
   }
+  // Sends the question again below the message, with the given text.
+  const askAgain = async (prompt: string) => {
+    const messageId = await send(env, chatId, prompt, [[backButton()]]);
+    if (messageId === null) return;
+    const previous = await swapScreen(env.DB, userId, draft.draft_id, draft.step, messageId, prompt, {}, []);
+    await Promise.all([
+      deleteMessage(token, chatId, previous ?? messageId),
+      message.photo ? Promise.resolve() : deleteMessage(token, chatId, message.message_id),
+    ]);
+  };
+  // The edited directory file: its new and changed addresses go to the incoming addresses, which are
+  // shown at once; a wrong file loads nothing and the file is asked for again. The question is taken
+  // from the drafts after every check and before the first write: a question gone or changed loads nothing.
+  if (draft.step === "admin_import") {
+    let content: string | null = null;
+    if (message.document) {
+      try {
+        content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(await downloadFile(token, message.document.file_id));
+      } catch {
+        console.error("Telegram file download or decoding failed");
+      }
+    }
+    if (content === null) {
+      await askAgain(SEND_AS_DOCUMENT);
+      return;
+    }
+    const result = await importDirectoryFile(env.DB, content, () =>
+      takeDraft(env.DB, userId, draft.draft_id, draft.buttons_message_id),
+    );
+    if (!result.ok) {
+      if (result.reason !== "gone") await askAgain(result.reason === "errors" ? errorsText(result.errors) : SEND_AS_DOCUMENT);
+      return;
+    }
+    await Promise.all([deleteMessage(token, chatId, draft.buttons_message_id), deleteMessage(token, chatId, message.message_id)]);
+    await send(env, chatId, `Loaded ${result.loaded} ${result.loaded === 1 ? "address" : "addresses"}, ${result.unchanged} unchanged skipped`);
+    await sendIncoming(env, userId, chatId, 0);
+    return;
+  }
   const trimmed = text?.trim() ?? "";
   const inArea = location !== undefined && isInArea(district, location.latitude, location.longitude);
   if (draft.step === "admin_text" && trimmed !== "" && trimmed.length <= ADDRESS_MAX_LENGTH) {
@@ -645,13 +717,7 @@ export async function handleAdminInput(
     if (draft.step === "admin_text" && trimmed.length > ADDRESS_MAX_LENGTH) prompt = ADDRESS_TOO_LONG;
     else if (draft.step === "admin_text") prompt = WRITE_NEW_ADDRESS;
     if (draft.step === "admin_move" && location) await send(env, chatId, OUT_OF_AREA);
-    const messageId = await send(env, chatId, prompt, [[backButton()]]);
-    if (messageId === null) return;
-    const previous = await swapScreen(env.DB, userId, draft.draft_id, draft.step, messageId, prompt, {}, []);
-    await Promise.all([
-      deleteMessage(token, chatId, previous ?? messageId),
-      message.photo ? Promise.resolve() : deleteMessage(token, chatId, message.message_id),
-    ]);
+    await askAgain(prompt);
     return;
   }
   await finish();

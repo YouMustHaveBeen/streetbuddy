@@ -65,7 +65,8 @@ export type Step =
   | "admin_search" // Not a report: /admin shows the directory (all of it or a search) and waits for a search text.
   | "admin_group" // Not a report: /admin shows a group of duplicate incoming addresses; cleanup holds the map pins.
   | "admin_text" // Not a report: /admin waits for the new text of a directory address.
-  | "admin_move"; // Not a report: /admin waits for the new location of a directory point.
+  | "admin_move" // Not a report: /admin waits for the new location of a directory point.
+  | "admin_import"; // Not a report: /admin waits for the edited directory file.
 
 export const isAdminStep = (step: Step): boolean => step.startsWith("admin_");
 
@@ -327,6 +328,15 @@ export async function toggleParking(
 
 export async function deleteDraft(db: D1Database, userId: number, draftId: number): Promise<void> {
   await db.prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2").bind(userId, draftId).run();
+}
+
+// Removes the draft with this ID while it still shows this message; false when it is gone or changed.
+export async function takeDraft(db: D1Database, userId: number, draftId: number, messageId: number): Promise<boolean> {
+  const row = await db
+    .prepare("DELETE FROM drafts WHERE user_id = ?1 AND draft_id = ?2 AND buttons_message_id = ?3 RETURNING draft_id")
+    .bind(userId, draftId, messageId)
+    .first();
+  return row !== null;
 }
 
 // Stops a report that has buttons on screen and returns the message with them, and the map pins above
