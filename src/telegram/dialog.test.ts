@@ -373,6 +373,15 @@ describe("/add_address", () => {
     expect(lastSent().text).toBe("Thank you for the address");
     expect(draft()).toBeUndefined();
   });
+  it("keeps one address when the kind button is pressed twice", async () => {
+    await text("/add_address");
+    await location();
+    await text("5 New St");
+    const screen = buttonId();
+    await Promise.all([press("kind:house", screen), press("kind:house", screen)]);
+    expect(added()).toHaveLength(1);
+    expect(sentTexts().filter((sent) => sent === "Thank you for the address")).toHaveLength(1);
+  });
   it("refuses a location outside the area and ends", async () => {
     await text("/add_address");
     await location(53.0, -7.0);

@@ -31,6 +31,7 @@ import {
   readStatistics,
   renameAddress,
   renameIncoming,
+  incomingGroupStart,
   setIncomingKind,
   searchPattern,
   setAddressKind,
@@ -286,6 +287,12 @@ async function sendStatistics(env: AdminEnv, userId: number, chatId: number): Pr
   return remember(env, userId, send(env, chatId, lines.join("\n"), [[backButton()]]));
 }
 
+// The form and the kind of an incoming address and where it comes from; the kind temp is not shown.
+const describeIncoming = (form: string, address: { source: "walk" | "user" | "osm"; kind: string }): string => {
+  if (address.source !== "user") return `${form} (${address.kind}), ${SOURCE_TEXT[address.source]}`;
+  return address.kind === "temp" ? `${form}, written by a user` : `${form} (${address.kind}), written by a user`;
+};
+
 // The next incoming screen after afterId. One address is shown with a pin on the map above it;
 // addresses with the same text, among themselves and in the directory, are shown together as a group.
 async function sendIncoming(env: AdminEnv, userId: number, chatId: number, afterId: number): Promise<number | null> {
@@ -315,7 +322,7 @@ async function sendIncoming(env: AdminEnv, userId: number, chatId: number, after
   const lines = [
     `Incoming address ${item.position} of ${item.total}`,
     address.text,
-    address.source === "user" ? `${form}, written by a user` : `${form} (${address.kind}), ${SOURCE_TEXT[address.source]}`,
+    describeIncoming(form, address),
   ];
   const edit: Button[] = [{ text: "Edit text", callback_data: `${IN_TEXT}:${address.id}${tail}` }];
   if (address.kind !== "area") edit.push({ text: "Edit kind", callback_data: `${IN_KIND}:${address.id}${tail}` });
@@ -354,10 +361,7 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
       label: `new${i + 1}`,
       geometry: address.geometry,
       needsKind: address.kind === "temp",
-      description:
-        address.source === "user"
-          ? `${formOf(address.geometry).form}, written by a user`
-          : `${formOf(address.geometry).form} (${address.kind}), ${SOURCE_TEXT[address.source]}`,
+      description: describeIncoming(formOf(address.geometry).form, address),
     })),
   ];
   // One after another: sent together, the pins would arrive in any order.
@@ -854,7 +858,7 @@ export async function handleAdminInput(
     const id = draft.address_id as number;
     await renameIncoming(env.DB, id, withoutPostalDistrict(trimmed, district));
     await finish();
-    await sendIncoming(env, userId, chatId, id - 1);
+    await sendIncoming(env, userId, chatId, ((await incomingGroupStart(env.DB, id)) ?? id) - 1);
     return;
   }
   if (draft.step === "admin_text" && trimmed !== "" && trimmed.length <= ADDRESS_MAX_LENGTH) {

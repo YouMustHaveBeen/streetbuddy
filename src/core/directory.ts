@@ -135,6 +135,18 @@ export async function nextIncoming(db: D1Database, afterId: number): Promise<Inc
   return { position: index + 1, total: screens.length, incoming, old: old.results };
 }
 
+// The lowest ID among the incoming addresses without a decision that have the text of the address with
+// this ID: the place of its screen in the queue; null when the address has no screen.
+export async function incomingGroupStart(db: D1Database, id: number): Promise<number | null> {
+  const { results } = await db
+    .prepare("SELECT id, text FROM incoming_addresses WHERE decision IS NULL ORDER BY id")
+    .all<{ id: number; text: string }>();
+  const own = results.find((row) => row.id === id);
+  if (!own) return null;
+  const key = sameTextKey(own.text);
+  return results.find((row) => sameTextKey(row.text) === key)?.id ?? null;
+}
+
 const decideStatement = (db: D1Database, id: number, decision: Decision, kind: AddressKind | null) =>
   db
     .prepare(

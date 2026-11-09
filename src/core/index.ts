@@ -15,6 +15,7 @@ export {
   nextIncoming,
   renameAddress,
   renameIncoming,
+  incomingGroupStart,
   setIncomingKind,
   searchPattern,
   listDirectory,

@@ -57,6 +57,7 @@ import {
   readFinalMessage,
   toggleParking,
   isAdminStep,
+  takeDraft,
 } from "./draft";
 import { saveFeedback } from "./feedback";
 import { countReport, PHONES, readPhone, savePhone } from "./phone";
@@ -701,8 +702,9 @@ async function handleAddAddress(c: Context, draft: Draft, message: Message): Pro
 // The kind chosen: the address goes to the incoming addresses with it.
 async function handleAddKind(c: Context, draft: Draft, kind: (typeof CHOOSABLE_KINDS)[number]): Promise<void> {
   if (draft.address === null || draft.lat === null || draft.lon === null) return;
+  if (!(await takeDraft(c.env.DB, c.userId, draft.draft_id, draft.buttons_message_id))) return;
   await addUserAddress(c.env.DB, c.userId, draft.address, draft.lat, draft.lon, kind);
-  await dropDraft(c, draft);
+  await remove(c, draft.buttons_message_id);
   await send(c, ADDRESS_ADDED);
 }
 

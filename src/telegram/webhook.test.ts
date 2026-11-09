@@ -764,7 +764,32 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(labels()).toEqual(["house", "appt", "facility", "spot", "Back"]);
     await press(`admin_insetkind:spot:${id}:${pin}`, lastId());
     expect(sqlite.prepare("SELECT kind, decision FROM incoming_addresses WHERE id = ?").get(id)).toEqual({ kind: "spot", decision: null });
+    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint (spot), written by a user");
+  });
+  it("shows the kind of an address of a user, and not the kind temp", async () => {
+    const id = addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.16, 53.405] });
+    await press("admin_incoming", 5);
     expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint, written by a user");
+    sqlite.prepare("UPDATE incoming_addresses SET kind = 'facility' WHERE id = ?").run(id);
+    await press("admin_incoming", 5);
+    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint (facility), written by a user");
+  });
+  it("shows the kind of an address of a user in a group of duplicates", async () => {
+    addIncoming("5 New Street", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
+    const id = addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.1601, 53.405] });
+    sqlite.prepare("UPDATE incoming_addresses SET kind = 'appt' WHERE id = ?").run(id);
+    await press("admin_incoming", 5);
+    expect(last().text).toContain("new2: Point (appt), written by a user");
+  });
+  it("after the text is changed to that of an earlier address, shows the group of that text", async () => {
+    addIncoming("A St", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
+    addIncoming("B St", "walk", { type: "Point", coordinates: [-6.1601, 53.405] });
+    const third = addIncoming("C St", "walk", { type: "Point", coordinates: [-6.1602, 53.405] });
+    addIncoming("D St", "walk", { type: "Point", coordinates: [-6.1603, 53.405] });
+    await press(`admin_intext:${third}`, 5);
+    await message({ text: "A St" });
+    expect(last().text).toContain("Same address, 2 objects");
+    expect(last().text).toContain("A St");
   });
   it("changes the text of an incoming address and shows the same address again without deciding", async () => {
     const id = addIncoming("5 New Street", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
