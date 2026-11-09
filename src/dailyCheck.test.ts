@@ -73,7 +73,7 @@ describe("runFormCheck", () => {
     ]);
   });
 
-  it("turns the bot off when the page gets a script-src policy", async () => {
+  it("turns the bot off when the page limits scripts in its policy", async () => {
     page = () => new Response(FORM, { headers: { "Content-Security-Policy": "script-src 'self'" } });
     await runFormCheck(env);
     expect(enabled()).toBe(0);
@@ -168,13 +168,20 @@ describe("scheduled form check", () => {
     worker.scheduled({ scheduledTime } as ScheduledController, env, {} as ExecutionContext);
 
   it.each([
-    ["winter, 6:00 UTC is 6:00 in Dublin", Date.UTC(2026, 11, 15, 6, 0), true],
-    ["winter, 5:00 UTC is 5:00 in Dublin", Date.UTC(2026, 11, 15, 5, 0), false],
-    ["summer, 5:00 UTC is 6:00 in Dublin", Date.UTC(2026, 6, 15, 5, 0), true],
-    ["summer, 6:00 UTC is 7:00 in Dublin", Date.UTC(2026, 6, 15, 6, 0), false],
+    ["winter, 6:00 UTC", Date.UTC(2026, 11, 15, 6, 0), true],
+    ["summer, 6:00 UTC", Date.UTC(2026, 6, 15, 6, 0), true],
+    ["winter, 5:00 UTC", Date.UTC(2026, 11, 15, 5, 0), false],
+    ["summer, 5:00 UTC", Date.UTC(2026, 6, 15, 5, 0), false],
+    ["winter, 3:00 UTC", Date.UTC(2026, 11, 15, 3, 0), false],
   ])("%s", async (_name, time, runs) => {
     await run(time);
     expect(pageRequests).toBe(runs ? 1 : 0);
+  });
+
+  it("does not throw when the notice of inactive users fails, and says so", async () => {
+    sqlite.exec("DROP TABLE user_phones");
+    await expect(run(Date.UTC(2026, 11, 15, 6, 0))).resolves.toBeUndefined();
+    expect(console.error).toHaveBeenCalledWith("scheduled: inactive users notice failed", expect.any(Error));
   });
 
   it("does not throw when the check itself fails", async () => {

@@ -202,7 +202,7 @@ async function sendPlates(
   list: PlateList,
   requestedPage: number,
 ): Promise<number | null> {
-  const entries = await listPlates(env.DB, list);
+  const entries = await listPlates(env.DB, list, Date.now());
   const { title, empty } = PLATE_LISTS[list];
   const pages = Math.max(1, Math.ceil(entries.length / PLATES_PAGE_SIZE));
   const page = Math.min(Math.max(requestedPage, 0), pages - 1);

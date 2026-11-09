@@ -1141,6 +1141,14 @@ describe("/admin: incoming addresses and the directory", () => {
   describe("the lists of plates", () => {
     const DAY = 24 * 60 * 60 * 1000;
     const START = Date.UTC(2026, 9, 1, 12);
+    // The lists read the log of the last 66 days from the clock.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.UTC(2026, 10, 10, 12));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
     const log = (plate: string, days: number, address: string, dLat = 0) =>
       sqlite
         .prepare("INSERT INTO report_log (created_at, day, plate, parking, address, lat, lon) VALUES (?, '', ?, 1, ?, ?, -6.1)")
@@ -1168,6 +1176,23 @@ describe("/admin: incoming addresses and the directory", () => {
       expect(last().text).toBe(
         "Possibly abandoned cars\n1. B-2, 2 reports, 01/10/2026 - 10/11/2026, 5 Main St\n2. A-1, 2 reports, 01/10/2026 - 03/11/2026, 3 Main St",
       );
+    });
+
+    it("leaves out the reports older than 66 days", async () => {
+      for (let i = 0; i < 4; i++) log("12-D-3456", 20 + i, "3 Main St");
+      log("12-D-3456", -60, "3 Main St");
+      log("A-1", -60, "5 Main St");
+      log("A-1", 20, "5 Main St");
+      await press("admin_plates:repeat:0");
+      expect(last().text).toBe("No repeat plates");
+      await press("admin_plates:abandoned:0");
+      expect(last().text).toBe("No cars found");
+    });
+
+    it("takes the later row for the last report when two have the same time", async () => {
+      for (const address of ["1 A St", "2 B St", "3 C St", "4 D St", "5 E St"]) log("12-D-3456", 3, address);
+      await press("admin_plates:repeat:0");
+      expect(last().text).toBe("Repeat plates\n1. 12-D-3456, 5 reports, 04/10/2026, 5 E St");
     });
 
     it("says so when a list is empty", async () => {
