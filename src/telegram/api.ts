@@ -54,6 +54,34 @@ export async function sendMessage(
   return sent?.message_id ?? null;
 }
 
+// Sends a text file as a document; returns the ID of the sent message, or null when sending fails.
+export async function sendDocument(
+  token: string,
+  chatId: number,
+  fileName: string,
+  content: string,
+): Promise<number | null> {
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("document", new Blob([content], { type: "application/geo+json" }), fileName);
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    const data = (await response.json()) as TelegramResponse<{ message_id: number }>;
+    if (!data.ok) {
+      console.error(`Telegram sendDocument failed with code ${data.error_code}`);
+      return null;
+    }
+    return data.result?.message_id ?? null;
+  } catch {
+    console.error("Telegram sendDocument request failed");
+    return null;
+  }
+}
+
 export async function deleteMessage(token: string, chatId: number, messageId: number): Promise<void> {
   await callTelegram(token, "deleteMessage", { chat_id: chatId, message_id: messageId });
 }

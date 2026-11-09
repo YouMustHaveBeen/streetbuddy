@@ -65,7 +65,8 @@ export type Step =
   | "admin_search" // Not a report: /admin shows the directory (all of it or a search) and waits for a search text.
   | "admin_group" // Not a report: /admin shows a group of duplicate incoming addresses; cleanup holds the map pins.
   | "admin_text" // Not a report: /admin waits for the new text of a directory address.
-  | "admin_move"; // Not a report: /admin waits for the new location of a directory point.
+  | "admin_move" // Not a report: /admin waits for the new location of a directory point.
+  | "admin_import"; // Not a report: /admin waits for the edited directory file.
 
 export const isAdminStep = (step: Step): boolean => step.startsWith("admin_");
 

@@ -81,6 +81,7 @@ export interface Message {
   location?: { latitude: number; longitude: number };
   photo?: PhotoSize[];
   media_group_id?: string;
+  document?: { file_id: string };
 }
 
 interface Button {

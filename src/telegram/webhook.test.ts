@@ -19,6 +19,10 @@ const ADDRESS_ROW = [
   { text: "Incoming addresses", callback_data: "admin_incoming" },
   { text: "Edit directory", callback_data: "admin_directory" },
 ];
+const FILE_ROW = [
+  { text: "Export directory", callback_data: "admin_export" },
+  { text: "Import file", callback_data: "admin_import" },
+];
 const MAP_ROW = [{ text: "Directory map", url: expect.stringContaining("https://site.example/directory?exp=") }];
 let env: WebhookEnv;
 let rows: () => number;
@@ -246,13 +250,13 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
     });
   });
   it("gives the map button a link that is signed with the secret and points at the directory page", async () => {
     const mock = adminTelegram("administrator");
     await send(textMessage("/admin"));
-    const link = new URL(bodyOf(mock, "sendMessage").reply_markup.inline_keyboard[3][0].url);
+    const link = new URL(bodyOf(mock, "sendMessage").reply_markup.inline_keyboard[4][0].url);
     expect(`${link.origin}${link.pathname}`).toBe("https://site.example/directory");
     expect(await isDirectoryLinkValid(env, link.searchParams)).toBe(true);
     expect(await isDirectoryLinkValid({ DIRECTORY_LINK_SECRET: "another" }, link.searchParams)).toBe(false);
@@ -265,7 +269,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, ADDRESS_ROW, FILE_ROW] },
     });
   });
   it("answers /admin written with the bot name", async () => {
@@ -283,7 +287,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: 03/11/2026 06:00 - form changed",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
     });
   });
   it.each([
@@ -385,7 +389,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
     });
     expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
   });
@@ -1128,5 +1132,110 @@ describe("/admin: incoming addresses and the directory", () => {
     await message({ text: "road" });
     expect(sent.slice(count).map((call) => call.method)).toEqual(["deleteMessage"]);
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
+  });
+});
+
+describe("/admin: the directory file", () => {
+  let updateId = 0;
+  let nextId = 0;
+  let sent: { method: string; body: any; id: number }[] = [];
+  let uploaded: string | null = null;
+  beforeEach(() => {
+    updateId = 0;
+    nextId = 100;
+    sent = [];
+    uploaded = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const address = String(url);
+        if (address.includes("/file/bot")) return new Response(uploaded ?? "");
+        const method = address.split("/").pop() as string;
+        if (method === "getChatMember") return new Response(JSON.stringify(memberOf("administrator")));
+        if (method === "getFile") return new Response(JSON.stringify({ ok: true, result: { file_path: "documents/file_1" } }));
+        nextId += 1;
+        if (init?.body instanceof FormData) {
+          const document = init.body.get("document") as File;
+          sent.push({ method, body: { chat_id: init.body.get("chat_id"), name: document.name, content: await document.text() }, id: nextId });
+        } else {
+          sent.push({ method, body: JSON.parse(String(init?.body)), id: nextId });
+        }
+        return new Response(JSON.stringify({ ok: true, result: { message_id: nextId } }));
+      }),
+    );
+  });
+  const of = (method: string) => sent.filter((call) => call.method === method);
+  const texts = () => of("sendMessage").map((call) => call.body.text);
+  const press = async (data: string, messageId = nextId) => {
+    const update = privateButton(++updateId) as any;
+    update.callback_query.data = data;
+    update.callback_query.message.message_id = messageId;
+    await send(update);
+  };
+  const message = async (fields: Record<string, unknown>) => {
+    const update = privateMessage(++updateId) as any;
+    Object.assign(update.message, { message_id: 500 + updateId, date: 1793000000, ...fields });
+    await send(update);
+  };
+  const sendFile = (content: string) => {
+    uploaded = content;
+    return message({ document: { file_id: "doc1", file_name: "map.geojson" } });
+  };
+  const collection = (...features: unknown[]) => JSON.stringify({ type: "FeatureCollection", features });
+  const house = (address: string, lon: number) => ({
+    type: "Feature",
+    properties: { address, kind: "house" },
+    geometry: { type: "Point", coordinates: [lon, 53.405] },
+  });
+
+  it("Export directory sends the directory as a file and the admin screen below it", async () => {
+    sqlite
+      .prepare("INSERT INTO addresses (text, kind, geometry, west, south, east, north, source) VALUES (?, 'house', ?, 0, 0, 0, 0, 'osm')")
+      .run("1 Main St", JSON.stringify({ type: "Point", coordinates: [-6.16, 53.405] }));
+    await press("admin_export", 5);
+    const [file] = of("sendDocument");
+    expect(file.body.name).toBe("directory.geojson");
+    expect(JSON.parse(file.body.content).features).toEqual([
+      { type: "Feature", properties: { address: "1 Main St", kind: "house", source: "osm" }, geometry: { type: "Point", coordinates: [-6.16, 53.405] } },
+    ]);
+    expect(sent.map((call) => call.method)).toEqual(["answerCallbackQuery", "sendDocument", "sendMessage", "deleteMessage"]);
+    expect(texts()).toEqual(["Admin console\nBot: on\nLast form check: none yet"]);
+    expect(of("deleteMessage")[0].body.message_id).toBe(5);
+  });
+
+  it("Import file asks for the file, loads it and shows the incoming addresses", async () => {
+    await press("admin_import", 5);
+    expect(texts()).toEqual(["Send the edited file"]);
+    const question = of("sendMessage")[0].id;
+    await sendFile(collection(house("3 Main St", -6.1603)));
+    expect(texts().slice(1)).toEqual(["Loaded 1 address, 0 unchanged skipped", "Incoming address 1 of 1\n3 Main St\nPoint (house), from the walk"]);
+    expect(sqlite.prepare("SELECT source, text FROM incoming_addresses").all()).toEqual([{ source: "walk", text: "3 Main St" }]);
+    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([question, 500 + updateId]));
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "screen" }]);
+  });
+
+  it("asks for a document when something else is sent, or a file that is not GeoJSON", async () => {
+    await press("admin_import", 5);
+    await message({ text: "hello" });
+    await sendFile("not json");
+    expect(texts()).toEqual(["Send the edited file", "Send the file as a document", "Send the file as a document"]);
+    expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_import" }]);
+  });
+
+  it("lists the errors of a wrong file, loads nothing and waits for the file again", async () => {
+    await press("admin_import", 5);
+    await sendFile(collection(house("", -6.16), house("4 Main St", -6.16)));
+    expect(texts().at(-1)).toBe("The file has errors, nothing was loaded\nFeature 1 (): the address is missing");
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM incoming_addresses").get()).toEqual({ n: 0 });
+    await sendFile(collection(house("4 Main St", -6.16)));
+    expect(texts().at(-2)).toBe("Loaded 1 address, 0 unchanged skipped");
+  });
+
+  it("keeps an error list within one message", async () => {
+    await press("admin_import", 5);
+    await sendFile(collection(...Array.from({ length: 200 }, (_, i) => ({ ...house(`${i} Main St`, -6.16), geometry: null }))));
+    const text = texts().at(-1) as string;
+    expect(text.length).toBeLessThanOrEqual(4096);
+    expect(text.startsWith("The file has errors, nothing was loaded\nFeature 1 (0 Main St)")).toBe(true);
   });
 });
