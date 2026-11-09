@@ -129,7 +129,7 @@ afterEach(() => {
 });
 
 describe("/start", () => {
-  it("shows the /start text and takes away the Location button", async () => {
+  it("shows the /start text", async () => {
     await text("/start");
     expect(lastSent().text).toBe(`StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
@@ -141,7 +141,7 @@ Third, to start a report, send location to the bot.
 This bot is not affiliated with An Garda Síochána.
 (A link to the Privacy Policy will be here.)
 © OpenStreetMap contributors`);
-    expect(lastSent().reply_markup).toEqual({ remove_keyboard: true });
+    expect(lastSent().reply_markup).toBeUndefined();
     expect(draft()).toBeUndefined();
   });
   it("sends the text as HTML without a link preview", async () => {

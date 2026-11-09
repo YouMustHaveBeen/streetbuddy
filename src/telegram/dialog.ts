@@ -180,8 +180,6 @@ const HOTSPOTS_PER_PAGE = 10;
 const REVIEW_OK = "review_ok";
 
 const CANCEL: Button = { text: "Cancel", callback_data: "cancel" };
-// Removes the keyboard with the "Location" button from under the input line.
-const REMOVE_KEYBOARD = { remove_keyboard: true };
 
 const PHONE_BUTTONS: Button[][] = [
   [{ text: "iPhone", callback_data: `${PHONE_PREFIX}iphone` }],
@@ -384,7 +382,7 @@ async function showHotspotPage(c: Context, messageId: number, wanted: number): P
 async function handleCommand(c: Context, command: string): Promise<void> {
   await stopReport(c.env, c.userId, c.chatId);
   if (command === "start") {
-    await send(c, startText(c.env.SITE_URL), REMOVE_KEYBOARD, true);
+    await send(c, startText(c.env.SITE_URL), undefined, true);
   } else if (command === "manual") {
     await send(c, pageLink(c.env.SITE_URL, MANUAL_PATH, "User manual"), undefined, true);
   } else if (command === "setup") {
