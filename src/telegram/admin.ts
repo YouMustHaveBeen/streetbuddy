@@ -1,7 +1,7 @@
 // The /admin screen for the administrators of the closed group: the bot's state, the result
-// of the last daily form check, the button that switches the bot on or off, the buttons of
-// the feedback and the statistics, which do nothing yet, the lists of repeat plates and of possibly
-// abandoned cars, the decisions on incoming addresses
+// of the last daily form check, the button that switches the bot on or off, the feedback of the
+// users, which is read and deleted one item at a time, the statistics, the lists of repeat plates and of
+// possibly abandoned cars, the decisions on incoming addresses
 // (a group of addresses with the same text is decided by keeping one of them), the editing of the
 // address directory by a list and a text search, the directory as a file to edit on a computer and the
 // edited file sent back, and the link to its map page.
@@ -27,13 +27,15 @@ import {
   listPlates,
   movePoint,
   nextIncoming,
+  PARKING_OPTIONS,
+  readStatistics,
   renameAddress,
   searchPattern,
   setAddressKind,
   shapeFromGeometry,
   shapeMiddle,
 } from "../core";
-import type { Decision, DuplicateGroup, FormCheckOutcome, IncomingScreen, PlateList } from "../core";
+import type { Count, Decision, DuplicateGroup, FormCheckOutcome, IncomingScreen, PlateList } from "../core";
 import type { Env } from "../env";
 import { directoryLink } from "../directoryLink";
 import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, OUT_OF_AREA } from "./address";
@@ -51,6 +53,7 @@ import {
   takeDraft,
 } from "./draft";
 import type { Draft, Step } from "./draft";
+import { deleteFeedback, nextFeedback } from "./feedback";
 import { stopReport } from "./stop";
 
 type AdminEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL" | "DIRECTORY_LINK_SECRET">;
@@ -72,7 +75,10 @@ interface AdminMessage {
 
 const SWITCH_ON = "admin_on";
 const SWITCH_OFF = "admin_off";
+// With arguments: ":<feedback ID>" for the next feedback after that one and for deleting it.
 const FEEDBACK = "admin_feedback";
+const FEEDBACK_NEXT = "admin_fbnext";
+const FEEDBACK_DELETE = "admin_fbdel";
 const STATISTICS = "admin_statistics";
 const INCOMING = "admin_incoming";
 // With arguments ":<list>:<page>", the list being "repeat" or "abandoned".
@@ -125,6 +131,7 @@ const SEND_NEW_LOCATION = "Send the new location";
 const SAVED = "Saved";
 const CHOOSE_KIND = "Choose the kind";
 const NO_INCOMING = "No incoming addresses";
+const NO_FEEDBACK = "No feedback";
 const SEND_FILE = "Send the edited file";
 const SEND_AS_DOCUMENT = "Send the file as a document";
 const FILE_HAS_ERRORS = "The file has errors, nothing was loaded";
@@ -221,6 +228,58 @@ async function sendPlates(
   });
   const heading = pages > 1 ? `${title} (page ${page + 1} of ${pages})` : title;
   return remember(env, userId, send(env, chatId, `${heading}\n${lines.join("\n")}`, buttons));
+}
+
+// The feedback after the one with afterId, oldest first, with its author's Telegram ID and the time.
+async function sendFeedback(env: AdminEnv, userId: number, chatId: number, afterId: number): Promise<number | null> {
+  const item = await nextFeedback(env.DB, afterId);
+  if (!item) return remember(env, userId, send(env, chatId, NO_FEEDBACK, [[backButton()]]));
+  const moment = dublinDateTime(item.createdAt);
+  const text = `Feedback ${item.position} of ${item.total}\nFrom ${item.userId} on ${moment.date} ${moment.time}\n${item.text}`;
+  return remember(
+    env,
+    userId,
+    send(env, chatId, text, [
+      [
+        { text: "Delete", callback_data: `${FEEDBACK_DELETE}:${item.id}` },
+        { text: "Next", callback_data: `${FEEDBACK_NEXT}:${item.id}` },
+      ],
+      [backButton()],
+    ]),
+  );
+}
+
+// The three numbers of a count: yesterday, the last 30 days, all days up to yesterday.
+const countLine = (label: string, count: Count) => `${label}: ${count.yesterday} / ${count.month} / ${count.all}`;
+
+// The statistics screen.
+async function sendStatistics(env: AdminEnv, userId: number, chatId: number): Promise<number | null> {
+  const stats = await readStatistics(env.DB, Date.now());
+  const { events } = stats;
+  const left: Count = {
+    yesterday: Math.max(0, events.started.yesterday - stats.links.yesterday),
+    month: Math.max(0, events.started.month - stats.links.month),
+    all: Math.max(0, events.started.all - stats.links.all),
+  };
+  const lines = [
+    "Statistics",
+    "Yesterday / last 30 days / all days up to yesterday",
+    countLine("Links given", stats.links),
+    countLine("Reports started", events.started),
+    countLine("Left before the link", left),
+    `Users: ${stats.usersYesterday} / ${stats.usersMonth} / -`,
+    countLine("Out of area", events.area_refused),
+    countLine("Plate accepted as is", events.plate_as_is),
+    countLine("Plate corrected", events.plate_edited),
+    countLine("Plate written by the user", events.plate_manual),
+    countLine("Plate recognitions", events.recognitions),
+    countLine("Workers AI errors", events.ai_errors),
+    countLine("Nominatim errors", events.nominatim_errors),
+    countLine("Not group members", events.outsiders),
+    "Parking options",
+    ...PARKING_OPTIONS.map((option, i) => countLine(option, stats.options[i])),
+  ];
+  return remember(env, userId, send(env, chatId, lines.join("\n"), [[backButton()]]));
 }
 
 // The next incoming screen after afterId. One address is shown with a pin on the map above it;
@@ -463,7 +522,8 @@ export async function handleAdminCommand(env: AdminEnv, userId: number, chatId: 
 
 // Every button sends its next screen and removes the one it was pressed on, and the pin above it.
 // A decision on an incoming address is followed at once by the move into the directory.
-// QUERY BUDGET EXCEPTION: the decision, the move (a read batch and a write batch), the next incoming screen (two reads), its draft.
+// QUERY BUDGET EXCEPTION: the decision, the move (a read batch and a write batch), the next incoming screen (two reads), its draft;
+// for the feedback: the delete, up to two reads, the draft.
 export async function handleAdminButton(
   env: AdminEnv,
   userId: number,
@@ -471,11 +531,6 @@ export async function handleAdminButton(
   query: { id: string; data?: string; messageId?: number },
 ): Promise<void> {
   const answered = answerButton(env.TELEGRAM_BOT_TOKEN, query.id);
-  // These two buttons only get their answer for now.
-  if (query.data === FEEDBACK || query.data === STATISTICS) {
-    await answered;
-    return;
-  }
   const [name, first, second, third, fourth] = (query.data ?? "").split(":");
   let pinId: number | null = null;
   // The pins above a group of duplicates; they are in its draft, which is taken once.
@@ -491,6 +546,15 @@ export async function handleAdminButton(
     next = sendScreen(env, userId, chatId);
   } else if (name === PLATES) {
     next = sendPlates(env, userId, chatId, first === "abandoned" ? "abandoned" : "repeat", Number(second) || 0);
+  } else if (name === FEEDBACK) {
+    next = sendFeedback(env, userId, chatId, 0);
+  } else if (name === FEEDBACK_NEXT) {
+    next = sendFeedback(env, userId, chatId, Number(first) || 0);
+  } else if (name === FEEDBACK_DELETE) {
+    await deleteFeedback(env.DB, Number(first) || 0);
+    next = sendFeedback(env, userId, chatId, Number(first) || 0);
+  } else if (name === STATISTICS) {
+    next = sendStatistics(env, userId, chatId);
   } else if (name === INCOMING) {
     next = sendIncoming(env, userId, chatId, 0);
   } else if (name === DECIDE) {

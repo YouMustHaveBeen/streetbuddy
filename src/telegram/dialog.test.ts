@@ -1492,3 +1492,96 @@ describe("the address of the report when the link is given", () => {
     expect(draft()).toBeUndefined();
   });
 });
+
+describe("statistics counters", () => {
+  const counts = () =>
+    Object.fromEntries(
+      (sqlite.prepare("SELECT event, SUM(n) AS n FROM daily_counts GROUP BY event").all() as { event: string; n: number }[]).map((row) => [row.event, row.n]),
+    );
+  const toLink = async () => {
+    await press("plate_ok");
+    await press("opt:0");
+    await press("done");
+    await giveLink();
+  };
+  it("counts a refusal outside the area", async () => {
+    await location(53.0, -7.0);
+    expect(counts()).toEqual({ area_refused: 1 });
+  });
+  it("counts a started report at its first photo and a recognition, but not at the next photo", async () => {
+    await toPhotos();
+    await photo("a");
+    await photo("b");
+    expect(counts()).toEqual({ started: 1, recognitions: 1 });
+  });
+  it("counts a started report written by its plate, with no recognition", async () => {
+    await toPhotos();
+    await text("12-D-3456");
+    expect(counts()).toEqual({ started: 1 });
+  });
+  it("counts a recognition that failed", async () => {
+    run.mockImplementation(async () => {
+      throw new Error("limit");
+    });
+    await toPhotos();
+    await photo("a");
+    expect(counts()).toEqual({ started: 1, recognitions: 1, ai_errors: 1 });
+  });
+  it("counts the failures of Nominatim", async () => {
+    nominatim = () => new Response("", { status: 500 });
+    await location();
+    await location();
+    expect(counts()).toEqual({ nominatim_errors: 2 });
+  });
+  it("counts a recognized plate that was taken as it is when the link is given", async () => {
+    await toPlateTime();
+    await toLink();
+    expect(counts()).toMatchObject({ plate_as_is: 1 });
+  });
+  it("counts a plate chosen among several recognized ones as taken as it is", async () => {
+    run.mockImplementation(async () => ({ response: '["12-D-3456", "99-D-1"]' }));
+    await toPhotos();
+    await photo("a");
+    await press("create");
+    await press("pick:1");
+    await toLink();
+    expect(counts()).toMatchObject({ plate_as_is: 1 });
+  });
+  it("counts a plate changed by the user", async () => {
+    await toPlateTime();
+    await press("plate_edit");
+    await text("99-D-1");
+    await toLink();
+    expect(counts()).toMatchObject({ plate_edited: 1 });
+    expect(counts()).not.toHaveProperty("plate_as_is");
+  });
+  it("counts a plate written when nothing was recognized, and one written before any photo", async () => {
+    run.mockImplementation(async () => ({ response: "[]" }));
+    await toPlateTime();
+    await text("12-D-3456");
+    await toLink();
+    expect(counts()).toMatchObject({ plate_manual: 1 });
+    sqlite.prepare("DELETE FROM drafts").run();
+    sqlite.prepare("DELETE FROM daily_counts").run();
+    await toPhotos();
+    await text("12-D-3456");
+    await toLink();
+    expect(counts()).toEqual({ started: 1, plate_manual: 1 });
+  });
+  it("counts no plate when the report is cancelled before the link", async () => {
+    await toPlateTime();
+    await press("cancel");
+    expect(counts()).toEqual({ started: 1, recognitions: 1 });
+  });
+  it("counts a report with an album once, whatever the order of its photos", async () => {
+    await toPhotos();
+    await photo("a", { message_id: 102 });
+    await photo("b", { message_id: 101 });
+    expect(counts()).toMatchObject({ started: 1 });
+  });
+  it("counts a report once when two plates are written at the same moment", async () => {
+    await toPhotos();
+    await Promise.all([text("12-D-3456"), text("99-D-1")]);
+    expect(counts()).toEqual({ started: 1 });
+  });
+});

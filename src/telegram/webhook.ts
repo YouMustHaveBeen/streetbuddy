@@ -1,4 +1,5 @@
 // Bot entry point: webhook secret check, repeat filter, group membership check.
+import { countEvent } from "../core";
 import type { Env } from "../env";
 import { handleAdminButton, handleAdminCommand, isAdminButton, isAdminCommand } from "./admin";
 import { answerButton, callTelegram, sendMessage } from "./api";
@@ -111,6 +112,7 @@ async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionCont
     }
     if (access && !access.member) {
       step = "not-member reply";
+      ctx.waitUntil(countEvent(env.DB, "outsiders"));
       if (incoming.callbackQueryId) {
         await answerButton(env.TELEGRAM_BOT_TOKEN, incoming.callbackQueryId, NOT_MEMBER_TEXT);
       } else {
