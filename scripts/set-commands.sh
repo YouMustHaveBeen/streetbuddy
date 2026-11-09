@@ -10,7 +10,7 @@ if [ -z "$BOT_TOKEN" ]; then
   exit 1
 fi
 
-commands='[{"command":"manual","description":"User manual"},{"command":"setup","description":"Setup guide"},{"command":"hotspots","description":"Hotspots"},{"command":"reportmap","description":"Report map"},{"command":"feedback","description":"Feedback"},{"command":"phone","description":"Phone"}]'
+commands='[{"command":"manual","description":"User manual"},{"command":"setup","description":"Setup guide"},{"command":"hotspots","description":"Hotspots"},{"command":"map","description":"Area map"},{"command":"feedback","description":"Feedback"},{"command":"phone","description":"Phone"}]'
 resp=$(curl -sS "https://api.telegram.org/bot$BOT_TOKEN/setMyCommands" \
   --data-urlencode "commands=$commands" \
   --data-urlencode 'scope={"type":"all_private_chats"}')
