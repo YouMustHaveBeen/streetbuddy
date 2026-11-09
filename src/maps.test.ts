@@ -64,13 +64,14 @@ describe("the directory map page", () => {
     expect(html).not.toContain("innerHTML");
   });
 
-  it("gives every address its source and draws the points of the source osm white", async () => {
+  it("draws the points of every source violet, and the facility ones fuchsia", async () => {
     addAddress("12 Main St", "house", { type: "Point", coordinates: [-6.1, 53.4] });
     sqlite.prepare("UPDATE addresses SET source = 'osm'").run();
     const html = await (await directoryPage(env)).text();
-    expect(html).toContain('"text":"12 Main St","kind":"house","source":"osm"');
-    expect(html).toContain('["==", ["get", "source"], "osm"], WHITE');
-    expect(html).toContain('WHITE = "#ffffff"');
+    expect(html).toContain('"circle-color": ["case", ["==", ["get", "kind"], "facility"], FUCHSIA, VIOLET]');
+    expect(html).toContain('FUCHSIA = "#d946ef"');
+    expect(html).not.toContain("WHITE");
+    expect(html).not.toContain("#ffffff");
   });
 
   it("shows only the address text in the popup and draws lines and areas violet", async () => {
@@ -79,7 +80,7 @@ describe("the directory map page", () => {
     expect(html).toContain("textNode([properties.text])");
     expect(html).not.toContain("properties.kind");
     expect(html).toContain('"fill-color": VIOLET');
-    expect(html).toContain('addLine("lines", "directory", isLine, 4, ["case", ["==", ["get", "source"], "osm"], WHITE, ["==", ["get", "kind"], "facility"], FUCHSIA, VIOLET]);');
+    expect(html).toContain('addLine("lines", "directory", isLine, 4, ["case", ["==", ["get", "kind"], "facility"], FUCHSIA, VIOLET]);');
   });
 
   it("cannot be broken out of its script by an address text", async () => {

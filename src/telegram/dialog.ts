@@ -31,6 +31,7 @@ import { INSTALL_PATH } from "../install";
 import { MANUAL_PATH } from "../manual";
 import { REPORT_MAP_PATH } from "../maps";
 import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS, OUT_OF_AREA } from "./address";
+import { directoryLink } from "../directoryLink";
 import { handleAdminInput } from "./admin";
 
 export { OUT_OF_AREA };
@@ -62,6 +63,7 @@ import {
 import { saveFeedback } from "./feedback";
 import { countReport, PHONES, readPhone, savePhone } from "./phone";
 import type { Phone, UserPhone } from "./phone";
+import { MAP_PREFIX, REPORT_MAP } from "./reportMap";
 import { stopReport } from "./stop";
 import type { AddressOption, Draft, DraftChanges, Step } from "./draft";
 import { FORM_CHANGED_TEXT } from "./notify";
@@ -138,7 +140,7 @@ const WRITE_FEEDBACK = "Write your feedback";
 const FEEDBACK_SENT = "Thank you for your feedback";
 const FEEDBACK_TOO_LONG = "The feedback must not be longer than 1000 characters";
 const NO_HOTSPOTS = "No hotspots yet";
-const REPORT_MAP = "Report map";
+const AREA_MAP = "Area map";
 const OPEN_MAP = "Open map";
 
 // The steps under the description in the final message.
@@ -180,7 +182,6 @@ const DELETE_BATCH = 100;
 const ROAD_USER_PREFIX = "road:";
 const KIND_PREFIX = "kind:";
 const PHONE_PREFIX = "phone:";
-const MAP_PREFIX = "map:";
 const HOTSPOT_PREFIX = "hot:";
 const HOTSPOTS_PER_PAGE = 10;
 const REVIEW_OK = "review_ok";
@@ -344,18 +345,10 @@ async function redraw(c: Context, draft: Draft, message: Message): Promise<void>
 }
 
 // The commands of the menu, and /start. Each of them stops a report in progress without a word.
-const COMMAND = /^\/(start|manual|setup|hotspots|reportmap|feedback|phone|add_address)(@\S+)?(\s|$)/;
+const COMMAND = /^\/(start|manual|setup|hotspots|map|feedback|phone|add_address)(@\S+)?(\s|$)/;
 
-const REPORT_MAP_BUTTONS: Button[][] = [
-  [
-    { text: "Today", callback_data: `${MAP_PREFIX}today` },
-    { text: "Week", callback_data: `${MAP_PREFIX}week` },
-  ],
-  [
-    { text: "Last month", callback_data: `${MAP_PREFIX}last_month` },
-    { text: "Month before", callback_data: `${MAP_PREFIX}month_before` },
-  ],
-];
+export const isStartCommand = (text: string | undefined): boolean =>
+  text !== undefined && COMMAND.exec(text)?.[1] === "start";
 
 // A link to a page of the Worker, for a message sent as HTML.
 const pageLink = (siteUrl: string, path: string, name: string) => `<a href="${siteUrl}${path}">${name}</a>`;
@@ -399,9 +392,11 @@ async function handleCommand(c: Context, command: string): Promise<void> {
     const page = hotspotPage(await getHotspots(c.env.DB), 0);
     const shown = await send(c, page.text, page.buttons.length === 0 ? undefined : { inline_keyboard: [page.buttons] });
     if (shown !== null && page.buttons.length > 0) await rememberScreen(c.env.DB, c.userId, shown);
-  } else if (command === "reportmap") {
-    const shown = await send(c, REPORT_MAP, { inline_keyboard: REPORT_MAP_BUTTONS });
-    if (shown !== null) await rememberScreen(c.env.DB, c.userId, shown);
+  } else if (command === "map") {
+    if (c.env.DIRECTORY_LINK_SECRET) {
+      const shown = await send(c, AREA_MAP, { inline_keyboard: [[{ text: OPEN_MAP, url: await directoryLink(c.env) }]] });
+      if (shown !== null) await rememberScreen(c.env.DB, c.userId, shown);
+    }
   } else if (command === "phone") {
     await show(c, null, YOUR_PHONE, { step: "phone_choice" });
   } else if (command === "add_address") {

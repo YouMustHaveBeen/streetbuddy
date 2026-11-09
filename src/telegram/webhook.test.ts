@@ -28,7 +28,8 @@ const FILE_ROW = [
   { text: "Export directory", callback_data: "admin_export" },
   { text: "Import file", callback_data: "admin_import" },
 ];
-const MAP_ROW = [{ text: "Directory map", url: expect.stringContaining("https://site.example/directory?exp=") }];
+const REPORT_MAP_BUTTON = { text: "Report map", callback_data: "admin_reportmap" };
+const MAP_ROW = [REPORT_MAP_BUTTON, { text: "Directory map", url: expect.stringContaining("https://site.example/directory?exp=") }];
 let env: WebhookEnv;
 let rows: () => number;
 let sqlite: ReturnType<typeof fakeD1>["sqlite"];
@@ -162,11 +163,16 @@ describe("membership", () => {
     await send(privateMessage());
     expect(methods(mock)).toEqual(["getChatMember"]);
   });
+  const textUpdate = (text: string, updateId = 1) => {
+    const update = privateMessage(updateId, 42) as any;
+    update.message.text = text;
+    return update;
+  };
   it.each([[memberOf("left")], [memberOf("kicked")], [memberOf("restricted", false)]])(
-    "tells %j it is members only",
+    "tells %j it is members only on /start",
     async (answer) => {
       const mock = telegram(answer);
-      await send(privateMessage(1, 42));
+      await send(textUpdate("/start"));
       expect(methods(mock)).toEqual(["getChatMember", "sendMessage"]);
       expect(bodyOf(mock, "sendMessage")).toEqual({
         chat_id: 42,
@@ -174,6 +180,33 @@ describe("membership", () => {
       });
     },
   );
+  it("answers /start written with the bot name to a non-member too", async () => {
+    const mock = telegram(memberOf("left"));
+    await send(textUpdate("/start@streetbuddy_bot"));
+    expect(methods(mock)).toEqual(["getChatMember", "sendMessage"]);
+  });
+  it.each([["/map"], ["/manual"], ["/hotspots"], ["/feedback"], ["/phone"], ["hello"]])(
+    "says nothing to a non-member who writes %s",
+    async (text) => {
+      const mock = telegram(memberOf("left"));
+      await send(textUpdate(text));
+      expect(methods(mock)).toEqual(["getChatMember"]);
+    },
+  );
+  it("says nothing to a non-member who sends a location", async () => {
+    const mock = telegram(memberOf("left"));
+    const update = privateMessage(1, 42) as any;
+    update.message.location = { latitude: 53.4, longitude: -6.1 };
+    await send(update);
+    expect(methods(mock)).toEqual(["getChatMember"]);
+  });
+  it("says nothing to a non-member who sends a photo", async () => {
+    const mock = telegram(memberOf("left"));
+    const update = privateMessage(1, 42) as any;
+    update.message.photo = [{ file_id: "a", file_unique_id: "u", width: 320, height: 240 }];
+    await send(update);
+    expect(methods(mock)).toEqual(["getChatMember"]);
+  });
   it("counts the attempts of someone who is not a member, and a member does not add to it", async () => {
     telegram(memberOf("left"));
     await send(privateMessage(1, 42));
@@ -190,7 +223,7 @@ describe("membership", () => {
     await send(press);
     expect(methods(mock)).toEqual(["answerCallbackQuery"]);
   });
-  it("gives a non-member a pop-up instead of the link and keeps the draft", async () => {
+  it("only acknowledges a non-member's press of the button that leads to the link and keeps the draft", async () => {
     const mock = telegram(memberOf("left"));
     sqlite
       .prepare(
@@ -203,10 +236,7 @@ describe("membership", () => {
     await send(press);
     expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery"]);
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "review" }]);
-    expect(bodyOf(mock, "answerCallbackQuery")).toEqual({
-      callback_query_id: "cb1",
-      text: "This bot is only for members of the group",
-    });
+    expect(bodyOf(mock, "answerCallbackQuery")).toEqual({ callback_query_id: "cb1" });
   });
   it("passes a member's button press to the dialog", async () => {
     const mock = telegram(memberOf("member"));
@@ -270,12 +300,12 @@ describe("/admin", () => {
   it("gives the map button a link that is signed with the secret and points at the directory page", async () => {
     const mock = adminTelegram("administrator");
     await send(textMessage("/admin"));
-    const link = new URL(bodyOf(mock, "sendMessage").reply_markup.inline_keyboard[5][0].url);
+    const link = new URL(bodyOf(mock, "sendMessage").reply_markup.inline_keyboard[5][1].url);
     expect(`${link.origin}${link.pathname}`).toBe("https://site.example/directory");
     expect(await isDirectoryLinkValid(env, link.searchParams)).toBe(true);
     expect(await isDirectoryLinkValid({ DIRECTORY_LINK_SECRET: "another" }, link.searchParams)).toBe(false);
   });
-  it.each([[""], [undefined]])("shows the screen without the map button when the link secret is %j", async (secret) => {
+  it.each([[""], [undefined]])("shows the screen without the directory map button when the link secret is %j", async (secret) => {
     const mock = adminTelegram("administrator");
     env = { ...env, DIRECTORY_LINK_SECRET: secret as unknown as string };
     await send(textMessage("/admin"));
@@ -283,7 +313,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, [REPORT_MAP_BUTTON]] },
     });
   });
   it("answers /admin written with the bot name", async () => {
@@ -406,6 +436,34 @@ describe("/admin", () => {
       reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
     });
     expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
+  });
+  it("shows the Report map screen with the buttons of the periods and removes the old screen", async () => {
+    const mock = adminTelegram("administrator");
+    await send(adminButton("admin_reportmap"));
+    expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery", "sendMessage", "deleteMessage"]);
+    expect(bodyOf(mock, "sendMessage")).toEqual({
+      chat_id: 42,
+      text: "Report map",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "Today", callback_data: "map:today" },
+            { text: "Week", callback_data: "map:week" },
+          ],
+          [
+            { text: "Last month", callback_data: "map:last_month" },
+            { text: "Month before", callback_data: "map:month_before" },
+          ],
+        ],
+      },
+    });
+    expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
+    expect(sqlite.prepare("SELECT step, buttons_message_id FROM drafts").all()).toEqual([{ step: "screen", buttons_message_id: SCREEN_ID }]);
+  });
+  it("gives nobody but an administrator the Report map screen", async () => {
+    const mock = adminTelegram("member");
+    await send(adminButton("admin_reportmap"));
+    expect(methods(mock)).toEqual(["getChatMember"]);
   });
   it("switches the bot on", async () => {
     const mock = adminTelegram("creator");

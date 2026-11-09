@@ -4,7 +4,7 @@
 // possibly abandoned cars, the decisions on incoming addresses
 // (a group of addresses with the same text is decided by keeping one of them), the editing of the
 // address directory by a list and a text search, the directory as a file to edit on a computer and the
-// edited file sent back, and the link to its map page.
+// edited file sent back, the Report map screen and the link to the directory map page.
 import {
   CHOOSABLE_KINDS,
   approveAllFrom,
@@ -57,6 +57,7 @@ import {
 } from "./draft";
 import type { Draft, Step } from "./draft";
 import { deleteFeedback, nextFeedback } from "./feedback";
+import { REPORT_MAP, REPORT_MAP_BUTTONS } from "./reportMap";
 import { stopReport } from "./stop";
 
 type AdminEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL" | "DIRECTORY_LINK_SECRET">;
@@ -83,6 +84,7 @@ const FEEDBACK = "admin_feedback";
 const FEEDBACK_NEXT = "admin_fbnext";
 const FEEDBACK_DELETE = "admin_fbdel";
 const STATISTICS = "admin_statistics";
+const OPEN_REPORT_MAP = "admin_reportmap";
 const INCOMING = "admin_incoming";
 // With arguments ":<list>:<page>", the list being "repeat" or "abandoned".
 const PLATES = "admin_plates";
@@ -201,9 +203,15 @@ async function sendScreen(env: AdminEnv, userId: number, chatId: number): Promis
       { text: "Import file", callback_data: IMPORT },
     ],
   ];
-  if (env.DIRECTORY_LINK_SECRET) buttons.push([{ text: "Directory map", url: await directoryLink(env) }]);
+  const maps: Button[] = [{ text: REPORT_MAP, callback_data: OPEN_REPORT_MAP }];
+  if (env.DIRECTORY_LINK_SECRET) maps.push({ text: "Directory map", url: await directoryLink(env) });
+  buttons.push(maps);
   return remember(env, userId, send(env, chatId, text, buttons));
 }
+
+// The Report map screen with the buttons of its periods; the buttons are handled with the other buttons of the dialog.
+const sendReportMap = (env: AdminEnv, userId: number, chatId: number): Promise<number | null> =>
+  remember(env, userId, send(env, chatId, REPORT_MAP, REPORT_MAP_BUTTONS));
 
 // A page of one of the lists of plates: the plate, the number of reports, the dates of the first and
 // of the last report and the address of the last report.
@@ -566,6 +574,8 @@ export async function handleAdminButton(
     next = sendFeedback(env, userId, chatId, Number(first) || 0);
   } else if (name === STATISTICS) {
     next = sendStatistics(env, userId, chatId);
+  } else if (name === OPEN_REPORT_MAP) {
+    next = sendReportMap(env, userId, chatId);
   } else if (name === INCOMING) {
     next = sendIncoming(env, userId, chatId, 0);
   } else if (name === DECIDE) {

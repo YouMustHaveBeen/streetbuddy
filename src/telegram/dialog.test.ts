@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeD1 } from "../../test/fakeD1";
 import { district } from "../core";
 import { M_PER_DEG } from "../core/area";
+import { handleAdminButton } from "./admin";
 import { handleButton, handleMessage } from "./dialog";
+import { isDirectoryLinkValid } from "../directoryLink";
 import { closeExpiredFinalMessages } from "./final";
 import type { DialogEnv, Message } from "./dialog";
 
@@ -72,6 +74,12 @@ const photo = (id = "a", extra: Partial<Message> = {}) =>
   });
 const press = async (data: string, messageId = buttonId()) => {
   await handleButton(env, USER, USER, { id: "q", data, messageId }, defer);
+  await settle();
+};
+
+// The Report map screen, as the button of the /admin screen shows it.
+const openReportMap = async () => {
+  await handleAdminButton(env, USER, USER, { id: "q", data: "admin_reportmap", messageId: 1 });
   await settle();
 };
 
@@ -225,8 +233,8 @@ describe("the commands of the menu", () => {
     await text("/hotspots");
     expect(lastSent().text).toBe("Hotspots\n1. 12 Main Street (7)");
   });
-  it("/reportmap shows the four buttons, and each answers with a link to the map of its period", async () => {
-    await text("/reportmap");
+  it("the Report map screen has the four buttons, and each answers with a link to the map of its period", async () => {
+    await openReportMap();
     expect(lastSent().text).toBe("Report map");
     expect(lastSent().reply_markup.inline_keyboard).toEqual([
       [
@@ -247,18 +255,36 @@ describe("the commands of the menu", () => {
       ]);
     }
   });
+  it("/map sends the Area map with a link to the directory map that is signed with the secret", async () => {
+    await text("/map");
+    expect(lastSent().text).toBe("Area map");
+    const [[button]] = lastSent().reply_markup.inline_keyboard;
+    expect(button.text).toBe("Open map");
+    const link = new URL(button.url);
+    expect(`${link.origin}${link.pathname}`).toBe("https://site.example/directory");
+    expect(await isDirectoryLinkValid(env, link.searchParams)).toBe(true);
+  });
+  it("/map says nothing when the link secret is not set", async () => {
+    env = { ...env, DIRECTORY_LINK_SECRET: "" };
+    await text("/map");
+    expect(called("sendMessage")).toEqual([]);
+  });
+  it("/reportmap is not a command: it asks for the location like any other text", async () => {
+    await text("/reportmap");
+    expect(lastSent().text).toBe("Please send the location");
+  });
   it("a map button with an unknown period sends nothing", async () => {
     const before = called("sendMessage").length;
     await press("map:year", 5);
     expect(called("sendMessage").length).toBe(before);
   });
   it("every command stops a report in progress without a word", async () => {
-    for (const command of ["/manual", "/setup", "/hotspots", "/reportmap", "/feedback"]) {
+    for (const command of ["/manual", "/setup", "/hotspots", "/map", "/feedback"]) {
       await toPhotos();
       const screen = buttonId();
       await text(command);
       if (command === "/feedback") expect(draft()?.step).toBe("feedback_input");
-      else expect(draft()?.step).toBe(command === "/reportmap" ? "screen" : undefined);
+      else expect(draft()?.step).toBe(command === "/map" ? "screen" : undefined);
       expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
       expect(sentTexts()).not.toContain("Report cancelled");
       await press("cancel");
@@ -267,8 +293,8 @@ describe("the commands of the menu", () => {
 });
 
 describe("screens with buttons", () => {
-  it("a command removes the Report map screen of the command before it", async () => {
-    await text("/reportmap");
+  it("a command removes the Area map screen of the command before it", async () => {
+    await text("/map");
     const screen = buttonId();
     expect(draft()?.step).toBe("screen");
     await text("/manual");
@@ -276,7 +302,7 @@ describe("screens with buttons", () => {
     expect(draft()).toBeUndefined();
   });
   it("a location sent while such a screen is open removes it and starts a report", async () => {
-    await text("/reportmap");
+    await text("/map");
     const screen = buttonId();
     expect(draft()?.step).toBe("screen");
     await toPhotos();
@@ -284,7 +310,7 @@ describe("screens with buttons", () => {
     expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
   });
   it("a command removes the Report map screen together with the Open map messages sent by its buttons", async () => {
-    await text("/reportmap");
+    await openReportMap();
     const menu = buttonId();
     await press("map:today", menu);
     const today = buttonId();
@@ -297,10 +323,10 @@ describe("screens with buttons", () => {
     expect(draft()).toBeUndefined();
   });
   it("a period button of a Report map screen that is not the remembered one only gets its answer", async () => {
-    await text("/reportmap");
+    await openReportMap();
     const old = buttonId();
     await text("/hotspots");
-    await text("/reportmap");
+    await openReportMap();
     const before = called("sendMessage").length;
     await press("map:today", old);
     expect(called("sendMessage").length).toBe(before);
@@ -310,7 +336,7 @@ describe("screens with buttons", () => {
     sqlite
       .prepare("INSERT INTO drafts (user_id, step, prompt, buttons_message_id, created_at) VALUES (?, 'finishing', 'x', 5, ?)")
       .run(USER, Date.now() - 25 * 60 * 60 * 1000);
-    await text("/reportmap");
+    await text("/map");
     expect(draft()?.step).toBe("screen");
   });
 });

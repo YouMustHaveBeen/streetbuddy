@@ -3,7 +3,7 @@ import { countEvent } from "../core";
 import type { Env } from "../env";
 import { handleAdminButton, handleAdminCommand, isAdminButton, isAdminCommand } from "./admin";
 import { answerButton, callTelegram, sendMessage } from "./api";
-import { checksMembership, handleButton, handleMessage } from "./dialog";
+import { checksMembership, handleButton, handleMessage, isStartCommand } from "./dialog";
 import type { Message } from "./dialog";
 import { secretMatches } from "../secret";
 
@@ -113,9 +113,10 @@ async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionCont
     if (access && !access.member) {
       step = "not-member reply";
       ctx.waitUntil(countEvent(env.DB, "outsiders"));
+      // Only /start gets an answer; a button press is only acknowledged.
       if (incoming.callbackQueryId) {
-        await answerButton(env.TELEGRAM_BOT_TOKEN, incoming.callbackQueryId, NOT_MEMBER_TEXT);
-      } else {
+        await answerButton(env.TELEGRAM_BOT_TOKEN, incoming.callbackQueryId);
+      } else if (isStartCommand(update.message?.text)) {
         await sendMessage(env.TELEGRAM_BOT_TOKEN, incoming.chatId, NOT_MEMBER_TEXT);
       }
       return;
