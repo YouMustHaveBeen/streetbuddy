@@ -1,6 +1,7 @@
 // The report dialog: location, photos, plate and time, parking options, "Were you a", final message.
 import {
   addUserAddress,
+  CHOOSABLE_KINDS,
   buildDescription,
   buildDescriptionLines,
   buildLocation,
@@ -57,6 +58,7 @@ import {
   readFinalMessage,
   toggleParking,
   isAdminStep,
+  takeDraft,
 } from "./draft";
 import { saveFeedback } from "./feedback";
 import { countReport, PHONES, readPhone, savePhone } from "./phone";
@@ -116,6 +118,9 @@ const TRY_AGAIN = "Could not get the address. Please try again in a minute";
 const WRITE_ADDRESS = "Could not get the address. Please write it";
 const SEND_LOCATION = "Please send the location";
 const WRITE_OTHER_ADDRESS = "Write the address";
+const ADD_SEND_LOCATION = "Send the location";
+const CHOOSE_KIND = "Choose the kind";
+const ADDRESS_ADDED = "Thank you for the address";
 export const SEND_PHOTOS = "Send photos, the first one with the number plate, or write the plate number";
 export const PHOTO_RECEIVED = "Photo received. Send more photos or press Create report";
 export const SEVERAL_PLATES = "Several plates found. Choose one";
@@ -175,6 +180,7 @@ const PLATES_POLL_LIMIT = 20;
 const DELETE_BATCH = 100;
 
 const ROAD_USER_PREFIX = "road:";
+const KIND_PREFIX = "kind:";
 const PHONE_PREFIX = "phone:";
 const HOTSPOT_PREFIX = "hot:";
 const HOTSPOTS_PER_PAGE = 10;
@@ -256,6 +262,8 @@ function buttonsFor(
     case "phone":
     case "phone_choice":
       return PHONE_BUTTONS;
+    case "add_kind":
+      return [...CHOOSABLE_KINDS.map((kind) => [{ text: kind, callback_data: `${KIND_PREFIX}${kind}` }]), [CANCEL]];
     default:
       return [[CANCEL]];
   }
@@ -337,7 +345,7 @@ async function redraw(c: Context, draft: Draft, message: Message): Promise<void>
 }
 
 // The commands of the menu, and /start. Each of them stops a report in progress without a word.
-const COMMAND = /^\/(start|manual|setup|hotspots|map|feedback|phone)(@\S+)?(\s|$)/;
+const COMMAND = /^\/(start|manual|setup|hotspots|map|feedback|phone|add_address)(@\S+)?(\s|$)/;
 
 export const isStartCommand = (text: string | undefined): boolean =>
   text !== undefined && COMMAND.exec(text)?.[1] === "start";
@@ -391,6 +399,8 @@ async function handleCommand(c: Context, command: string): Promise<void> {
     }
   } else if (command === "phone") {
     await show(c, null, YOUR_PHONE, { step: "phone_choice" });
+  } else if (command === "add_address") {
+    await show(c, null, ADD_SEND_LOCATION, { step: "add_location" });
   } else {
     await show(c, null, WRITE_FEEDBACK, { step: "feedback_input" });
   }
@@ -660,6 +670,39 @@ async function handleTimeInput(
   await showPlateTime(c, draft, { time }, cleanupIds);
 }
 
+// The steps of /add_address: the location, the address as text, the kind. A location out of the area
+// ends it; anything else that the step does not ask for shows the screen again.
+async function handleAddAddress(c: Context, draft: Draft, message: Message): Promise<void> {
+  const cleanupIds = [message.message_id];
+  const text = message.text;
+  if (draft.step === "add_location" && message.location) {
+    const { latitude, longitude } = message.location;
+    if (!isInArea(district, latitude, longitude)) {
+      await dropDraft(c, draft);
+      await send(c, OUT_OF_AREA);
+      return;
+    }
+    await show(c, draft, WRITE_OTHER_ADDRESS, { step: "add_text", lat: latitude, lon: longitude }, cleanupIds);
+  } else if (draft.step === "add_text" && text !== undefined && text.trim() === "") {
+    await show(c, draft, WRITE_OTHER_ADDRESS, {}, cleanupIds);
+  } else if (draft.step === "add_text" && text !== undefined && text.length > ADDRESS_MAX_LENGTH) {
+    await show(c, draft, ADDRESS_TOO_LONG, {}, cleanupIds);
+  } else if (draft.step === "add_text" && text !== undefined) {
+    await show(c, draft, CHOOSE_KIND, { step: "add_kind", address: withoutPostalDistrict(text, district) }, cleanupIds);
+  } else {
+    await redraw(c, draft, message);
+  }
+}
+
+// The kind chosen: the address goes to the incoming addresses with it.
+async function handleAddKind(c: Context, draft: Draft, kind: (typeof CHOOSABLE_KINDS)[number]): Promise<void> {
+  if (draft.address === null || draft.lat === null || draft.lon === null) return;
+  if (!(await takeDraft(c.env.DB, c.userId, draft.draft_id, draft.buttons_message_id))) return;
+  await addUserAddress(c.env.DB, c.userId, draft.address, draft.lat, draft.lon, kind);
+  await remove(c, draft.buttons_message_id);
+  await send(c, ADDRESS_ADDED);
+}
+
 // The feedback goes into D1, where the administrators will read it from /admin.
 async function handleFeedback(c: Context, draft: Draft, text: string): Promise<void> {
   if (text.length > FEEDBACK_MAX_LENGTH) {
@@ -697,6 +740,11 @@ export async function handleMessage(
   if (draft && isAdminStep(draft.step)) {
     if (isAdmin) await handleAdminInput(env, userId, chatId, draft, message);
     else await stopReport(env, userId, chatId);
+    return;
+  }
+
+  if (draft?.step.startsWith("add_")) {
+    await handleAddAddress(c, draft, message);
     return;
   }
 
@@ -745,7 +793,7 @@ export async function handleMessage(
 async function cancel(c: Context, draft: Draft): Promise<void> {
   await dropDraft(c, draft);
   // Feedback and /phone are not a report: their Cancel only removes the screen.
-  if (draft.step !== "feedback_input" && draft.step !== "phone_choice") await send(c, CANCELLED);
+  if (draft.step !== "feedback_input" && draft.step !== "phone_choice" && !draft.step.startsWith("add_")) await send(c, CANCELLED);
 }
 
 // Waits for the recognition started by the first photo. Returns null when the user has
@@ -986,6 +1034,9 @@ export async function handleButton(
   const step = draft.step;
   if (action === "cancel") {
     await cancel(c, draft);
+  } else if (action === "kind" && step === "add_kind") {
+    const kind = CHOOSABLE_KINDS.find((chosen) => chosen === argument);
+    if (kind) await handleAddKind(c, draft, kind);
   } else if (action === "addr" && step === "address") {
     const option = parseAddressOptions(draft)[Number(argument)];
     if (option !== undefined) await chooseAddress(c, draft, option);

@@ -382,6 +382,66 @@ describe("feedback", () => {
   });
 });
 
+describe("/add_address", () => {
+  const added = () => sqlite.prepare("SELECT source, text, kind, user_id FROM incoming_addresses").all();
+  it("asks for the location, the address and the kind, and keeps the address with the kind", async () => {
+    await text("/add_address");
+    expect(lastSent().text).toBe("Send the location");
+    expect(labels()).toEqual(["Cancel"]);
+    await location();
+    expect(lastSent().text).toBe("Write the address");
+    expect(labels()).toEqual(["Cancel"]);
+    await text("5 New St, D13");
+    expect(lastSent().text).toBe("Choose the kind");
+    expect(labels()).toEqual(["house", "appt", "facility", "spot", "Cancel"]);
+    await press("kind:facility");
+    expect(added()).toEqual([{ source: "user", text: "5 New St", kind: "facility", user_id: USER }]);
+    expect(lastSent().text).toBe("Thank you for the address");
+    expect(draft()).toBeUndefined();
+  });
+  it("keeps one address when the kind button is pressed twice", async () => {
+    await text("/add_address");
+    await location();
+    await text("5 New St");
+    const screen = buttonId();
+    await Promise.all([press("kind:house", screen), press("kind:house", screen)]);
+    expect(added()).toHaveLength(1);
+    expect(sentTexts().filter((sent) => sent === "Thank you for the address")).toHaveLength(1);
+  });
+  it("refuses a location outside the area and ends", async () => {
+    await text("/add_address");
+    await location(53.0, -7.0);
+    expect(lastSent().text).toBe("Sorry, this bot doesn't work in this area");
+    expect(draft()).toBeUndefined();
+    expect(added()).toEqual([]);
+  });
+  it("asks again for an empty or too long address, and shows the screen again on anything else", async () => {
+    await text("/add_address");
+    await text("hello");
+    expect(lastSent().text).toBe("Send the location");
+    await location();
+    await text("   ");
+    expect(lastSent().text).toBe("Write the address");
+    await text("x".repeat(101));
+    expect(lastSent().text).toBe("The address must be 100 characters or less");
+    expect(draft().step).toBe("add_text");
+    await location();
+    expect(draft().step).toBe("add_text");
+  });
+  it("Cancel removes the screen and says nothing, and a command stops it", async () => {
+    await text("/add_address");
+    await location();
+    const sent = sentTexts().length;
+    await press("cancel");
+    expect(sentTexts()).toHaveLength(sent);
+    expect(draft()).toBeUndefined();
+    await text("/add_address");
+    await text("/feedback");
+    expect(draft().step).toBe("feedback_input");
+    expect(added()).toEqual([]);
+  });
+});
+
 describe("location", () => {
   it("ignores a photo sent before the location, silently", async () => {
     await photo();

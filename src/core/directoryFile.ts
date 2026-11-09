@@ -21,9 +21,8 @@ interface FileAddress {
 
 export type ImportResult =
   | { ok: false; reason: "not_geojson" }
-  | { ok: false; reason: "errors"; errors: string[] }
   | { ok: false; reason: "gone" }
-  | { ok: true; loaded: number; unchanged: number };
+  | { ok: true; loaded: number; unchanged: number; skipped: string[] };
 
 // The whole directory as a FeatureCollection; every feature has address, kind and source.
 export async function exportDirectory(db: D1Database): Promise<string> {
@@ -69,9 +68,17 @@ function geometryError(geometry: unknown): string | null {
   return null;
 }
 
-// The reason the kind is wrong for the geometry, or null.
+// The kind of a feature without one: house for a point, spot for a line, area for a polygon.
+function defaultKind(geometryType: string): AddressKind {
+  if (geometryType === "Point") return "house";
+  if (geometryType === "Polygon") return "area";
+  return "spot";
+}
+
+// The reason the kind is wrong for the geometry, or null. A missing kind is not wrong.
 function kindError(kind: unknown, geometryType: string): string | null {
-  if (typeof kind !== "string" || kind === "") return "the kind is missing";
+  if (kind === undefined || kind === null || kind === "") return null;
+  if (typeof kind !== "string") return `the kind must be ${KINDS.join(", ")}`;
   if (kind === "temp") return "the kind temp is not allowed in the file";
   if (!KINDS.includes(kind)) return `the kind must be ${KINDS.join(", ")}, not ${kind}`;
   if (kind === "area" && geometryType !== "Polygon") return "the kind area needs a Polygon";
@@ -82,13 +89,12 @@ function kindError(kind: unknown, geometryType: string): string | null {
 // Coordinates are compared rounded to 6 digits.
 const round = (value: unknown): unknown =>
   Array.isArray(value) ? value.map(round) : typeof value === "number" ? Math.round(value * 1e6) / 1e6 : value;
-const sameTextKey = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
 const keyOf = (text: string, kind: string, geometry: Geometry) =>
   JSON.stringify([text.trim(), kind, geometry.type, round(geometry.coordinates)]);
 
-// Reads the file: null when it is not a GeoJSON FeatureCollection, otherwise its addresses or the
-// errors of its features.
-function readFile(content: string): { addresses: FileAddress[]; errors: string[] } | null {
+// Reads the file: null when it is not a GeoJSON FeatureCollection, otherwise its addresses and, for every
+// feature that is wrong, one line with its number and the first reason; such a feature is skipped.
+function readFile(content: string): { addresses: FileAddress[]; skipped: string[] } | null {
   let collection: { type?: unknown; features?: unknown };
   try {
     collection = JSON.parse(content);
@@ -96,30 +102,34 @@ function readFile(content: string): { addresses: FileAddress[]; errors: string[]
     return null;
   }
   if (collection?.type !== "FeatureCollection" || !Array.isArray(collection.features)) return null;
-  const errors: string[] = [];
+  const skipped: string[] = [];
   const addresses: FileAddress[] = [];
   collection.features.forEach((feature: { properties?: Record<string, unknown>; geometry?: unknown }, i: number) => {
     const text = feature?.properties?.address;
-    const where = `Feature ${i + 1}${typeof text === "string" ? ` (${text})` : ""}`;
-    if (typeof text !== "string" || text.trim() === "") errors.push(`${where}: the address is missing`);
-    else if (text.length > MAX_LENGTH) errors.push(`${where}: the address is longer than ${MAX_LENGTH} characters`);
-    const problem = geometryError(feature?.geometry);
-    if (problem) errors.push(`${where}: ${problem}`);
-    const kind = feature?.properties?.kind;
+    const textProblem =
+      typeof text !== "string" || text.trim() === ""
+        ? "the address is missing"
+        : text.length > MAX_LENGTH
+          ? `the address is longer than ${MAX_LENGTH} characters`
+          : null;
+    const geometryProblem = geometryError(feature?.geometry);
     const { type, coordinates } = (feature?.geometry ?? {}) as Geometry;
-    const kindProblem = problem ? null : kindError(kind, type);
-    if (kindProblem) errors.push(`${where}: ${kindProblem}`);
-    if (!problem && !kindProblem && typeof text === "string") {
-      addresses.push({ text: text.trim(), kind: kind as AddressKind, geometry: { type, coordinates } });
+    const rawKind = feature?.properties?.kind;
+    const kindProblem = geometryProblem ? null : kindError(rawKind, type);
+    const problem = textProblem ?? geometryProblem ?? kindProblem;
+    if (problem !== null) {
+      skipped.push(`Object ${i + 1}: ${problem}`);
+      return;
     }
+    const kind = typeof rawKind === "string" && rawKind !== "" ? (rawKind as AddressKind) : defaultKind(type);
+    addresses.push({ text: (text as string).trim(), kind, geometry: { type, coordinates } });
   });
-  return { addresses, errors };
+  return { addresses, skipped };
 }
 
 // Puts the new and changed addresses of the file into the incoming addresses: an address with the same
 // text, kind and shape as one in the directory or one without a decision is skipped, and so is a repeat
-// inside the file. Nothing is loaded when a feature is wrong, or when the text of a new or changed
-// address is in the directory more than once or belongs to two new or changed features of the file.
+// inside the file. A wrong feature is skipped and listed in skipped; the others are loaded.
 // claim runs after every check and before the first write; when it returns false nothing is written.
 // Two reads in one batch, and one batch of inserts; loaded counts the rows actually inserted.
 export async function importDirectoryFile(
@@ -129,25 +139,20 @@ export async function importDirectoryFile(
 ): Promise<ImportResult> {
   const file = readFile(content);
   if (!file) return { ok: false, reason: "not_geojson" };
-  if (file.errors.length > 0) return { ok: false, reason: "errors", errors: file.errors };
 
   const [directory, waiting] = await db.batch([
     db.prepare("SELECT text, kind, geometry FROM addresses"),
     db.prepare("SELECT text, kind, geometry FROM incoming_addresses WHERE decision IS NULL"),
   ]);
   const known = new Set<string>();
-  const textCounts = new Map<string, number>();
   for (const row of directory.results as { text: string; kind: string; geometry: string }[]) {
     known.add(keyOf(row.text, row.kind, JSON.parse(row.geometry)));
-    textCounts.set(sameTextKey(row.text), (textCounts.get(sameTextKey(row.text)) ?? 0) + 1);
   }
   for (const row of waiting.results as { text: string; kind: string; geometry: string }[]) {
     known.add(keyOf(row.text, row.kind, JSON.parse(row.geometry)));
   }
 
   const changed: FileAddress[] = [];
-  const changedByText = new Map<string, { text: string; count: number }>();
-  const errors: string[] = [];
   let unchanged = 0;
   for (const address of file.addresses) {
     const key = keyOf(address.text, address.kind, address.geometry);
@@ -156,16 +161,8 @@ export async function importDirectoryFile(
       continue;
     }
     known.add(key);
-    const count = textCounts.get(sameTextKey(address.text)) ?? 0;
-    if (count > 1) errors.push(`"${address.text}" is in the directory ${count} times: fix it in Edit directory`);
-    const seen = changedByText.get(sameTextKey(address.text));
-    changedByText.set(sameTextKey(address.text), { text: seen?.text ?? address.text, count: (seen?.count ?? 0) + 1 });
     changed.push(address);
   }
-  for (const { text, count } of changedByText.values()) {
-    if (count > 1) errors.push(`"${text}" is in the file ${count} times as new or changed: leave one of them`);
-  }
-  if (errors.length > 0) return { ok: false, reason: "errors", errors };
   if (!(await claim())) return { ok: false, reason: "gone" };
 
   const now = Date.now();
@@ -192,5 +189,5 @@ export async function importDirectoryFile(
   }
   const written = inserts.length > 0 ? await db.batch(inserts) : [];
   const loaded = written.reduce((sum, result) => sum + (result.meta.changes ?? 0), 0);
-  return { ok: true, loaded, unchanged };
+  return { ok: true, loaded, unchanged, skipped: file.skipped };
 }

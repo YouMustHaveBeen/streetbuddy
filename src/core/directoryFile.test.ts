@@ -47,7 +47,7 @@ describe("importDirectoryFile", () => {
         feature("3 Main St", "facility", point(-6.1603, 53.405)),
       ),
     );
-    expect(result).toEqual({ ok: true, loaded: 2, unchanged: 2 });
+    expect(result).toEqual({ ok: true, loaded: 2, unchanged: 2, skipped: [] });
     expect(incoming(sqlite)).toEqual([
       { source: "walk", text: "2 Main St", kind: "house", geometry: JSON.stringify(point(-6.1602, 53.405)), decision: null },
       { source: "walk", text: "3 Main St", kind: "facility", geometry: JSON.stringify(point(-6.1603, 53.405)), decision: null },
@@ -65,7 +65,7 @@ describe("importDirectoryFile", () => {
     const { db, sqlite } = fakeD1();
     const sent = file(feature("3 Main St", "house", point(-6.1603, 53.405)));
     await load(db, sent);
-    expect(await load(db, sent)).toEqual({ ok: true, loaded: 0, unchanged: 1 });
+    expect(await load(db, sent)).toEqual({ ok: true, loaded: 0, unchanged: 1, skipped: [] });
     expect(incoming(sqlite)).toHaveLength(1);
   });
 
@@ -85,6 +85,7 @@ describe("importDirectoryFile", () => {
       ok: true,
       loaded: 2,
       unchanged: 0,
+      skipped: [],
     });
     expect(incoming(sqlite).map((row: any) => [row.text, row.kind, row.geometry])).toEqual([
       ["Main St", "spot", JSON.stringify(lines)],
@@ -101,7 +102,7 @@ describe("importDirectoryFile", () => {
     });
     expect(incoming(sqlite)).toEqual([]);
     await importDirectoryFile(db, file(feature("", "house", point(-6.1603, 53.405))), claim);
-    expect(claim).toHaveBeenCalledTimes(1);
+    expect(claim).toHaveBeenCalledTimes(2);
   });
 
   it("says when the file is not a GeoJSON FeatureCollection", async () => {
@@ -110,7 +111,7 @@ describe("importDirectoryFile", () => {
     expect(await load(db, JSON.stringify({ type: "Feature" }))).toEqual({ ok: false, reason: "not_geojson" });
   });
 
-  it("loads nothing and lists every error of the features", async () => {
+  it("skips the wrong features, lists them and loads the others", async () => {
     const { db, sqlite } = fakeD1();
     const ring = [[-6.16, 53.405], [-6.159, 53.405], [-6.159, 53.406], [-6.16, 53.405]];
     const result = await load(db,
@@ -118,7 +119,6 @@ describe("importDirectoryFile", () => {
         feature("Fine", "house", point(-6.16, 53.405)),
         feature("", "house", point(-6.16, 53.405)),
         feature("x".repeat(101), "house", point(-6.16, 53.405)),
-        feature("No kind", undefined, point(-6.16, 53.405)),
         feature("Temp", "temp", point(-6.16, 53.405)),
         feature("Odd kind", "shop", point(-6.16, 53.405)),
         feature("Area point", "area", point(-6.16, 53.405)),
@@ -128,43 +128,56 @@ describe("importDirectoryFile", () => {
         feature("Short line", "spot", { type: "LineString", coordinates: [[-6.16, 53.405]] }),
         feature("Holes", "area", { type: "Polygon", coordinates: [ring, ring] }),
         feature("Extra value", "house", { type: "Point", coordinates: [-6.16, 53.405, "x"] }),
+        feature("Two points", "area", { type: "Polygon", coordinates: [[[-6.16, 53.405], [-6.159, 53.405], [-6.159, 53.405], [-6.16, 53.405]]] }),
       ),
     );
     expect(result).toEqual({
-      ok: false,
-      reason: "errors",
-      errors: [
-        "Feature 2 (): the address is missing",
-        `Feature 3 (${"x".repeat(101)}): the address is longer than 100 characters`,
-        "Feature 4 (No kind): the kind is missing",
-        "Feature 5 (Temp): the kind temp is not allowed in the file",
-        "Feature 6 (Odd kind): the kind must be house, appt, facility, spot, area, not shop",
-        "Feature 7 (Area point): the kind area needs a Polygon",
-        "Feature 8 (Polygon house): a Polygon needs the kind area",
-        "Feature 9 (Open): the polygon has no valid ring",
-        "Feature 10 (Far): the point has no valid coordinates",
-        "Feature 11 (Short line): the line needs at least 2 valid points",
-        "Feature 12 (Holes): the polygon must have one ring",
-        "Feature 13 (Extra value): the point has no valid coordinates",
+      ok: true,
+      loaded: 1,
+      unchanged: 0,
+      skipped: [
+        "Object 2: the address is missing",
+        "Object 3: the address is longer than 100 characters",
+        "Object 4: the kind temp is not allowed in the file",
+        "Object 5: the kind must be house, appt, facility, spot, area, not shop",
+        "Object 6: the kind area needs a Polygon",
+        "Object 7: a Polygon needs the kind area",
+        "Object 8: the polygon has no valid ring",
+        "Object 9: the point has no valid coordinates",
+        "Object 10: the line needs at least 2 valid points",
+        "Object 11: the polygon must have one ring",
+        "Object 12: the point has no valid coordinates",
+        "Object 13: the polygon needs at least 3 points",
       ],
     });
-    expect(incoming(sqlite)).toEqual([]);
+    expect(incoming(sqlite).map((row: any) => row.text)).toEqual(["Fine"]);
   });
 
-  it("loads nothing when a changed text is in the directory twice or in the file twice", async () => {
+  it("gives a feature without a kind house for a point, spot for a line and area for a polygon", async () => {
+    const { db, sqlite } = fakeD1();
+    const line = { type: "LineString", coordinates: [[-6.16, 53.405], [-6.159, 53.405]] };
+    const area = { type: "Polygon", coordinates: [[[-6.16, 53.405], [-6.159, 53.405], [-6.159, 53.406], [-6.16, 53.405]]] };
+    expect(
+      await load(db, file(feature("A", undefined, point(-6.16, 53.405)), feature("B", undefined, line), feature("C", undefined, area))),
+    ).toEqual({ ok: true, loaded: 3, unchanged: 0, skipped: [] });
+    expect(incoming(sqlite).map((row: any) => [row.text, row.kind])).toEqual([["A", "house"], ["B", "spot"], ["C", "area"]]);
+  });
+
+  it("loads addresses whose text is in the directory more than once or in the file more than once", async () => {
     const { db, sqlite } = fakeD1();
     addDirectory(sqlite, "Main St", "spot", point(-6.16, 53.405));
     addDirectory(sqlite, "Main St", "spot", point(-6.161, 53.405));
     expect(await load(db, file(feature("Main St", "spot", point(-6.162, 53.405))))).toEqual({
-      ok: false,
-      reason: "errors",
-      errors: ['"Main St" is in the directory 2 times: fix it in Edit directory'],
+      ok: true,
+      loaded: 1,
+      unchanged: 0,
+      skipped: [],
     });
     expect(
       await load(db,
         file(feature("5 New St", "house", point(-6.162, 53.405)), feature("5 new st", "house", point(-6.163, 53.405))),
       ),
-    ).toEqual({ ok: false, reason: "errors", errors: ['"5 New St" is in the file 2 times as new or changed: leave one of them'] });
-    expect(incoming(sqlite)).toEqual([]);
+    ).toEqual({ ok: true, loaded: 2, unchanged: 0, skipped: [] });
+    expect(incoming(sqlite)).toHaveLength(3);
   });
 });
