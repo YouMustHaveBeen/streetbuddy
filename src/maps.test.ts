@@ -48,6 +48,12 @@ describe("the report map page", () => {
   it("does not use innerHTML", async () => {
     expect(await (await reportMapPage(env, "today")).text()).not.toContain("innerHTML");
   });
+
+  it("shows the full street names on both map pages", async () => {
+    const label = 'map.setLayoutProperty("road-label", "text-field", ["coalesce", ["get", "name"], ["get", "name_en"]]);';
+    expect(await (await reportMapPage(env, "week")).text()).toContain(label);
+    expect(await (await directoryPage(env)).text()).toContain(label);
+  });
 });
 
 describe("the directory map page", () => {
@@ -81,6 +87,16 @@ describe("the directory map page", () => {
     expect(html).not.toContain("properties.kind");
     expect(html).toContain('"fill-color": VIOLET');
     expect(html).toContain('addLine("lines", "directory", isLine, 4, ["case", ["==", ["get", "kind"], "facility"], FUCHSIA, VIOLET]);');
+  });
+
+  it("labels the facility points from zoom 16 and keeps the popup", async () => {
+    addAddress("Little Rainbows", "facility", { type: "Point", coordinates: [-6.1, 53.4] });
+    const html = await (await directoryPage(env)).text();
+    expect(html).toContain('id: "facility-labels", type: "symbol", source: "directory", minzoom: 16');
+    expect(html).toContain('filter: ["all", isPoint, ["==", ["get", "kind"], "facility"]]');
+    expect(html).toContain('"text-field": ["get", "text"]');
+    expect(html).toContain('"text-color": FUCHSIA');
+    expect(html).toContain("textNode([properties.text])");
   });
 
   it("cannot be broken out of its script by an address text", async () => {

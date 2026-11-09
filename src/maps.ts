@@ -91,6 +91,7 @@ ${STYLE}
   }
 
   map.on("load", function () {
+    map.setLayoutProperty("road-label", "text-field", ["coalesce", ["get", "name"], ["get", "name_en"]]);
     map.addSource("border", { type: "geojson", data: { type: "Feature", geometry: { type: "LineString", coordinates: DATA.border } } });
     addLine("border", "border", ["all"], 3);
     ${script}
@@ -128,6 +129,18 @@ const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
         "circle-stroke-color": OUTLINE,
         "circle-stroke-width": 1.5
       }
+    });
+    map.addLayer({
+      id: "facility-labels", type: "symbol", source: "directory", minzoom: 16,
+      filter: ["all", isPoint, ["==", ["get", "kind"], "facility"]],
+      layout: {
+        "text-field": ["get", "text"],
+        "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
+        "text-size": 13,
+        "text-anchor": "top",
+        "text-offset": [0, 0.8]
+      },
+      paint: { "text-color": FUCHSIA, "text-halo-color": "#fafafa", "text-halo-width": 1.5 }
     });
     ["areas", "lines-edge", "points"].forEach(function (layer) {
       map.on("click", layer, function (event) {
