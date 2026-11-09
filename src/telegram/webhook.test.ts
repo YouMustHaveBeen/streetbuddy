@@ -193,10 +193,17 @@ describe("membership", () => {
       expect(methods(mock)).toEqual(["getChatMember"]);
     },
   );
-  it("says nothing to a non-member who sends a location or a photo", async () => {
+  it("says nothing to a non-member who sends a location", async () => {
     const mock = telegram(memberOf("left"));
     const update = privateMessage(1, 42) as any;
     update.message.location = { latitude: 53.4, longitude: -6.1 };
+    await send(update);
+    expect(methods(mock)).toEqual(["getChatMember"]);
+  });
+  it("says nothing to a non-member who sends a photo", async () => {
+    const mock = telegram(memberOf("left"));
+    const update = privateMessage(1, 42) as any;
+    update.message.photo = [{ file_id: "a", file_unique_id: "u", width: 320, height: 240 }];
     await send(update);
     expect(methods(mock)).toEqual(["getChatMember"]);
   });
