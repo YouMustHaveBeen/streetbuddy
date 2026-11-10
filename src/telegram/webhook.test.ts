@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeD1 } from "../../test/fakeD1";
 import { PARKING_OPTIONS } from "../core";
+import { exportDirectory, importDirectoryFile } from "../core/directoryFile";
 import { isDirectoryLinkValid } from "../directoryLink";
 import { handleWebhook } from "./webhook";
 import type { WebhookEnv } from "./webhook";
@@ -1316,6 +1317,28 @@ describe("/admin: incoming addresses and the directory", () => {
     await press(`admin_name:${id}`);
     await message({ text: "no name" });
     expect(sqlite.prepare("SELECT name FROM addresses WHERE id = ?").get(id)).toEqual({ name: null });
+  });
+  it("a name changed only in the file shows both names in the group, and Keep new1 keeps the new one under the old ID", async () => {
+    const id = addAddress("19 Parkside Row", "point", 53.405, -6.16);
+    sqlite.prepare("UPDATE addresses SET kind = 'facility', name = 'Little Rainbows' WHERE id = ?").run(id);
+    const edited = JSON.parse(await exportDirectory(env.DB));
+    edited.features[0].properties.name = "Rainbows Creche";
+    await importDirectoryFile(env.DB, JSON.stringify(edited), async () => true);
+    await press("admin_incoming", 5);
+    expect(last().text).toContain("old: Point (facility), in the directory, name: Little Rainbows");
+    expect(last().text).toContain("new1: Point (facility), from the walk, name: Rainbows Creche");
+    await press("admin_keep:1", lastId());
+    expect(sqlite.prepare("SELECT id, name FROM addresses").all()).toEqual([{ id, name: "Rainbows Creche" }]);
+  });
+  it("a name erased in the file shows no name in the group", async () => {
+    addAddress("19 Parkside Row", "point", 53.405, -6.16);
+    sqlite.prepare("UPDATE addresses SET kind = 'facility', name = 'Little Rainbows'").run();
+    const edited = JSON.parse(await exportDirectory(env.DB));
+    delete edited.features[0].properties.name;
+    await importDirectoryFile(env.DB, JSON.stringify(edited), async () => true);
+    await press("admin_incoming", 5);
+    expect(last().text).toContain("old: Point (facility), in the directory, name: Little Rainbows");
+    expect(last().text).toContain("new1: Point (facility), from the walk, no name");
   });
   it("a text sent while an address is on screen is a new search and removes that screen", async () => {
     const [id] = addRoads();

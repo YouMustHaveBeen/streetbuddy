@@ -361,6 +361,8 @@ async function sendIncoming(env: AdminEnv, userId: number, chatId: number, after
 // are too short to carry them.
 async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: IncomingScreen): Promise<number | null> {
   const [first] = item.incoming;
+  const nameNote = (address: { kind: string; name: string | null }) =>
+    address.kind !== "facility" ? "" : address.name ? `, name: ${address.name}` : ", no name";
   const formOf = (geometry: string) => {
     const shape = shapeFromGeometry(JSON.parse(geometry));
     return { shape, form: shape ? KIND_TEXT[shape.kind] : "Unknown" };
@@ -372,7 +374,7 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
       label: item.old.length > 1 ? `old${i + 1}` : "old",
       geometry: address.geometry,
       needsKind: false,
-      description: `${formOf(address.geometry).form} (${address.kind}), in the directory`,
+      description: `${formOf(address.geometry).form} (${address.kind}), in the directory${nameNote(address)}`,
     })),
     ...item.incoming.map((address, i) => ({
       from: "incoming" as const,
@@ -380,7 +382,7 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
       label: `new${i + 1}`,
       geometry: address.geometry,
       needsKind: address.kind === "temp",
-      description: describeIncoming(formOf(address.geometry).form, address),
+      description: describeIncoming(formOf(address.geometry).form, address) + nameNote(address),
     })),
   ];
   // One after another: sent together, the pins would arrive in any order.

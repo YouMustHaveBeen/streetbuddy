@@ -90,7 +90,7 @@ describe("the directory map page", () => {
     expect(html).toContain('addLine("lines", "directory", isLine, 4, ["case", ["==", ["get", "kind"], "facility"], FUCHSIA, VIOLET]);');
   });
 
-  it("labels the named facility points with the name from zoom 16 and keeps the popup", async () => {
+  it("labels the named facility points and lines with the name from zoom 16 and keeps the popup", async () => {
     addAddress("19 Parkside Row", "facility", { type: "Point", coordinates: [-6.1, 53.4] }, "Little Rainbows");
     const html = await (await directoryPage(env)).text();
     expect(html).toContain('"text":"19 Parkside Row","name":"Little Rainbows","kind":"facility"');
@@ -98,7 +98,10 @@ describe("the directory map page", () => {
     expect(html).toContain('filter: ["all", isPoint, ["==", ["get", "kind"], "facility"], ["has", "name"]]');
     expect(html).toContain('"text-field": ["get", "name"]');
     expect(html).toContain('"text-color": FUCHSIA');
-    expect(html).toContain('["areas", "lines-edge", "points", "facility-labels"].forEach');
+    expect(html).toContain('id: "facility-line-labels", type: "symbol", source: "directory", minzoom: 16');
+    expect(html).toContain('filter: ["all", isLine, ["==", ["get", "kind"], "facility"], ["has", "name"]]');
+    expect(html).toContain('"symbol-placement": "line-center"');
+    expect(html).toContain('["areas", "lines-edge", "points", "facility-labels", "facility-line-labels"].forEach');
     expect(html).toContain("textNode(properties.name ? [properties.name, properties.text] : [properties.text])");
   });
 

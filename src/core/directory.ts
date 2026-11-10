@@ -43,7 +43,7 @@ export interface IncomingScreen {
   position: number;
   total: number;
   incoming: IncomingAddress[];
-  old: DirectoryAddress[];
+  old: NamedAddress[];
 }
 
 // The IDs of the addresses a group of duplicates had on screen, and the one that stays.
@@ -135,9 +135,9 @@ export async function nextIncoming(db: D1Database, afterId: number): Promise<Inc
   const index = Math.max(0, screens.findIndex((group) => group[0].id > afterId));
   const incoming = screens[index];
   const old = await db
-    .prepare(`SELECT id, text, kind, geometry FROM addresses WHERE ${sqlTextKey("text")} = ${sqlTextKey("?1")} ORDER BY id`)
+    .prepare(`SELECT id, text, name, kind, geometry FROM addresses WHERE ${sqlTextKey("text")} = ${sqlTextKey("?1")} ORDER BY id`)
     .bind(incoming[0].text)
-    .all<DirectoryAddress>();
+    .all<NamedAddress>();
   return { position: index + 1, total: screens.length, incoming, old: old.results };
 }
 

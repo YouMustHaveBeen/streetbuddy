@@ -144,7 +144,19 @@ const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
       },
       paint: { "text-color": FUCHSIA, "text-halo-color": "#fafafa", "text-halo-width": 1.5 }
     });
-    ["areas", "lines-edge", "points", "facility-labels"].forEach(function (layer) {
+    map.addLayer({
+      id: "facility-line-labels", type: "symbol", source: "directory", minzoom: 16,
+      filter: ["all", isLine, ["==", ["get", "kind"], "facility"], ["has", "name"]],
+      layout: {
+        "symbol-placement": "line-center",
+        "text-field": ["get", "name"],
+        "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
+        "text-size": 13,
+        "text-rotation-alignment": "viewport"
+      },
+      paint: { "text-color": FUCHSIA, "text-halo-color": "#fafafa", "text-halo-width": 1.5 }
+    });
+    ["areas", "lines-edge", "points", "facility-labels", "facility-line-labels"].forEach(function (layer) {
       map.on("click", layer, function (event) {
         var properties = event.features[0].properties;
         new mapboxgl.Popup().setLngLat(event.lngLat).setDOMContent(textNode(properties.name ? [properties.name, properties.text] : [properties.text])).addTo(map);
