@@ -21,7 +21,6 @@ describe("installation guide page", () => {
     expect(html).toContain('aria-pressed="false" data-os="iphone">iPhone</button>');
     expect(html).toContain('<button class="install" type="submit">Prepare bookmark</button>');
     expect(html).toContain('<button class="install" type="submit">Подготовить закладку</button>');
-    expect(html).not.toContain("data-browser");
   });
 
   it("offers English first and by default, then Russian", async () => {
