@@ -181,3 +181,67 @@ describe("importDirectoryFile", () => {
     expect(incoming(sqlite)).toHaveLength(3);
   });
 });
+
+describe("the name of a facility in the file", () => {
+  const named = (address: string, kind: unknown, geometry: unknown, name: unknown) => ({
+    type: "Feature",
+    properties: { address, kind, name },
+    geometry,
+  });
+  const names = (sqlite: Sqlite) => sqlite.prepare("SELECT text, name FROM incoming_addresses ORDER BY id").all();
+
+  it("is exported only for a facility that has one", async () => {
+    const { db, sqlite } = fakeD1();
+    addDirectory(sqlite, "19 Parkside Row", "facility", point(-6.16, 53.405));
+    addDirectory(sqlite, "21 Parkside Row", "facility", point(-6.161, 53.405));
+    sqlite.prepare("UPDATE addresses SET name = 'Little Rainbows' WHERE text = '19 Parkside Row'").run();
+    const exported = JSON.parse(await exportDirectory(db));
+    expect(exported.features.map((item: { properties: object }) => item.properties)).toEqual([
+      { address: "19 Parkside Row", kind: "facility", source: "walk", name: "Little Rainbows" },
+      { address: "21 Parkside Row", kind: "facility", source: "walk" },
+    ]);
+  });
+
+  it("is loaded for a facility, trimmed, and ignored for any other kind or when empty", async () => {
+    const { db, sqlite } = fakeD1();
+    const result = await load(
+      db,
+      file(
+        named("19 Parkside Row", "facility", point(-6.16, 53.405), "  Little Rainbows "),
+        named("1 Main St", "house", point(-6.161, 53.405), "Not a facility"),
+        named("21 Parkside Row", "facility", point(-6.162, 53.405), "   "),
+        named("23 Parkside Row", "facility", point(-6.163, 53.405), 5),
+      ),
+    );
+    expect(result).toMatchObject({ ok: true, loaded: 4, skipped: [] });
+    expect(names(sqlite)).toEqual([
+      { text: "19 Parkside Row", name: "Little Rainbows" },
+      { text: "1 Main St", name: null },
+      { text: "21 Parkside Row", name: null },
+      { text: "23 Parkside Row", name: null },
+    ]);
+  });
+
+  it("skips a facility whose name is longer than 100 characters, and lists it", async () => {
+    const { db, sqlite } = fakeD1();
+    const result = await load(
+      db,
+      file(named("19 Parkside Row", "facility", point(-6.16, 53.405), "x".repeat(101)), named("21 Parkside Row", "facility", point(-6.161, 53.405), "x".repeat(100))),
+    );
+    expect(result).toMatchObject({ ok: true, loaded: 1, skipped: ["Object 1: the name is longer than 100 characters"] });
+    expect(names(sqlite)).toHaveLength(1);
+  });
+
+  it("counts a changed name as a change and an unchanged name as unchanged", async () => {
+    const { db, sqlite } = fakeD1();
+    addDirectory(sqlite, "19 Parkside Row", "facility", point(-6.16, 53.405));
+    sqlite.prepare("UPDATE addresses SET name = 'Little Rainbows'").run();
+    const same = await load(db, file(named("19 Parkside Row", "facility", point(-6.16, 53.405), "Little Rainbows")));
+    expect(same).toMatchObject({ ok: true, loaded: 0, unchanged: 1 });
+    const renamed = await load(db, file(named("19 Parkside Row", "facility", point(-6.16, 53.405), "Rainbows Creche")));
+    expect(renamed).toMatchObject({ ok: true, loaded: 1, unchanged: 0 });
+    expect(names(sqlite)).toEqual([{ text: "19 Parkside Row", name: "Rainbows Creche" }]);
+    const again = await load(db, file(named("19 Parkside Row", "facility", point(-6.16, 53.405), "Rainbows Creche")));
+    expect(again).toMatchObject({ ok: true, loaded: 0, unchanged: 1 });
+  });
+});

@@ -15,6 +15,8 @@ interface Geometry {
 
 interface FileAddress {
   text: string;
+  // The name of a facility, null when there is none.
+  name: string | null;
   kind: AddressKind;
   geometry: Geometry;
 }
@@ -24,14 +26,15 @@ export type ImportResult =
   | { ok: false; reason: "gone" }
   | { ok: true; loaded: number; unchanged: number; skipped: string[] };
 
-// The whole directory as a FeatureCollection; every feature has address, kind and source.
+// The whole directory as a FeatureCollection; every feature has address, kind and source, and a
+// facility with a name has name.
 export async function exportDirectory(db: D1Database): Promise<string> {
   const { results } = await db
-    .prepare("SELECT text, kind, source, geometry FROM addresses WHERE geometry != '' ORDER BY id")
-    .all<{ text: string; kind: string; source: string; geometry: string }>();
-  const features = results.map(({ text, kind, source, geometry }) => ({
+    .prepare("SELECT text, name, kind, source, geometry FROM addresses WHERE geometry != '' ORDER BY id")
+    .all<{ text: string; name: string | null; kind: string; source: string; geometry: string }>();
+  const features = results.map(({ text, name, kind, source, geometry }) => ({
     type: "Feature",
-    properties: { address: text, kind, source },
+    properties: { address: text, kind, source, ...(name ? { name } : {}) },
     geometry: JSON.parse(geometry),
   }));
   return `${JSON.stringify({ type: "FeatureCollection", features }, null, 2)}\n`;
@@ -89,8 +92,8 @@ function kindError(kind: unknown, geometryType: string): string | null {
 // Coordinates are compared rounded to 6 digits.
 const round = (value: unknown): unknown =>
   Array.isArray(value) ? value.map(round) : typeof value === "number" ? Math.round(value * 1e6) / 1e6 : value;
-const keyOf = (text: string, kind: string, geometry: Geometry) =>
-  JSON.stringify([text.trim(), kind, geometry.type, round(geometry.coordinates)]);
+const keyOf = (text: string, name: string | null, kind: string, geometry: Geometry) =>
+  JSON.stringify([text.trim(), name ?? "", kind, geometry.type, round(geometry.coordinates)]);
 
 // Reads the file: null when it is not a GeoJSON FeatureCollection, otherwise its addresses and, for every
 // feature that is wrong, one line with its number and the first reason; such a feature is skipped.
@@ -122,7 +125,14 @@ function readFile(content: string): { addresses: FileAddress[]; skipped: string[
       return;
     }
     const kind = typeof rawKind === "string" && rawKind !== "" ? (rawKind as AddressKind) : defaultKind(type);
-    addresses.push({ text: (text as string).trim(), kind, geometry: { type, coordinates } });
+    // The name counts only for a facility; for any other kind it is ignored.
+    const rawName = feature?.properties?.name;
+    const name = kind === "facility" && typeof rawName === "string" && rawName.trim() !== "" ? rawName.trim() : null;
+    if (name !== null && name.length > MAX_LENGTH) {
+      skipped.push(`Object ${i + 1}: the name is longer than ${MAX_LENGTH} characters`);
+      return;
+    }
+    addresses.push({ text: (text as string).trim(), name, kind, geometry: { type, coordinates } });
   });
   return { addresses, skipped };
 }
@@ -141,21 +151,21 @@ export async function importDirectoryFile(
   if (!file) return { ok: false, reason: "not_geojson" };
 
   const [directory, waiting] = await db.batch([
-    db.prepare("SELECT text, kind, geometry FROM addresses"),
-    db.prepare("SELECT text, kind, geometry FROM incoming_addresses WHERE decision IS NULL"),
+    db.prepare("SELECT text, name, kind, geometry FROM addresses"),
+    db.prepare("SELECT text, name, kind, geometry FROM incoming_addresses WHERE decision IS NULL"),
   ]);
   const known = new Set<string>();
-  for (const row of directory.results as { text: string; kind: string; geometry: string }[]) {
-    known.add(keyOf(row.text, row.kind, JSON.parse(row.geometry)));
+  for (const row of directory.results as { text: string; name: string | null; kind: string; geometry: string }[]) {
+    known.add(keyOf(row.text, row.name, row.kind, JSON.parse(row.geometry)));
   }
-  for (const row of waiting.results as { text: string; kind: string; geometry: string }[]) {
-    known.add(keyOf(row.text, row.kind, JSON.parse(row.geometry)));
+  for (const row of waiting.results as { text: string; name: string | null; kind: string; geometry: string }[]) {
+    known.add(keyOf(row.text, row.name, row.kind, JSON.parse(row.geometry)));
   }
 
   const changed: FileAddress[] = [];
   let unchanged = 0;
   for (const address of file.addresses) {
-    const key = keyOf(address.text, address.kind, address.geometry);
+    const key = keyOf(address.text, address.name, address.kind, address.geometry);
     if (known.has(key)) {
       unchanged += 1;
       continue;
@@ -170,17 +180,18 @@ export async function importDirectoryFile(
   for (let start = 0; start < changed.length; start += INSERT_CHUNK) {
     const rows = changed
       .slice(start, start + INSERT_CHUNK)
-      .map(({ text, kind, geometry }) => ({ text, kind, geometry: JSON.stringify(geometry) }));
+      .map(({ text, name, kind, geometry }) => ({ text, name, kind, geometry: JSON.stringify(geometry) }));
     // A row the same as an incoming address without a decision is skipped.
     inserts.push(
       db
         .prepare(
-          `INSERT INTO incoming_addresses (source, text, kind, geometry, created_at)
-           SELECT 'walk', json_extract(value, '$.text'), json_extract(value, '$.kind'), json_extract(value, '$.geometry'), ?2
+          `INSERT INTO incoming_addresses (source, text, name, kind, geometry, created_at)
+           SELECT 'walk', json_extract(value, '$.text'), json_extract(value, '$.name'), json_extract(value, '$.kind'), json_extract(value, '$.geometry'), ?2
            FROM json_each(?1) AS row
            WHERE NOT EXISTS (
              SELECT 1 FROM incoming_addresses i
              WHERE i.decision IS NULL AND i.text = json_extract(row.value, '$.text')
+               AND i.name IS json_extract(row.value, '$.name')
                AND i.kind = json_extract(row.value, '$.kind') AND i.geometry = json_extract(row.value, '$.geometry')
            )`,
         )
