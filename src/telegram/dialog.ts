@@ -70,7 +70,7 @@ import { FORM_CHANGED_TEXT } from "./notify";
 
 type RoadUser = (typeof ROAD_USER_TYPES)[number];
 
-export type DialogEnv = Pick<Env, "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL" | "DIRECTORY_LINK_SECRET">;
+export type DialogEnv = Pick<Env, "AI" | "DB" | "TELEGRAM_BOT_TOKEN" | "GROUP_ID" | "SITE_URL" | "DIRECTORY_LINK_SECRET">;
 
 interface PhotoSize {
   file_id: string;
@@ -152,7 +152,7 @@ const REPORT_STEPS: Record<Phone, string> = {
 -> fill and send the report,
 -> press “Done” to close the form.`,
   android: `-> Press “Open report”,
--> «⋮» on the top and “Open in browser”,
+-> «⋮» on the top and “Open in Chrome browser”,
 -> tap the address bar and type qqqwww,
 -> choose qqqwww in the suggestions,
 -> fill and send the report,

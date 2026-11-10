@@ -59,10 +59,11 @@ import {
 } from "./draft";
 import type { Draft, Step } from "./draft";
 import { deleteFeedback, nextFeedback } from "./feedback";
+import { groupMemberLabel } from "./notify";
 import { REPORT_MAP, REPORT_MAP_BUTTONS } from "./reportMap";
 import { stopReport } from "./stop";
 
-type AdminEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN" | "SITE_URL" | "DIRECTORY_LINK_SECRET">;
+type AdminEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN" | "GROUP_ID" | "SITE_URL" | "DIRECTORY_LINK_SECRET">;
 
 interface Button {
   text: string;
@@ -138,6 +139,7 @@ const PLATE_LISTS: Record<PlateList, { title: string; empty: string }> = {
 const SEND_SEARCH_TEXT = "Send a text to search";
 const NO_ADDRESSES_FOUND = "No addresses found";
 const SEARCH_TOO_LONG = "The search text is too long";
+const UNKNOWN_AUTHOR = "unknown user";
 const WRITE_NEW_ADDRESS = "Write the new address";
 const WRITE_NAME = "Write the name";
 const NAME_TOO_LONG = "The name must be 100 characters or less";
@@ -252,12 +254,13 @@ async function sendPlates(
   return remember(env, userId, send(env, chatId, `${heading}\n${lines.join("\n")}`, buttons));
 }
 
-// The feedback after the one with afterId, oldest first, with its author's Telegram ID and the time.
+// The feedback after the one with afterId, oldest first, with the name of its author and the time.
 async function sendFeedback(env: AdminEnv, userId: number, chatId: number, afterId: number): Promise<number | null> {
   const item = await nextFeedback(env.DB, afterId);
   if (!item) return remember(env, userId, send(env, chatId, NO_FEEDBACK, [[backButton()]]));
   const moment = dublinDateTime(item.createdAt);
-  const text = `Feedback ${item.position} of ${item.total}\nFrom ${item.userId} on ${moment.date} ${moment.time}\n${item.text}`;
+  const author = (await groupMemberLabel(env, item.userId)) ?? UNKNOWN_AUTHOR;
+  const text = `Feedback ${item.position} of ${item.total}\nFrom ${author} on ${moment.date} ${moment.time}\n${item.text}`;
   return remember(
     env,
     userId,

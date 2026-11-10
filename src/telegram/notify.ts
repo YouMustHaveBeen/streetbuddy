@@ -31,21 +31,28 @@ interface GroupMember {
   user: { first_name: string; last_name?: string; username?: string };
 }
 
+// The name and the @username of a member of the closed group as Telegram gives them, or only the name
+// when there is no @username; null when Telegram does not give the user.
+export async function groupMemberLabel(
+  env: Pick<Env, "TELEGRAM_BOT_TOKEN" | "GROUP_ID">,
+  userId: number,
+): Promise<string | null> {
+  const member = await callTelegram<GroupMember>(env.TELEGRAM_BOT_TOKEN, "getChatMember", {
+    chat_id: env.GROUP_ID,
+    user_id: userId,
+  });
+  if (!member) return null;
+  const { first_name, last_name, username } = member.user;
+  const name = [first_name, last_name].filter(Boolean).join(" ");
+  return username ? `${name} (@${username})` : name;
+}
+
 // Tells the owner who has just become inactive: the name and the @username in the closed group.
 // A user that Telegram does not give is left out; their number is logged, without the ID.
 export async function notifyInactiveUsers(env: InactiveEnv, now: number): Promise<void> {
   const ids = await listInactiveUsers(env.DB, now);
-  const members = await Promise.all(
-    ids.map((id) =>
-      callTelegram<GroupMember>(env.TELEGRAM_BOT_TOKEN, "getChatMember", { chat_id: env.GROUP_ID, user_id: id }),
-    ),
-  );
-  const lines = members.flatMap((member) => {
-    if (!member) return [];
-    const { first_name, last_name, username } = member.user;
-    const name = [first_name, last_name].filter(Boolean).join(" ");
-    return [username ? `${name} (@${username})` : name];
-  });
+  const labels = await Promise.all(ids.map((id) => groupMemberLabel(env, id)));
+  const lines = labels.filter((label): label is string => label !== null);
   if (lines.length < ids.length) console.error(`Inactive users: ${ids.length - lines.length} of ${ids.length} not found`);
   if (lines.length === 0) return;
 

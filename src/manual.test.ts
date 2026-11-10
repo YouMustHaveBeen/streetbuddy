@@ -55,6 +55,14 @@ describe("manual page", () => {
     }
   });
 
+  it("lists the commands of the menu with the bot's own words", async () => {
+    const html = await manualPage().text();
+    for (const text of ["/manual", "/setup", "/map", "/add_address", "/hotspots", "/feedback", "Area map", "Open map", "Send the location", "Thank you for the address", "No hotspots yet", "Write your feedback", "Thank you for your feedback"]) {
+      expect(html).toContain(text);
+    }
+    expect(html.split("<h2>Команды бота</h2>")).toHaveLength(3);
+  });
+
   it("does not use the word Garda, the word for a link, or the letter yo", async () => {
     const html = await manualPage().text();
     const yo = String.fromCharCode(0x451);
