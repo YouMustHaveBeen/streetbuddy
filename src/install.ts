@@ -124,6 +124,24 @@ const PAGE_SCRIPT = `(function () {
 
   var forms = document.querySelectorAll(".bookmark-form");
   for (var f = 0; f < forms.length; f++) setUpForm(forms[f]);
+
+  // Switching the language carries the typed values over to the form of the other language.
+  var lang = "en";
+  var FIELD_NAMES = ["name", "phone", "email", "address", "contact"];
+  function carryOver(from, to) {
+    for (var i = 0; i < FIELD_NAMES.length; i++) to.elements[FIELD_NAMES[i]].value = from.elements[FIELD_NAMES[i]].value;
+    var notes = to.querySelectorAll(".bookmark-error, .bookmark-prepared, .bookmark-copy-failed, .bookmark-code");
+    for (var j = 0; j < notes.length; j++) notes[j].hidden = true;
+  }
+  var langButtons = document.querySelectorAll("[data-lang]");
+  for (var b = 0; b < langButtons.length; b++) {
+    langButtons[b].addEventListener("click", function (event) {
+      var next = event.currentTarget.getAttribute("data-lang");
+      if (next === lang) return;
+      carryOver(document.getElementById("bookmark-form-" + lang), document.getElementById("bookmark-form-" + next));
+      lang = next;
+    });
+  }
 })();`;
 
 // The guide in each language: English first.
@@ -422,7 +440,7 @@ ${BASE_STYLE}
 </head>
 <body>
 <main>
-<p class="choice"><button type="button" aria-pressed="true" data-lang="en">English</button><button type="button" aria-pressed="false" data-lang="ru">Русский</button></p>
+<p class="choice"><button type="button" aria-pressed="true" data-lang="en">English</button><button type="button" aria-pressed="false" data-lang="ru">Russian</button></p>
 <div lang="en" data-lang-section="en">
 ${GUIDE_EN}
 </div>

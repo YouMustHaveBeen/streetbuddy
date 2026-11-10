@@ -26,7 +26,7 @@ describe("installation guide page", () => {
   it("offers English first and by default, then Russian", async () => {
     const html = await installPage().text();
     expect(html).toContain('<html lang="en">');
-    expect(html).toContain('aria-pressed="true" data-lang="en">English</button><button type="button" aria-pressed="false" data-lang="ru">Русский</button>');
+    expect(html).toContain('aria-pressed="true" data-lang="en">English</button><button type="button" aria-pressed="false" data-lang="ru">Russian</button>');
     expect(html.indexOf('data-lang-section="en"')).toBeLessThan(html.indexOf('data-lang-section="ru"'));
     expect(html).toContain('<div lang="ru" data-lang-section="ru" hidden>');
     expect(html).not.toContain('<div lang="en" data-lang-section="en" hidden>');
