@@ -34,7 +34,7 @@ export const BASE_STYLE = `  :root { color-scheme: light dark; }
   h3 { font-size: 1.05rem; margin-top: 1.5rem; }
   a { overflow-wrap: anywhere; }
   .choice button { font: inherit; padding: 8px 16px; margin-right: 8px; }
-  .choice button[aria-pressed="true"] { font-weight: bold; background: #b9e7b9; color: #000; }
+  .choice button[aria-pressed="true"] { font-weight: bold; background: #b8e08a; color: #000; }
   [hidden] { display: none !important; }`;
 
 const PAGE_SCRIPT = `(function () {
