@@ -274,10 +274,21 @@ describe("/admin", () => {
     return press;
   };
   // Like telegram(), but a sent message gets an id, as it does in real life.
-  function adminTelegram(status: string) {
-    const mock = vi.fn(async (url: string, _init: RequestInit) => {
+  // people: what getChatMember answers for the user IDs in it (null: Telegram does not give the user).
+  type Person = { first_name: string; last_name?: string; username?: string };
+  function adminTelegram(status: string, people: Record<number, Person | null> = {}) {
+    const mock = vi.fn(async (url: string, init: RequestInit) => {
       const method = String(url).split("/").pop();
-      if (method === "getChatMember") return new Response(JSON.stringify(memberOf(status)));
+      if (method === "getChatMember") {
+        const userId = (JSON.parse(String(init.body)) as { user_id: number }).user_id;
+        if (userId in people) {
+          const person = people[userId];
+          return new Response(
+            JSON.stringify(person ? { ok: true, result: { status: "member", user: person } } : { ok: false, error_code: 400 }),
+          );
+        }
+        return new Response(JSON.stringify(memberOf(status)));
+      }
       if (method === "sendMessage") {
         return new Response(JSON.stringify({ ok: true, result: { message_id: SCREEN_ID } }));
       }
@@ -481,6 +492,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage").text).toBe("Admin console\nBot: off\nLast form check: none yet");
   });
   describe("Feedback", () => {
+    const AUTHORS = { 777: { first_name: "Anna", last_name: "K.", username: "anna" }, 888: { first_name: "Boris" } };
     const addFeedback = (userId: number, text: string, at: number) =>
       sqlite.prepare("INSERT INTO feedback (user_id, text, created_at) VALUES (?, ?, ?)").run(userId, text, at);
     const feedbackButtons = (id: number) => [
@@ -490,42 +502,49 @@ describe("/admin", () => {
       ],
       [{ text: "Back", callback_data: "admin_back" }],
     ];
-    it("shows the oldest feedback first with the Telegram ID of its author and the Dublin time", async () => {
-      const mock = adminTelegram("administrator");
+    it("shows the oldest feedback first with the name of its author and the Dublin time", async () => {
+      const mock = adminTelegram("administrator", AUTHORS);
       addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
       addFeedback(888, "Another one", Date.UTC(2026, 10, 4, 9, 0));
       await send(adminButton("admin_feedback"));
-      expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery", "sendMessage", "deleteMessage"]);
+      expect(methods(mock)).toEqual(["getChatMember", "answerCallbackQuery", "getChatMember", "sendMessage", "deleteMessage"]);
+      expect(mock.mock.calls.filter(([url]) => String(url).endsWith("getChatMember")).map(([, init]) => JSON.parse(String(init.body)).user_id)).toEqual([42, 777]);
       expect(bodyOf(mock, "sendMessage")).toEqual({
         chat_id: 42,
-        text: "Feedback 1 of 2\nFrom 777 on 03/11/2026 10:35\nGreat bot",
+        text: "Feedback 1 of 2\nFrom Anna K. (@anna) on 03/11/2026 10:35\nGreat bot",
         reply_markup: { inline_keyboard: feedbackButtons(1) },
       });
       expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
     });
+    it("shows unknown user when Telegram does not give the author", async () => {
+      const mock = adminTelegram("administrator", { 777: null });
+      addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
+      await send(adminButton("admin_feedback"));
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 1\nFrom unknown user on 03/11/2026 10:35\nGreat bot");
+    });
     it("Next shows the next one and goes back to the first after the last", async () => {
-      const mock = adminTelegram("administrator");
+      const mock = adminTelegram("administrator", AUTHORS);
       addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
       addFeedback(888, "Another one", Date.UTC(2026, 10, 4, 9, 0));
       await send(adminButton("admin_fbnext:1"));
-      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 2 of 2\nFrom 888 on 04/11/2026 09:00\nAnother one");
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 2 of 2\nFrom Boris on 04/11/2026 09:00\nAnother one");
       mock.mockClear();
       await send(adminButton("admin_fbnext:2", 2));
-      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 2\nFrom 777 on 03/11/2026 10:35\nGreat bot");
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 2\nFrom Anna K. (@anna) on 03/11/2026 10:35\nGreat bot");
     });
     it("Next on the only feedback shows it again", async () => {
-      const mock = adminTelegram("administrator");
+      const mock = adminTelegram("administrator", AUTHORS);
       addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
       await send(adminButton("admin_fbnext:1"));
-      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 1\nFrom 777 on 03/11/2026 10:35\nGreat bot");
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 1\nFrom Anna K. (@anna) on 03/11/2026 10:35\nGreat bot");
     });
     it("Delete removes that feedback and shows the next one, and the last one is followed by No feedback", async () => {
-      const mock = adminTelegram("administrator");
+      const mock = adminTelegram("administrator", AUTHORS);
       addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
       addFeedback(888, "Another one", Date.UTC(2026, 10, 4, 9, 0));
       await send(adminButton("admin_fbdel:1"));
       expect(sqlite.prepare("SELECT user_id FROM feedback").all()).toEqual([{ user_id: 888 }]);
-      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 1\nFrom 888 on 04/11/2026 09:00\nAnother one");
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 1\nFrom Boris on 04/11/2026 09:00\nAnother one");
       mock.mockClear();
       await send(adminButton("admin_fbdel:2", 2));
       expect(sqlite.prepare("SELECT COUNT(*) AS n FROM feedback").get()).toEqual({ n: 0 });
@@ -536,19 +555,19 @@ describe("/admin", () => {
       });
     });
     it("Delete of a feedback that is already gone only shows the next one", async () => {
-      const mock = adminTelegram("administrator");
+      const mock = adminTelegram("administrator", AUTHORS);
       sqlite.prepare("INSERT INTO feedback (id, user_id, text, created_at) VALUES (2, 888, 'Another one', ?)").run(Date.UTC(2026, 10, 4, 9, 0));
       await send(adminButton("admin_fbdel:1"));
-      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 1\nFrom 888 on 04/11/2026 09:00\nAnother one");
+      expect(bodyOf(mock, "sendMessage").text).toBe("Feedback 1 of 1\nFrom Boris on 04/11/2026 09:00\nAnother one");
       expect(sqlite.prepare("SELECT COUNT(*) AS n FROM feedback").get()).toEqual({ n: 1 });
     });
     it("says there is no feedback when there is none", async () => {
-      const mock = adminTelegram("administrator");
+      const mock = adminTelegram("administrator", AUTHORS);
       await send(adminButton("admin_feedback"));
       expect(bodyOf(mock, "sendMessage").text).toBe("No feedback");
     });
     it("keeps the screen as a remembered one, so a command removes it", async () => {
-      adminTelegram("administrator");
+      adminTelegram("administrator", AUTHORS);
       addFeedback(777, "Great bot", Date.UTC(2026, 10, 3, 10, 35));
       await send(adminButton("admin_feedback"));
       expect(sqlite.prepare("SELECT step, buttons_message_id FROM drafts").all()).toEqual([

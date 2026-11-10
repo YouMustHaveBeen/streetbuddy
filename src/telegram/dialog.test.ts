@@ -101,7 +101,7 @@ beforeEach(() => {
   const fake = fakeD1();
   sqlite = fake.sqlite;
   run = vi.fn(async () => ({ response: '["12-D-3456"]' }));
-  env = { AI: { run } as unknown as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", SITE_URL: "https://site.example", DIRECTORY_LINK_SECRET: "link-secret" };
+  env = { AI: { run } as unknown as Ai, DB: fake.db, TELEGRAM_BOT_TOKEN: "token", GROUP_ID: "-100123", SITE_URL: "https://site.example", DIRECTORY_LINK_SECRET: "link-secret" };
   calls = [];
   deferred = [];
   nextId = 1000;
@@ -878,7 +878,7 @@ describe("parking and the final message", () => {
 
     const final = lastSent();
     expect(final.text).toBe(
-      "Vehicle 12-D-3456\nparked on a footpath\nand blocking a private driveway\nat 12 Main Street, Clongriffin, D13\non 26/10/2026 at 07:33.\nI was a pedestrian.\n\n-> Press “Open report”,\n-> «⋮» on the top and “Open in browser”,\n-> tap the address bar and type qqqwww,\n-> choose qqqwww in the suggestions,\n-> fill and send the report,\n-> press “Done” to close the form.",
+      "Vehicle 12-D-3456\nparked on a footpath\nand blocking a private driveway\nat 12 Main Street, Clongriffin, D13\non 26/10/2026 at 07:33.\nI was a pedestrian.\n\n-> Press “Open report”,\n-> «⋮» on the top and “Open in Chrome browser”,\n-> tap the address bar and type qqqwww,\n-> choose qqqwww in the suggestions,\n-> fill and send the report,\n-> press “Done” to close the form.",
     );
     expect(final.reply_parameters.message_id).toBe(lastPhoto);
     const button = final.reply_markup.inline_keyboard[0][0];
@@ -964,7 +964,7 @@ describe("parking and the final message", () => {
 });
 
 describe("final message buttons", () => {
-  const BODY_END = "\n\n-> Press “Open report”,\n-> «⋮» on the top and “Open in browser”,\n-> tap the address bar and type qqqwww,\n-> choose qqqwww in the suggestions,\n-> fill and send the report,\n-> press “Done” to close the form.";
+  const BODY_END = "\n\n-> Press “Open report”,\n-> «⋮» on the top and “Open in Chrome browser”,\n-> tap the address bar and type qqqwww,\n-> choose qqqwww in the suggestions,\n-> fill and send the report,\n-> press “Done” to close the form.";
   async function toParking() {
     await toPlateTime();
     await press("plate_ok");

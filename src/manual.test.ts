@@ -6,14 +6,22 @@ import { INSTALL_PATH } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
 import { CHOOSE_ADDRESS } from "./telegram/address";
 import {
+  ADD_SEND_LOCATION,
+  ADDRESS_ADDED,
+  AREA_MAP,
   CANCELLED,
   CHOOSE_PARKING,
   CHOOSE_ROAD_USER,
+  FEEDBACK_SENT,
+  NO_HOTSPOTS,
   NO_PLATE,
+  OPEN_MAP,
   OUT_OF_AREA,
   PHOTO_RECEIVED,
   SEND_PHOTOS,
   SEVERAL_PLATES,
+  WRITE_FEEDBACK,
+  YOUR_PHONE,
 } from "./telegram/dialog";
 
 describe("manual page", () => {
@@ -53,6 +61,14 @@ describe("manual page", () => {
     for (const text of [...quoted, ...PARKING_OPTIONS, ...ROAD_USER_TYPES]) {
       expect(html).toContain(text);
     }
+  });
+
+  it("lists the commands of the menu with the bot's own words", async () => {
+    const html = await manualPage().text();
+    for (const text of ["/manual", "/setup", "/map", "/add_address", "/hotspots", "/phone", "/feedback", AREA_MAP, OPEN_MAP, ADD_SEND_LOCATION, ADDRESS_ADDED, NO_HOTSPOTS, YOUR_PHONE, WRITE_FEEDBACK, FEEDBACK_SENT]) {
+      expect(html).toContain(text);
+    }
+    expect(html.split("<h2>Команды бота</h2>")).toHaveLength(3);
   });
 
   it("does not use the word Garda, the word for a link, or the letter yo", async () => {
