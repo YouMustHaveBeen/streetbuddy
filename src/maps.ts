@@ -156,10 +156,12 @@ const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
       },
       paint: { "text-color": FUCHSIA, "text-halo-color": "#fafafa", "text-halo-width": 1.5 }
     });
+    var popup = null;
     ["areas", "lines-edge", "points", "facility-labels", "facility-line-labels"].forEach(function (layer) {
       map.on("click", layer, function (event) {
         var properties = event.features[0].properties;
-        new mapboxgl.Popup().setLngLat(event.lngLat).setDOMContent(textNode(properties.name ? [properties.name, properties.text] : [properties.text])).addTo(map);
+        if (popup) popup.remove();
+        popup = new mapboxgl.Popup().setLngLat(event.lngLat).setDOMContent(textNode(properties.name ? [properties.name, properties.text] : [properties.text])).addTo(map);
       });
       map.on("mouseenter", layer, function () { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", layer, function () { map.getCanvas().style.cursor = ""; });
