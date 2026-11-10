@@ -35,6 +35,8 @@ import {
   setIncomingKind,
   searchPattern,
   setAddressKind,
+  setAddressName,
+  setIncomingName,
   shapeFromGeometry,
   shapeMiddle,
 } from "../core";
@@ -105,6 +107,7 @@ const SET_KIND = "admin_setkind";
 const EDIT_KIND = "admin_editkind";
 const DIR_KIND = "admin_dirkind";
 const IN_TEXT = "admin_intext";
+const IN_NAME = "admin_inname";
 const IN_KIND = "admin_inkind";
 const IN_SET_KIND = "admin_insetkind";
 const ALL_WALK = "admin_all_walk";
@@ -112,6 +115,7 @@ const ALL_OSM = "admin_all_osm";
 const BACK = "admin_back";
 const ADDRESS = "admin_addr";
 const EDIT_TEXT = "admin_text";
+const EDIT_NAME = "admin_name";
 const MOVE = "admin_move";
 const DELETE = "admin_del";
 const LIST = "admin_list";
@@ -135,6 +139,11 @@ const SEND_SEARCH_TEXT = "Send a text to search";
 const NO_ADDRESSES_FOUND = "No addresses found";
 const SEARCH_TOO_LONG = "The search text is too long";
 const WRITE_NEW_ADDRESS = "Write the new address";
+const WRITE_NAME = "Write the name";
+const NAME_TOO_LONG = "The name must be 100 characters or less";
+const NAME_MAX_LENGTH = 100;
+// The text that erases a name, in any case.
+const ERASE_NAME = "no name";
 const SEND_NEW_LOCATION = "Send the new location";
 const SAVED = "Saved";
 const CHOOSE_KIND = "Choose the kind";
@@ -330,10 +339,12 @@ async function sendIncoming(env: AdminEnv, userId: number, chatId: number, after
   const lines = [
     `Incoming address ${item.position} of ${item.total}`,
     address.text,
+    ...(address.name ? [`Name: ${address.name}`] : []),
     describeIncoming(form, address),
   ];
   const edit: Button[] = [{ text: "Edit text", callback_data: `${IN_TEXT}:${address.id}${tail}` }];
   if (address.kind !== "area") edit.push({ text: "Edit kind", callback_data: `${IN_KIND}:${address.id}${tail}` });
+  if (address.kind === "facility") edit.push({ text: "Edit name", callback_data: `${IN_NAME}:${address.id}${tail}` });
   const sent = await send(env, chatId, lines.join("\n"), [
     [decide("Approve", "ok"), decide("Reject", "no"), decide("Next", "next")],
     edit,
@@ -350,6 +361,8 @@ async function sendIncoming(env: AdminEnv, userId: number, chatId: number, after
 // are too short to carry them.
 async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: IncomingScreen): Promise<number | null> {
   const [first] = item.incoming;
+  const nameNote = (address: { kind: string; name: string | null }) =>
+    address.kind !== "facility" ? "" : address.name ? `, name: ${address.name}` : ", no name";
   const formOf = (geometry: string) => {
     const shape = shapeFromGeometry(JSON.parse(geometry));
     return { shape, form: shape ? KIND_TEXT[shape.kind] : "Unknown" };
@@ -361,7 +374,7 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
       label: item.old.length > 1 ? `old${i + 1}` : "old",
       geometry: address.geometry,
       needsKind: false,
-      description: `${formOf(address.geometry).form} (${address.kind}), in the directory`,
+      description: `${formOf(address.geometry).form} (${address.kind}), in the directory${nameNote(address)}`,
     })),
     ...item.incoming.map((address, i) => ({
       from: "incoming" as const,
@@ -369,7 +382,7 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
       label: `new${i + 1}`,
       geometry: address.geometry,
       needsKind: address.kind === "temp",
-      description: describeIncoming(formOf(address.geometry).form, address),
+      description: describeIncoming(formOf(address.geometry).form, address) + nameNote(address),
     })),
   ];
   // One after another: sent together, the pins would arrive in any order.
@@ -489,10 +502,12 @@ async function sendAddress(env: AdminEnv, userId: number, chatId: number, id: nu
   const shape = shapeFromGeometry(JSON.parse(address.geometry));
   const actions: Button[] = [{ text: "Edit text", callback_data: `${EDIT_TEXT}:${id}` }];
   if (address.kind !== "area") actions.push({ text: "Edit kind", callback_data: `${EDIT_KIND}:${id}:${page}` });
+  if (address.kind === "facility") actions.push({ text: "Edit name", callback_data: `${EDIT_NAME}:${id}` });
   if (shape?.kind === "point") actions.push({ text: "Move", callback_data: `${MOVE}:${id}` });
   actions.push({ text: "Delete", callback_data: `${DELETE}:${id}` });
   const form = shape ? KIND_TEXT[shape.kind] : "Unknown";
-  return send(env, chatId, `${address.text}\n${form} (${address.kind})`, [
+  const name = address.name ? `\nName: ${address.name}` : "";
+  return send(env, chatId, `${address.text}${name}\n${form} (${address.kind})`, [
     actions,
     [{ text: "Back", callback_data: `${LIST}:${page}` }],
   ]);
@@ -657,6 +672,9 @@ export async function handleAdminButton(
   } else if (name === IN_TEXT) {
     pinId = pinOf(second);
     next = askInput(env, userId, chatId, "admin_intext", WRITE_NEW_ADDRESS, Number(first));
+  } else if (name === IN_NAME) {
+    pinId = pinOf(second);
+    next = askInput(env, userId, chatId, "admin_inname", WRITE_NAME, Number(first));
   } else if (name === IN_KIND) {
     const id = Number(first);
     const tail = second ? `:${second}` : "";
@@ -726,6 +744,8 @@ export async function handleAdminButton(
     next = askInput(env, userId, chatId, "admin_import", SEND_FILE, null);
   } else if (name === EDIT_TEXT) {
     next = askInput(env, userId, chatId, "admin_text", WRITE_NEW_ADDRESS, Number(first));
+  } else if (name === EDIT_NAME) {
+    next = askInput(env, userId, chatId, "admin_name", WRITE_NAME, Number(first));
   } else if (name === MOVE) {
     next = askInput(env, userId, chatId, "admin_move", SEND_NEW_LOCATION, Number(first));
   } else if (name === DELETE) {
@@ -787,7 +807,7 @@ export async function handleAdminInput(
   };
 
   // A draft step that no /admin screen asks for any more shows the directory screen.
-  if (!["admin_group", "admin_search", "admin_text", "admin_intext", "admin_move", "admin_import"].includes(draft.step)) {
+  if (!["admin_group", "admin_search", "admin_text", "admin_intext", "admin_name", "admin_inname", "admin_move", "admin_import"].includes(draft.step)) {
     await deleteDraft(env.DB, userId, draft.draft_id);
     const shown = await sendList(env, userId, chatId, null, 0);
     if (shown !== null) {
@@ -864,6 +884,8 @@ export async function handleAdminInput(
   const trimmed = text?.trim() ?? "";
   const inArea = location !== undefined && isInArea(district, location.latitude, location.longitude);
   const writesText = draft.step === "admin_text" || draft.step === "admin_intext";
+  const writesName = draft.step === "admin_name" || draft.step === "admin_inname";
+  const name = trimmed.toLowerCase() === ERASE_NAME ? null : trimmed;
   if (draft.step === "admin_intext" && trimmed !== "" && trimmed.length <= ADDRESS_MAX_LENGTH) {
     const id = draft.address_id as number;
     await renameIncoming(env.DB, id, withoutPostalDistrict(trimmed, district));
@@ -871,14 +893,25 @@ export async function handleAdminInput(
     await sendIncoming(env, userId, chatId, ((await incomingGroupStart(env.DB, id)) ?? id) - 1);
     return;
   }
+  if (draft.step === "admin_inname" && trimmed !== "" && trimmed.length <= NAME_MAX_LENGTH) {
+    const id = draft.address_id as number;
+    await setIncomingName(env.DB, id, name);
+    await finish();
+    await sendIncoming(env, userId, chatId, id - 1);
+    return;
+  }
   if (draft.step === "admin_text" && trimmed !== "" && trimmed.length <= ADDRESS_MAX_LENGTH) {
     await renameAddress(env.DB, draft.address_id as number, withoutPostalDistrict(trimmed, district));
+  } else if (draft.step === "admin_name" && trimmed !== "" && trimmed.length <= NAME_MAX_LENGTH) {
+    await setAddressName(env.DB, draft.address_id as number, name);
   } else if (draft.step === "admin_move" && location && inArea) {
     await movePoint(env.DB, draft.address_id as number, location.latitude, location.longitude);
   } else {
     let prompt = draft.prompt;
     if (writesText && trimmed.length > ADDRESS_MAX_LENGTH) prompt = ADDRESS_TOO_LONG;
     else if (writesText) prompt = WRITE_NEW_ADDRESS;
+    else if (writesName && trimmed.length > NAME_MAX_LENGTH) prompt = NAME_TOO_LONG;
+    else if (writesName) prompt = WRITE_NAME;
     if (draft.step === "admin_move" && location) await send(env, chatId, OUT_OF_AREA);
     await askAgain(prompt);
     return;

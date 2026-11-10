@@ -14,6 +14,9 @@ import {
   nextIncoming,
   searchPattern,
   setAddressKind,
+  setAddressName,
+  setIncomingKind,
+  setIncomingName,
 } from "./directory";
 import { shapeBounds, shapeFromGeometry } from "./shapes";
 import type { Shape } from "./shapes";
@@ -461,5 +464,71 @@ describe("moveIncomingAddresses", () => {
     addIncoming(sqlite, "A", point(0, 0), null);
     await moveIncomingAddresses(db);
     expect(all(sqlite, "SELECT text FROM incoming_addresses")).toEqual([{ text: "A" }]);
+  });
+});
+
+describe("the name of a facility", () => {
+  it("is set and erased only for a facility", async () => {
+    const { db, sqlite } = fakeD1();
+    const shop = addDirectory(sqlite, "19 Parkside Row", point(0, 0));
+    const house = addDirectory(sqlite, "1 Main Street", point(50, 0));
+    await setAddressKind(db, shop, "facility");
+    await setAddressName(db, shop, "Little Rainbows");
+    await setAddressName(db, house, "Not a facility");
+    expect(all(sqlite, "SELECT text, name FROM addresses ORDER BY id")).toEqual([
+      { text: "19 Parkside Row", name: "Little Rainbows" },
+      { text: "1 Main Street", name: null },
+    ]);
+    await setAddressName(db, shop, null);
+    expect(all(sqlite, "SELECT name FROM addresses WHERE id = " + shop)).toEqual([{ name: null }]);
+  });
+
+  it("is erased when the kind changes to another one, and kept for facility", async () => {
+    const { db, sqlite } = fakeD1();
+    const shop = addDirectory(sqlite, "19 Parkside Row", point(0, 0));
+    await setAddressKind(db, shop, "facility");
+    await setAddressName(db, shop, "Little Rainbows");
+    await setAddressKind(db, shop, "facility");
+    expect(all(sqlite, "SELECT name FROM addresses")).toEqual([{ name: "Little Rainbows" }]);
+    await setAddressKind(db, shop, "house");
+    expect(all(sqlite, "SELECT name FROM addresses")).toEqual([{ name: null }]);
+  });
+
+  it("is set on an incoming facility without a decision, and erased when its kind changes", async () => {
+    const { db, sqlite } = fakeD1();
+    const open = addIncoming(sqlite, "19 Parkside Row", point(0, 0), null);
+    const decided = addIncoming(sqlite, "21 Parkside Row", point(50, 0), "approved");
+    sqlite.prepare("UPDATE incoming_addresses SET kind = 'facility'").run();
+    await setIncomingName(db, open, "Little Rainbows");
+    await setIncomingName(db, decided, "Decided");
+    expect(all(sqlite, "SELECT id, name FROM incoming_addresses ORDER BY id")).toEqual([
+      { id: open, name: "Little Rainbows" },
+      { id: decided, name: null },
+    ]);
+    await setIncomingKind(db, open, "spot");
+    expect(all(sqlite, "SELECT name FROM incoming_addresses WHERE id = " + open)).toEqual([{ name: null }]);
+  });
+
+  it("is found by the search of the directory, together with the address", async () => {
+    const { db, sqlite } = fakeD1();
+    const shop = addDirectory(sqlite, "19 Parkside Row", point(0, 0));
+    addDirectory(sqlite, "Rainbow Road", point(50, 0));
+    await setAddressKind(db, shop, "facility");
+    await setAddressName(db, shop, "Little Rainbows");
+    const found = await listDirectory(db, searchPattern("rainbow"), 0, 10);
+    expect(found.rows.map((row) => row.text)).toEqual(["19 Parkside Row", "Rainbow Road"]);
+    expect(found.total).toBe(2);
+  });
+
+  it("moves into the directory with the address, and a replacement puts its name in place of the old one", async () => {
+    const { db, sqlite } = fakeD1();
+    const first = addIncoming(sqlite, "19 Parkside Row", point(0, 0), "approved");
+    sqlite.prepare("UPDATE incoming_addresses SET kind = 'facility', name = 'Little Rainbows' WHERE id = ?").run(first);
+    await moveIncomingAddresses(db);
+    expect(all(sqlite, "SELECT text, name FROM addresses")).toEqual([{ text: "19 Parkside Row", name: "Little Rainbows" }]);
+    const second = addIncoming(sqlite, "19 Parkside Row", point(30, 0), "replace");
+    sqlite.prepare("UPDATE incoming_addresses SET kind = 'facility', name = 'Rainbows Creche' WHERE id = ?").run(second);
+    await moveIncomingAddresses(db);
+    expect(all(sqlite, "SELECT text, name FROM addresses")).toEqual([{ text: "19 Parkside Row", name: "Rainbows Creche" }]);
   });
 });

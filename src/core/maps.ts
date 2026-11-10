@@ -20,6 +20,8 @@ export interface ReportPlace {
 
 export interface DirectoryItem {
   text: string;
+  // The name of a facility, null when it has none.
+  name: string | null;
   kind: string;
   geometry: unknown;
 }
@@ -89,15 +91,16 @@ export async function getReportPlaces(db: D1Database, period: MapPeriod, now: nu
   });
 }
 
-// Every address of the directory with its GeoJSON geometry.
+// Every address of the directory with its name and GeoJSON geometry.
 export async function getDirectoryItems(db: D1Database): Promise<DirectoryItem[]> {
-  const { results } = await db.prepare("SELECT text, kind, geometry FROM addresses").all<{
+  const { results } = await db.prepare("SELECT text, name, kind, geometry FROM addresses").all<{
     text: string;
+    name: string | null;
     kind: string;
     geometry: string;
   }>();
   return results.flatMap((row) => {
     const geometry: unknown = JSON.parse(row.geometry);
-    return shapeFromGeometry(geometry) ? [{ text: row.text, kind: row.kind, geometry }] : [];
+    return shapeFromGeometry(geometry) ? [{ text: row.text, name: row.name, kind: row.kind, geometry }] : [];
   });
 }
