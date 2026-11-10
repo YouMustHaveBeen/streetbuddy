@@ -112,7 +112,9 @@ const REPORT_MAP_SCRIPT = `DATA.places.forEach(function (place) {
     });`;
 
 const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
-      return { type: "Feature", properties: { text: item.text, kind: item.kind }, geometry: item.geometry };
+      var properties = { text: item.text, kind: item.kind };
+      if (item.name) properties.name = item.name;
+      return { type: "Feature", properties: properties, geometry: item.geometry };
     });
     map.addSource("directory", { type: "geojson", data: { type: "FeatureCollection", features: features } });
     var isArea = ["==", ["geometry-type"], "Polygon"];
@@ -132,9 +134,9 @@ const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
     });
     map.addLayer({
       id: "facility-labels", type: "symbol", source: "directory", minzoom: 16,
-      filter: ["all", isPoint, ["==", ["get", "kind"], "facility"]],
+      filter: ["all", isPoint, ["==", ["get", "kind"], "facility"], ["has", "name"]],
       layout: {
-        "text-field": ["get", "text"],
+        "text-field": ["get", "name"],
         "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
         "text-size": 13,
         "text-anchor": "top",
@@ -145,7 +147,7 @@ const DIRECTORY_SCRIPT = `var features = DATA.items.map(function (item) {
     ["areas", "lines-edge", "points", "facility-labels"].forEach(function (layer) {
       map.on("click", layer, function (event) {
         var properties = event.features[0].properties;
-        new mapboxgl.Popup().setLngLat(event.lngLat).setDOMContent(textNode([properties.text])).addTo(map);
+        new mapboxgl.Popup().setLngLat(event.lngLat).setDOMContent(textNode(properties.name ? [properties.name, properties.text] : [properties.text])).addTo(map);
       });
       map.on("mouseenter", layer, function () { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", layer, function () { map.getCanvas().style.cursor = ""; });

@@ -69,6 +69,8 @@ export type Step =
   | "admin_group" // Not a report: /admin shows a group of duplicate incoming addresses; cleanup holds the map pins.
   | "admin_text" // Not a report: /admin waits for the new text of a directory address.
   | "admin_intext" // Not a report: /admin waits for the new text of an incoming address.
+  | "admin_name" // Not a report: /admin waits for the new name of a directory facility.
+  | "admin_inname" // Not a report: /admin waits for the new name of an incoming facility.
   | "admin_move" // Not a report: /admin waits for the new location of a directory point.
   | "admin_import"; // Not a report: /admin waits for the edited directory file.
 

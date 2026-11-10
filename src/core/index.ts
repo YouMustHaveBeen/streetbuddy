@@ -22,6 +22,8 @@ export {
   keepFromGroup,
   rejectGroup,
   setAddressKind,
+  setAddressName,
+  setIncomingName,
   CHOOSABLE_KINDS,
 } from "./directory";
 export type { AddressKind, Decision, DuplicateGroup, IncomingScreen } from "./directory";

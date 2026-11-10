@@ -14,10 +14,10 @@ beforeEach(() => {
   env = { DB: fake.db, MAPBOX_TOKEN: "pk.test-token", SITE_URL: "https://example.com", DIRECTORY_LINK_SECRET: "link-secret" } as Env;
 });
 
-const addAddress = (text: string, kind: string, geometry: unknown) =>
+const addAddress = (text: string, kind: string, geometry: unknown, name: string | null = null) =>
   sqlite
-    .prepare("INSERT INTO addresses (text, kind, geometry, west, south, east, north) VALUES (?, ?, ?, -6.1, 53.4, -6.1, 53.4)")
-    .run(text, kind, JSON.stringify(geometry));
+    .prepare("INSERT INTO addresses (text, kind, geometry, west, south, east, north, name) VALUES (?, ?, ?, -6.1, 53.4, -6.1, 53.4, ?)")
+    .run(text, kind, JSON.stringify(geometry), name);
 
 describe("the report map page", () => {
   it("is HTML with the Mapbox map, the token and the places of the period", async () => {
@@ -64,8 +64,8 @@ describe("the directory map page", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
     const html = await response.text();
-    expect(html).toContain('"text":"12 Main St","kind":"house"');
-    expect(html).toContain('"text":"Main Road","kind":"spot"');
+    expect(html).toContain('"text":"12 Main St","name":null,"kind":"house"');
+    expect(html).toContain('"text":"Main Road","name":null,"kind":"spot"');
     expect(html).toContain('mapboxgl.accessToken = "pk.test-token"');
     expect(html).not.toContain("innerHTML");
   });
@@ -80,25 +80,26 @@ describe("the directory map page", () => {
     expect(html).not.toContain("#ffffff");
   });
 
-  it("shows only the address text in the popup and draws lines and areas violet", async () => {
+  it("shows the name and the address in the popup of a named facility, only the address otherwise, and draws lines and areas violet", async () => {
     addAddress("12 Main St", "house", { type: "Point", coordinates: [-6.1, 53.4] });
     const html = await (await directoryPage(env)).text();
-    expect(html).toContain("textNode([properties.text])");
+    expect(html).toContain("textNode(properties.name ? [properties.name, properties.text] : [properties.text])");
+    expect(html).toContain("if (item.name) properties.name = item.name;");
     expect(html).not.toContain("properties.kind");
     expect(html).toContain('"fill-color": VIOLET');
     expect(html).toContain('addLine("lines", "directory", isLine, 4, ["case", ["==", ["get", "kind"], "facility"], FUCHSIA, VIOLET]);');
   });
 
-  it("labels the facility points from zoom 16 and keeps the popup", async () => {
-    addAddress("Little Rainbows", "facility", { type: "Point", coordinates: [-6.1, 53.4] });
+  it("labels the named facility points with the name from zoom 16 and keeps the popup", async () => {
+    addAddress("19 Parkside Row", "facility", { type: "Point", coordinates: [-6.1, 53.4] }, "Little Rainbows");
     const html = await (await directoryPage(env)).text();
-    expect(html).toContain('"text":"Little Rainbows","kind":"facility"');
+    expect(html).toContain('"text":"19 Parkside Row","name":"Little Rainbows","kind":"facility"');
     expect(html).toContain('id: "facility-labels", type: "symbol", source: "directory", minzoom: 16');
-    expect(html).toContain('filter: ["all", isPoint, ["==", ["get", "kind"], "facility"]]');
-    expect(html).toContain('"text-field": ["get", "text"]');
+    expect(html).toContain('filter: ["all", isPoint, ["==", ["get", "kind"], "facility"], ["has", "name"]]');
+    expect(html).toContain('"text-field": ["get", "name"]');
     expect(html).toContain('"text-color": FUCHSIA');
     expect(html).toContain('["areas", "lines-edge", "points", "facility-labels"].forEach');
-    expect(html).toContain("textNode([properties.text])");
+    expect(html).toContain("textNode(properties.name ? [properties.name, properties.text] : [properties.text])");
   });
 
   it("cannot be broken out of its script by an address text", async () => {

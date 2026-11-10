@@ -859,6 +859,29 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(sqlite.prepare("SELECT text, decision FROM incoming_addresses WHERE id = ?").get(id)).toEqual({ text: "6 New Street", decision: null });
     expect(last().text.startsWith("Incoming address 1 of 1\n6 New Street")).toBe(true);
   });
+  it("shows the name of an incoming facility, offers Edit name only for a facility, and sets and erases the name", async () => {
+    const id = addIncoming("19 Parkside Row", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
+    await press("admin_incoming", 5);
+    expect(labels()).not.toContain("Edit name");
+    sqlite.prepare("UPDATE incoming_addresses SET kind = 'facility' WHERE id = ?").run(id);
+    await press("admin_incoming", 5);
+    const [screen, pin] = [lastId(), pinId()];
+    expect(keys()[1]).toEqual([`admin_intext:${id}:${pin}`, `admin_inkind:${id}:${pin}`, `admin_inname:${id}:${pin}`]);
+    await press(`admin_inname:${id}:${pin}`, screen);
+    expect(last().text).toBe("Write the name");
+    await message({ text: "x".repeat(101) });
+    expect(last().text).toBe("The name must be 100 characters or less");
+    await message({ text: "  Little Rainbows " });
+    expect(sqlite.prepare("SELECT name, decision FROM incoming_addresses WHERE id = ?").get(id)).toEqual({
+      name: "Little Rainbows",
+      decision: null,
+    });
+    expect(last().text).toBe("Incoming address 1 of 1\n19 Parkside Row\nName: Little Rainbows\nPoint (facility), from the walk");
+    await press(`admin_inname:${id}:${pinId()}`, lastId());
+    await message({ text: "No Name" });
+    expect(sqlite.prepare("SELECT name FROM incoming_addresses WHERE id = ?").get(id)).toEqual({ name: null });
+    expect(last().text).toBe("Incoming address 1 of 1\n19 Parkside Row\nPoint (facility), from the walk");
+  });
   it("asks for the kind of an address of a user, keeping its pin, and approves with the chosen kind", async () => {
     const id = addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.16, 53.405] });
     addIncoming("Parkside Drive", "walk", { type: "LineString", coordinates: [[-6.16, 53.405], [-6.158, 53.405]] });
@@ -1272,6 +1295,27 @@ describe("/admin: incoming addresses and the directory", () => {
     ]);
     expect(sqlite.prepare("SELECT text FROM addresses WHERE id = ?").get(ids[10])).toEqual({ text: "1A Main Street" });
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "screen" }]);
+  });
+  it("shows the name of a facility on its address screen, sets it with Edit name and erases it with no name", async () => {
+    const id = addAddress("19 Parkside Row", "point", 53.405, -6.16);
+    await press(`admin_addr:${id}:0`);
+    expect(labels()).toEqual(["Edit text", "Edit kind", "Move", "Delete", "Back"]);
+    sqlite.prepare("UPDATE addresses SET kind = 'facility' WHERE id = ?").run(id);
+    await press(`admin_addr:${id}:0`);
+    expect(labels()).toEqual(["Edit text", "Edit kind", "Edit name", "Move", "Delete", "Back"]);
+    await press(`admin_name:${id}`);
+    expect(last().text).toBe("Write the name");
+    await message({ text: "Little Rainbows" });
+    expect(of("sendMessage").slice(-2).map((call) => call.body.text)).toEqual([
+      "Saved",
+      "Admin console\nBot: on\nLast form check: none yet",
+    ]);
+    expect(sqlite.prepare("SELECT name FROM addresses WHERE id = ?").get(id)).toEqual({ name: "Little Rainbows" });
+    await press(`admin_addr:${id}:0`);
+    expect(last().text).toBe("19 Parkside Row\nName: Little Rainbows\nPoint (facility)");
+    await press(`admin_name:${id}`);
+    await message({ text: "no name" });
+    expect(sqlite.prepare("SELECT name FROM addresses WHERE id = ?").get(id)).toEqual({ name: null });
   });
   it("a text sent while an address is on screen is a new search and removes that screen", async () => {
     const [id] = addRoads();

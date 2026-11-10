@@ -22,10 +22,16 @@ interface DirectoryAddress {
   geometry: string;
 }
 
+// A directory address with its name (only a facility has one).
+interface NamedAddress extends DirectoryAddress {
+  name: string | null;
+}
+
 interface IncomingAddress {
   id: number;
   source: "walk" | "user" | "osm";
   text: string;
+  name: string | null;
   kind: AddressKind | "temp";
   geometry: string;
 }
@@ -117,7 +123,7 @@ export async function addUserAddress(
 // have the same text are one screen, shown at the place of the lowest ID.
 export async function nextIncoming(db: D1Database, afterId: number): Promise<IncomingScreen | null> {
   const { results } = await db
-    .prepare("SELECT id, source, text, kind, geometry FROM incoming_addresses WHERE decision IS NULL ORDER BY id")
+    .prepare("SELECT id, source, text, name, kind, geometry FROM incoming_addresses WHERE decision IS NULL ORDER BY id")
     .all<IncomingAddress>();
   const groups = new Map<string, IncomingAddress[]>();
   for (const row of results) {
@@ -265,7 +271,7 @@ export async function listDirectory(
   page: number,
   perPage: number,
 ): Promise<{ rows: { id: number; text: string }[]; total: number; page: number; pages: number }> {
-  const where = "WHERE ?1 IS NULL OR text LIKE ?1 ESCAPE '\\'";
+  const where = "WHERE ?1 IS NULL OR text LIKE ?1 ESCAPE '\\' OR name LIKE ?1 ESCAPE '\\'";
   const rows = (wanted: number) =>
     db
       .prepare(`SELECT id, text FROM addresses ${where} ORDER BY lower(text), id LIMIT ?2 OFFSET ?3`)
@@ -282,8 +288,8 @@ export async function listDirectory(
   return { rows: results as { id: number; text: string }[], total, page: last, pages };
 }
 
-export async function getAddress(db: D1Database, id: number): Promise<DirectoryAddress | null> {
-  return db.prepare("SELECT id, text, kind, geometry FROM addresses WHERE id = ?1").bind(id).first<DirectoryAddress>();
+export async function getAddress(db: D1Database, id: number): Promise<NamedAddress | null> {
+  return db.prepare("SELECT id, text, name, kind, geometry FROM addresses WHERE id = ?1").bind(id).first<NamedAddress>();
 }
 
 export async function renameAddress(db: D1Database, id: number, text: string): Promise<void> {
@@ -295,25 +301,47 @@ export async function renameIncoming(db: D1Database, id: number, text: string): 
   await db.prepare("UPDATE incoming_addresses SET text = ?2 WHERE id = ?1 AND decision IS NULL").bind(id, text).run();
 }
 
-// The kind of an incoming address that has no decision yet and is not an area.
+// The kind of an incoming address that has no decision yet and is not an area; the name is erased
+// unless the kind is facility.
 export async function setIncomingKind(
   db: D1Database,
   id: number,
   kind: (typeof CHOOSABLE_KINDS)[number],
 ): Promise<void> {
   await db
-    .prepare("UPDATE incoming_addresses SET kind = ?2 WHERE id = ?1 AND decision IS NULL AND kind != 'area'")
+    .prepare(
+      `UPDATE incoming_addresses SET kind = ?2, name = CASE WHEN ?2 = 'facility' THEN name ELSE NULL END
+       WHERE id = ?1 AND decision IS NULL AND kind != 'area'`,
+    )
     .bind(id, kind)
     .run();
 }
 
-// The kind of an address that is not an area.
+// The kind of an address that is not an area; the name is erased unless the kind is facility.
 export async function setAddressKind(
   db: D1Database,
   id: number,
   kind: (typeof CHOOSABLE_KINDS)[number],
 ): Promise<void> {
-  await db.prepare("UPDATE addresses SET kind = ?2 WHERE id = ?1 AND kind != 'area'").bind(id, kind).run();
+  await db
+    .prepare(
+      "UPDATE addresses SET kind = ?2, name = CASE WHEN ?2 = 'facility' THEN name ELSE NULL END WHERE id = ?1 AND kind != 'area'",
+    )
+    .bind(id, kind)
+    .run();
+}
+
+// The name of a facility; null erases it.
+export async function setAddressName(db: D1Database, id: number, name: string | null): Promise<void> {
+  await db.prepare("UPDATE addresses SET name = ?2 WHERE id = ?1 AND kind = 'facility'").bind(id, name).run();
+}
+
+// The name of an incoming facility that has no decision yet; null erases it.
+export async function setIncomingName(db: D1Database, id: number, name: string | null): Promise<void> {
+  await db
+    .prepare("UPDATE incoming_addresses SET name = ?2 WHERE id = ?1 AND decision IS NULL AND kind = 'facility'")
+    .bind(id, name)
+    .run();
 }
 
 // Only a point can be moved.
@@ -344,7 +372,7 @@ interface Known {
 // Two reads and one batch of writes.
 export async function moveIncomingAddresses(db: D1Database): Promise<void> {
   const [decided, directory] = await db.batch([
-    db.prepare("SELECT id, source, text, kind, geometry, decision FROM incoming_addresses WHERE decision IS NOT NULL ORDER BY id"),
+    db.prepare("SELECT id, source, text, name, kind, geometry, decision FROM incoming_addresses WHERE decision IS NOT NULL ORDER BY id"),
     db.prepare("SELECT id, text, geometry FROM addresses"),
   ]);
   const known: Known[] = [];
@@ -357,20 +385,29 @@ export async function moveIncomingAddresses(db: D1Database): Promise<void> {
   const drop = (id: number) => db.prepare("DELETE FROM incoming_addresses WHERE id = ?1").bind(id);
   // The writes run only while the incoming row is still there, so of two moves that read the same
   // state only the first one changes the directory.
-  const insert = (id: number, source: string, text: string, kind: AddressKind, geometry: string, shape: Shape) => {
+  const insert = (
+    id: number,
+    source: string,
+    text: string,
+    name: string | null,
+    kind: AddressKind,
+    geometry: string,
+    shape: Shape,
+  ) => {
     const { west, south, east, north } = shapeBounds(shape);
     return db
       .prepare(
-        `INSERT INTO addresses (text, kind, geometry, west, south, east, north, source)
-         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?9 WHERE EXISTS (SELECT 1 FROM incoming_addresses WHERE id = ?8)`,
+        `INSERT INTO addresses (text, kind, geometry, west, south, east, north, source, name)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?9, ?10 WHERE EXISTS (SELECT 1 FROM incoming_addresses WHERE id = ?8)`,
       )
-      .bind(text, kind, geometry, west, south, east, north, id, source);
+      .bind(text, kind, geometry, west, south, east, north, id, source, name);
   };
 
   for (const row of decided.results as {
     id: number;
     source: string;
     text: string;
+    name: string | null;
     kind: AddressKind | "temp";
     geometry: string;
     decision: Decision;
@@ -395,10 +432,10 @@ export async function moveIncomingAddresses(db: D1Database): Promise<void> {
       writes.push(
         db
           .prepare(
-            `UPDATE addresses SET text = ?2, kind = ?3, geometry = ?4, west = ?5, south = ?6, east = ?7, north = ?8, source = ?10
+            `UPDATE addresses SET text = ?2, kind = ?3, geometry = ?4, west = ?5, south = ?6, east = ?7, north = ?8, source = ?10, name = ?11
              WHERE id = ?1 AND EXISTS (SELECT 1 FROM incoming_addresses WHERE id = ?9)`,
           )
-          .bind(nearest.entry.id, row.text, row.kind, row.geometry, west, south, east, north, row.id, row.source),
+          .bind(nearest.entry.id, row.text, row.kind, row.geometry, west, south, east, north, row.id, row.source, row.name),
         drop(row.id),
       );
       nearest.entry.shape = shape;
@@ -407,7 +444,7 @@ export async function moveIncomingAddresses(db: D1Database): Promise<void> {
     } else if (row.decision === "approved" && nearest) {
       writes.push(db.prepare("UPDATE incoming_addresses SET decision = NULL WHERE id = ?1 AND decision = 'approved'").bind(row.id));
     } else {
-      writes.push(insert(row.id, row.source, row.text, row.kind, row.geometry, shape), drop(row.id));
+      writes.push(insert(row.id, row.source, row.text, row.name, row.kind, row.geometry, shape), drop(row.id));
       known.push({ id: null, key, shape });
     }
   }
