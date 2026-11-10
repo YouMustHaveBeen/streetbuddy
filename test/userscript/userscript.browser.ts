@@ -432,12 +432,12 @@ describe("bookmarklet built on the installation page", () => {
   }
 
   async function typeProfile(page: Page, profile: typeof TYPED): Promise<void> {
-    await page.fill("#bookmark-form [name=name]", profile.name);
-    await page.fill("#bookmark-form [name=phone]", profile.phone);
-    await page.fill("#bookmark-form [name=email]", profile.email);
-    await page.fill("#bookmark-form [name=address]", profile.address);
-    await page.selectOption("#bookmark-form [name=contact]", profile.contact);
-    await page.getByRole("button", { name: "Подготовить закладку" }).click();
+    await page.fill("#bookmark-form-en [name=name]", profile.name);
+    await page.fill("#bookmark-form-en [name=phone]", profile.phone);
+    await page.fill("#bookmark-form-en [name=email]", profile.email);
+    await page.fill("#bookmark-form-en [name=address]", profile.address);
+    await page.selectOption("#bookmark-form-en [name=contact]", profile.contact);
+    await page.getByRole("button", { name: "Prepare bookmark" }).click();
   }
 
   it("copies a short bookmarklet, which loads the script and fills the form", async () => {
@@ -448,12 +448,12 @@ describe("bookmarklet built on the installation page", () => {
       if (request.method() !== "GET") sent.push(request.url());
     });
     const guide = await openGuide(guideContext);
-    expect(await guide.isVisible("#bookmark-prepared")).toBe(false);
+    expect(await guide.isVisible("#bookmark-form-en .bookmark-prepared")).toBe(false);
     await typeProfile(guide, TYPED);
-    await guide.locator("#bookmark-prepared").waitFor();
-    expect(await guide.textContent("#bookmark-prepared")).toBe("Закладка подготовлена");
-    expect(await guide.isVisible("#bookmark-error")).toBe(false);
-    expect(await guide.isVisible("#bookmark-copy-failed")).toBe(false);
+    await guide.locator("#bookmark-form-en .bookmark-prepared").waitFor();
+    expect(await guide.textContent("#bookmark-form-en .bookmark-prepared")).toBe("Bookmark prepared");
+    expect(await guide.isVisible("#bookmark-form-en .bookmark-error")).toBe(false);
+    expect(await guide.isVisible("#bookmark-form-en .bookmark-copy-failed")).toBe(false);
     const bookmark = (await guide.evaluate("navigator.clipboard.readText()")) as string;
     expect(bookmark.startsWith("javascript:")).toBe(true);
     // The bookmarklet holds the data and the address of the script, not the script.
@@ -507,12 +507,12 @@ describe("bookmarklet built on the installation page", () => {
     const context = await browser.newContext();
     await context.addInitScript(script);
     const page = await openGuide(context);
-    expect(await page.isVisible("#bookmark-code")).toBe(false);
+    expect(await page.isVisible("#bookmark-form-en .bookmark-code")).toBe(false);
     await typeProfile(page, TYPED);
-    await page.locator("#bookmark-code").waitFor();
-    expect(await page.isVisible("#bookmark-copy-failed")).toBe(true);
-    expect(await page.isVisible("#bookmark-prepared")).toBe(false);
-    const code = await page.inputValue("#bookmark-code");
+    await page.locator("#bookmark-form-en .bookmark-code").waitFor();
+    expect(await page.isVisible("#bookmark-form-en .bookmark-copy-failed")).toBe(true);
+    expect(await page.isVisible("#bookmark-form-en .bookmark-prepared")).toBe(false);
+    const code = await page.inputValue("#bookmark-form-en .bookmark-code");
     expect(code.startsWith("javascript:")).toBe(true);
     expect(decodeURIComponent(code.slice("javascript:".length))).toContain(JSON.stringify(origin + SCRIPT_PATH));
     await context.close();
@@ -530,9 +530,9 @@ describe("bookmarklet built on the installation page", () => {
     const context = await browser.newContext();
     const page = await openGuide(context);
     await typeProfile(page, { ...TYPED, ...change });
-    expect(await page.isVisible("#bookmark-error")).toBe(true);
-    expect(await page.isVisible("#bookmark-prepared")).toBe(false);
-    expect(await page.isVisible("#bookmark-code")).toBe(false);
+    expect(await page.isVisible("#bookmark-form-en .bookmark-error")).toBe(true);
+    expect(await page.isVisible("#bookmark-form-en .bookmark-prepared")).toBe(false);
+    expect(await page.isVisible("#bookmark-form-en .bookmark-code")).toBe(false);
     await context.close();
   });
 });
@@ -542,7 +542,7 @@ describe("installation guide choices", () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(origin + INSTALL_PATH);
-    const form = "#bookmark-form";
+    const form = "#bookmark-form-en";
     const iphoneBlock = '[data-for="iphone-bookmark"]';
     expect(await page.isVisible(form)).toBe(true);
     expect(await page.isVisible(iphoneBlock)).toBe(false);
@@ -554,6 +554,78 @@ describe("installation guide choices", () => {
     await page.getByRole("button", { name: "Android" }).click();
     expect(await page.isVisible(form)).toBe(true);
     expect(await page.isVisible(iphoneBlock)).toBe(false);
+    await context.close();
+  });
+
+  it("switches the language, keeps the phone choice and builds the bookmark in Russian", async () => {
+    const context = await browser.newContext();
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+    const page = await context.newPage();
+    await page.goto(origin + INSTALL_PATH);
+    expect(await page.getAttribute("[data-lang=en]", "aria-pressed")).toBe("true");
+    expect(await page.isVisible("#bookmark-form-en")).toBe(true);
+    expect(await page.isVisible("#bookmark-form-ru")).toBe(false);
+
+    await page.getByRole("button", { name: "iPhone" }).click();
+    await page.getByRole("button", { name: "Russian" }).click();
+    expect(await page.getAttribute("[data-lang=ru]", "aria-pressed")).toBe("true");
+    expect(await page.getAttribute("[data-lang=en]", "aria-pressed")).toBe("false");
+    expect(await page.isVisible("#bookmark-form-en")).toBe(false);
+    expect(await page.isVisible("#bookmark-form-ru")).toBe(true);
+    expect(await page.isVisible('[data-lang-section=ru] [data-for="iphone-bookmark"]')).toBe(true);
+    expect(await page.isVisible('[data-lang-section=ru] [data-for="android"]')).toBe(false);
+
+    await page.fill("#bookmark-form-ru [name=name]", "Sean Test");
+    await page.fill("#bookmark-form-ru [name=phone]", "087 000 0000");
+    await page.fill("#bookmark-form-ru [name=email]", "sean@example.ie");
+    await page.fill("#bookmark-form-ru [name=address]", "1 Main St, Dublin");
+    await page.selectOption("#bookmark-form-ru [name=contact]", "Email");
+    await page.getByRole("button", { name: "Подготовить закладку" }).click();
+    await page.locator("#bookmark-form-ru .bookmark-prepared").waitFor();
+    expect(await page.textContent("#bookmark-form-ru .bookmark-prepared")).toBe("Закладка подготовлена");
+    expect(await page.isVisible("#bookmark-form-ru .bookmark-error")).toBe(false);
+    const bookmark = (await page.evaluate("navigator.clipboard.readText()")) as string;
+    expect(decodeURIComponent(bookmark.slice("javascript:".length))).toContain("sean@example.ie");
+
+    await page.getByRole("button", { name: "English" }).click();
+    expect(await page.isVisible("#bookmark-form-en")).toBe(true);
+    expect(await page.isVisible('[data-lang-section=en] [data-for="iphone-bookmark"]')).toBe(true);
+    expect(await page.getAttribute('[data-lang-section=en] [data-os=iphone]', "aria-pressed")).toBe("true");
+    await context.close();
+  });
+
+  it("carries the typed data over when the language changes", async () => {
+    const context = await browser.newContext();
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+    const page = await context.newPage();
+    await page.goto(origin + INSTALL_PATH);
+    await page.fill("#bookmark-form-en [name=name]", "Sean Test");
+    await page.fill("#bookmark-form-en [name=phone]", "087 000 0000");
+    await page.fill("#bookmark-form-en [name=email]", "sean@example.ie");
+    await page.fill("#bookmark-form-en [name=address]", "1 Main St, Dublin");
+    await page.selectOption("#bookmark-form-en [name=contact]", "Text Message");
+    await page.getByRole("button", { name: "Prepare bookmark" }).click();
+    await page.locator("#bookmark-form-en .bookmark-prepared").waitFor();
+
+    await page.getByRole("button", { name: "Russian" }).click();
+    expect(await page.inputValue("#bookmark-form-ru [name=name]")).toBe("Sean Test");
+    expect(await page.inputValue("#bookmark-form-ru [name=phone]")).toBe("087 000 0000");
+    expect(await page.inputValue("#bookmark-form-ru [name=email]")).toBe("sean@example.ie");
+    expect(await page.inputValue("#bookmark-form-ru [name=address]")).toBe("1 Main St, Dublin");
+    expect(await page.inputValue("#bookmark-form-ru [name=contact]")).toBe("Text Message");
+    expect(await page.isVisible("#bookmark-form-ru .bookmark-prepared")).toBe(false);
+
+    await page.fill("#bookmark-form-ru [name=phone]", "087 111 2222");
+    await page.getByRole("button", { name: "English" }).click();
+    expect(await page.inputValue("#bookmark-form-en [name=phone]")).toBe("087 111 2222");
+    expect(await page.isVisible("#bookmark-form-en .bookmark-prepared")).toBe(false);
+
+    await page.getByRole("button", { name: "Prepare bookmark" }).click();
+    await page.locator("#bookmark-form-en .bookmark-prepared").waitFor();
+    const bookmark = (await page.evaluate("navigator.clipboard.readText()")) as string;
+    const text = decodeURIComponent(bookmark.slice("javascript:".length));
+    expect(text).toContain("087 111 2222");
+    expect(text).not.toContain("087 000 0000");
     await context.close();
   });
 });

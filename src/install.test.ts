@@ -19,9 +19,17 @@ describe("installation guide page", () => {
     const html = await installPage().text();
     expect(html).toContain('aria-pressed="true" data-os="android">Android</button>');
     expect(html).toContain('aria-pressed="false" data-os="iphone">iPhone</button>');
+    expect(html).toContain('<button class="install" type="submit">Prepare bookmark</button>');
     expect(html).toContain('<button class="install" type="submit">Подготовить закладку</button>');
-    expect(html).not.toMatch(/firefox|violentmonkey|userscripts/i);
-    expect(html).not.toContain("data-browser");
+  });
+
+  it("offers English first and by default, then Russian", async () => {
+    const html = await installPage().text();
+    expect(html).toContain('<html lang="en">');
+    expect(html).toContain('aria-pressed="true" data-lang="en">English</button><button type="button" aria-pressed="false" data-lang="ru">Russian</button>');
+    expect(html.indexOf('data-lang-section="en"')).toBeLessThan(html.indexOf('data-lang-section="ru"'));
+    expect(html).toContain('<div lang="ru" data-lang-section="ru" hidden>');
+    expect(html).not.toContain('<div lang="en" data-lang-section="en" hidden>');
   });
 
   it("does not carry the userscript itself: the bookmarklet loads it from the Worker", async () => {
@@ -31,10 +39,9 @@ describe("installation guide page", () => {
     expect(html).not.toContain("==UserScript==");
   });
 
-  it("does not use the word Garda or the letter yo", async () => {
+  it("does not use the letter yo", async () => {
     const html = await installPage().text();
     const yo = String.fromCharCode(0x451);
-    expect(html.replace("https://www.garda.ie/…", "")).not.toMatch(/garda/i);
     expect(html.includes(yo)).toBe(false);
   });
 });

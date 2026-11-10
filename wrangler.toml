@@ -6,6 +6,14 @@ compatibility_date = "2026-11-01"
 [ai]
 binding = "AI"
 
+# Saved Worker logs (Workers Observability)
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
 # D1: drafts, caches, limit counters, report log
 [[d1_databases]]
 binding = "DB"
