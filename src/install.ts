@@ -247,7 +247,7 @@ const GUIDE_EN = `<h1>StreetBuddy<br>Installation guide</h1>
 <p>To do this, swipe down on the phone screen so that the panel opens at the bottom, tap “⋯” on the right in it, then “Add to Bookmark”.</p>
 <p>A bookmark named StreetBuddy with a link to this guide will be added in Safari.</p>
 <p>Next you need to change the name of the bookmark and its address.</p>
-<p>Tap “⋯” at the bottom right again, then 📖 Bookmarks, and find StreetBuddy in the list of bookmarks.</p>
+<p>Tap “⋯” at the bottom right again, then “📖 Bookmarks”, and find StreetBuddy in the list of bookmarks.</p>
 <p>Long-press the bookmark to open the pop-up menu with bookmark actions, tap “Edit”.</p>
 <p>In the bookmark name field, delete StreetBuddy and type the new name: qqqwww. You can use any other name you like, but keep in mind that the name must be as rare as possible, otherwise Safari will suggest other options when you search for the bookmark.</p>
 <p>In the bookmark address field, delete the address of the guide and paste the code from the clipboard: long-press the old address, tap the cross on the right, long-press again, “Paste”.</p>
@@ -385,7 +385,7 @@ const GUIDE_RU = `<h1>StreetBuddy<br>Руководство по установ�
 <p>Для этого проведите по экрану телефона вниз, чтобы снизу открылась панель, нажмите в ней «⋯» справа, затем «Add to Bookmark».</p>
 <p>В Safari будет добавлена закладка с именем StreetBuddy и ссылкой на это руководство.</p>
 <p>Далее нужно изменить название закладки и ее текст.</p>
-<p>Снова нажмите справа снизу «⋯», затем 📖 Bookmarks, найдите в списке закладок StreetBuddy.</p>
+<p>Снова нажмите справа снизу «⋯», затем «📖 Bookmarks», найдите в списке закладок StreetBuddy.</p>
 <p>Долгим нажатием на закладку откройте всплывающий экран для операций с закладкой, нажмите «Edit».</p>
 <p>В поле названия закладки сотрите StreetBuddy и напишите новое название: qqqwww. Можно использовать для названия любой другой удобный вам вариант, но учтите, что название должно быть максимально редким, иначе Safari при поиске закладки будет предлагать другие варианты.</p>
 <p>В поле адреса закладки сотрите адрес руководства и вставьте находящийся в буфере код: долгое нажатие на старый адрес, крестик справа, снова долгое нажатие, «Paste».</p>
