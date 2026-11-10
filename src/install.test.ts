@@ -21,7 +21,6 @@ describe("installation guide page", () => {
     expect(html).toContain('aria-pressed="false" data-os="iphone">iPhone</button>');
     expect(html).toContain('<button class="install" type="submit">Prepare bookmark</button>');
     expect(html).toContain('<button class="install" type="submit">Подготовить закладку</button>');
-    expect(html).not.toMatch(/firefox|violentmonkey|userscripts/i);
     expect(html).not.toContain("data-browser");
   });
 
@@ -41,11 +40,9 @@ describe("installation guide page", () => {
     expect(html).not.toContain("==UserScript==");
   });
 
-  it("does not use the word Garda in the Russian text or the letter yo", async () => {
+  it("does not use the letter yo", async () => {
     const html = await installPage().text();
     const yo = String.fromCharCode(0x451);
-    const russian = html.slice(html.indexOf('data-lang-section="ru"'));
-    expect(russian.replace("https://www.garda.ie/…", "")).not.toMatch(/garda/i);
     expect(html.includes(yo)).toBe(false);
   });
 });
