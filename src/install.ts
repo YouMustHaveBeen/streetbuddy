@@ -244,7 +244,7 @@ const GUIDE_EN = `<h1>StreetBuddy<br>Installation guide</h1>
 <div data-for="iphone-bookmark" hidden>
 <h3>4. Add the bookmark to Safari</h3>
 <p>Add the guide page that you are reading now to your bookmarks.</p>
-<p>To do this, swipe down on the phone screen so that the panel opens at the top, tap “⋯” on the right in it, then “Add to Bookmark”.</p>
+<p>To do this, swipe down on the phone screen so that the panel opens at the bottom, tap “⋯” on the right in it, then “Add to Bookmark”.</p>
 <p>A bookmark named StreetBuddy with a link to this guide will be added in Safari.</p>
 <p>Next you need to change the name of the bookmark and its address.</p>
 <p>Tap “⋯” at the bottom right again, then 📖 Bookmarks, and find StreetBuddy in the list of bookmarks.</p>
@@ -382,7 +382,7 @@ const GUIDE_RU = `<h1>StreetBuddy<br>Руководство по установ�
 <div data-for="iphone-bookmark" hidden>
 <h3>4. Добавьте закладку в Safari</h3>
 <p>Добавьте страницу руководства, которую вы сейчас читаете, в закладки.</p>
-<p>Для этого проведите по экрану телефона вниз, чтобы сверху открылась панель, нажмите в ней «⋯» справа, затем «Add to Bookmark».</p>
+<p>Для этого проведите по экрану телефона вниз, чтобы снизу открылась панель, нажмите в ней «⋯» справа, затем «Add to Bookmark».</p>
 <p>В Safari будет добавлена закладка с именем StreetBuddy и ссылкой на это руководство.</p>
 <p>Далее нужно изменить название закладки и ее текст.</p>
 <p>Снова нажмите справа снизу «⋯», затем 📖 Bookmarks, найдите в списке закладок StreetBuddy.</p>
