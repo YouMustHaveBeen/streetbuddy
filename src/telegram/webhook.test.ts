@@ -142,8 +142,65 @@ describe("repeats", () => {
     const mock = telegram(memberOf("member"));
     await send(privateMessage(7));
     await send(privateMessage(7));
-    expect(methods(mock)).toEqual(["getChatMember", "getChatMember"]);
+    expect(methods(mock)).toEqual(["getChatMember"]);
     expect(rows()).toBe(1);
+  });
+});
+
+describe("remembered members", () => {
+  const remembered = () => sqlite.prepare("SELECT user_id, checked_at FROM member_cache").all();
+  const adminUpdate = (updateId: number) => {
+    const update = privateMessage(updateId, 42) as any;
+    update.message.text = "/admin";
+    return update;
+  };
+  it("asks Telegram once and lets a member in without asking for an hour", async () => {
+    const mock = telegram(memberOf("member"));
+    await send(privateMessage(1));
+    await send(privateMessage(2));
+    expect(methods(mock)).toEqual(["getChatMember"]);
+    expect(remembered()).toEqual([{ user_id: 42, checked_at: expect.any(Number) }]);
+  });
+  it("asks Telegram again once the hour is over", async () => {
+    const mock = telegram(memberOf("member"));
+    sqlite.prepare("INSERT INTO member_cache (user_id, checked_at) VALUES (42, ?)").run(Date.now() - 60 * 60 * 1000);
+    await send(privateMessage(1));
+    expect(methods(mock)).toEqual(["getChatMember"]);
+    expect((remembered()[0] as { checked_at: number }).checked_at).toBeGreaterThan(Date.now() - 60 * 1000);
+  });
+  it("checks the button that leads to the link by the remembered member too", async () => {
+    const mock = telegram(memberOf("left"));
+    sqlite.prepare("INSERT INTO member_cache (user_id, checked_at) VALUES (42, ?)").run(Date.now());
+    const press = privateButton() as any;
+    press.callback_query.data = "review_ok";
+    await send(press);
+    expect(methods(mock)).toEqual(["answerCallbackQuery"]);
+  });
+  it.each([["creator"], ["administrator"]])("does not remember an %s", async (status) => {
+    const mock = telegram(memberOf(status));
+    await send(privateMessage(1));
+    await send(privateMessage(2));
+    expect(methods(mock)).toEqual(["getChatMember", "getChatMember"]);
+    expect(remembered()).toEqual([]);
+  });
+  it("does not remember someone who is not a member", async () => {
+    telegram(memberOf("left"));
+    await send(privateMessage(1));
+    expect(remembered()).toEqual([]);
+  });
+  it("asks Telegram on /admin even for a remembered member, and forgets a new administrator", async () => {
+    const mock = telegram(memberOf("administrator"));
+    sqlite.prepare("INSERT INTO member_cache (user_id, checked_at) VALUES (42, ?)").run(Date.now());
+    await send(adminUpdate(1));
+    expect(methods(mock)[0]).toBe("getChatMember");
+    expect(remembered()).toEqual([]);
+  });
+  it("gives a remembered member who writes /admin no answer when Telegram says it is not an administrator", async () => {
+    const mock = telegram(memberOf("member"));
+    sqlite.prepare("INSERT INTO member_cache (user_id, checked_at) VALUES (42, ?)").run(Date.now());
+    await send(adminUpdate(1));
+    expect(methods(mock)).toEqual(["getChatMember"]);
+    expect(remembered()).toEqual([{ user_id: 42, checked_at: expect.any(Number) }]);
   });
 });
 
@@ -772,6 +829,11 @@ describe("/admin: incoming addresses and the directory", () => {
     );
   });
   const of = (method: string) => sent.filter((call) => call.method === method);
+  // The messages deleted one by one and in batches, in the order of the calls.
+  const deletedIds = () =>
+    sent.flatMap((call) =>
+      call.method === "deleteMessage" ? [call.body.message_id] : call.method === "deleteMessages" ? call.body.message_ids : [],
+    );
   const last = () => of("sendMessage").at(-1)?.body;
   const lastId = () => of("sendMessage").at(-1)?.id as number;
   const pinId = () => of("sendLocation").at(-1)?.id as number;
@@ -831,7 +893,7 @@ describe("/admin: incoming addresses and the directory", () => {
       [`admin_all_osm:${pin}`],
     ]);
     expect(labels()).toEqual(["Approve", "Reject", "Next", "Edit text", "Edit kind", "Approve all from the walk", "Back", "Approve all from OSM"]);
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual([5]);
+    expect(deletedIds()).toEqual([5]);
   });
   it("changes the kind of an incoming address and shows the same address again without deciding", async () => {
     const id = addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.16, 53.405] });
@@ -921,13 +983,13 @@ describe("/admin: incoming addresses and the directory", () => {
       { decision: null, user_id: 7 },
       { decision: null, user_id: null },
     ]);
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual([5, screen]);
+    expect(deletedIds()).toEqual([5, screen]);
 
     const kindScreen = lastId();
     await press(`admin_setkind:ok:facility:${id}:${pin}`, kindScreen);
     expect(sqlite.prepare("SELECT id FROM incoming_addresses WHERE id = ?").get(id)).toBeUndefined();
     expect(sqlite.prepare("SELECT text, kind FROM addresses").all()).toEqual([{ text: "5 New Street", kind: "facility" }]);
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual([5, screen, kindScreen, pin]);
+    expect(deletedIds()).toEqual([5, screen, kindScreen, pin]);
     expect(of("sendLocation")[1].body.latitude).toBeCloseTo(53.405, 9);
     expect(of("sendLocation")[1].body.longitude).toBeCloseTo(-6.159, 9);
     expect(last().text).toBe("Incoming address 1 of 1\nParkside Drive\nLine (spot), from the walk");
@@ -939,7 +1001,7 @@ describe("/admin: incoming addresses and the directory", () => {
     const kindScreen = lastId();
     await press(`admin_in:same:${id}:9`, kindScreen);
     expect(last().text).toContain("Incoming address 2 of 2\n5 New Street");
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([kindScreen, 9]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([kindScreen, 9]));
     expect(decision()).toEqual([
       { decision: null, user_id: 7 },
       { decision: null, user_id: 7 },
@@ -1021,7 +1083,7 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(sqlite.prepare("SELECT id FROM addresses").all()).toEqual([{ id: old }]);
     expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "screen" }]);
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([screen, ...pins]));
     expect(last().text).toBe("No incoming addresses");
   });
   it("Keep new replaces the old address, keeping its ID, and rejects the other new ones", async () => {
@@ -1046,11 +1108,11 @@ describe("/admin: incoming addresses and the directory", () => {
       ["admin_keepset:2:spot"],
       [`admin_in:same:${first}:g`],
     ]);
-    expect(of("deleteMessage").map((call) => call.body.message_id)).not.toEqual(expect.arrayContaining(pins));
+    expect(deletedIds()).not.toEqual(expect.arrayContaining(pins));
     const kindScreen = lastId();
     await press(`admin_in:same:${first}:g`, kindScreen);
     expect(last().text).toContain("Same address, 3 objects");
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([kindScreen, ...pins]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([kindScreen, ...pins]));
     await press(`admin_keepkind:2:${first}`, lastId());
     await press("admin_keepset:2:appt", lastId());
     expect(sqlite.prepare("SELECT kind, source FROM addresses").all()).toEqual([{ kind: "appt", source: "user" }]);
@@ -1064,7 +1126,7 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(sqlite.prepare("SELECT id FROM addresses").all()).toEqual([{ id: old }]);
     expect(sqlite.prepare("SELECT id FROM incoming_addresses").all()).toEqual([]);
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "screen" }]);
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([screen, ...pins]));
     expect(last().text).toBe("No incoming addresses");
   });
   it("does nothing for Keep new of an address of a user without a kind", async () => {
@@ -1111,7 +1173,7 @@ describe("/admin: incoming addresses and the directory", () => {
       { step: "admin_group", buttons_message_id: kindScreen },
     ]);
     await message({ text: "/manual" });
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([kindScreen, ...pins]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([kindScreen, ...pins]));
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
   });
   it("a command removes the kind screen of a single address together with its pin", async () => {
@@ -1124,7 +1186,7 @@ describe("/admin: incoming addresses and the directory", () => {
       { step: "screen", buttons_message_id: kindScreen, cleanup: JSON.stringify([pin]) },
     ]);
     await message({ text: "/manual" });
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([kindScreen, pin]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([kindScreen, pin]));
   });
   it("a screen remembered over a group draft that has expired keeps the group screen and its pins for a command", async () => {
     groupOf();
@@ -1134,7 +1196,7 @@ describe("/admin: incoming addresses and the directory", () => {
     await press("admin_back", 8);
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "screen" }]);
     await message({ text: "/manual" });
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([screen, ...pins]));
   });
   it("removes the pins of a group when the next screen could not be sent", async () => {
     groupOf();
@@ -1143,7 +1205,7 @@ describe("/admin: incoming addresses and the directory", () => {
     failSend = true;
     vi.spyOn(console, "error").mockImplementation(() => {});
     await press("admin_back:g", screen);
-    const deleted = of("deleteMessage").map((call) => call.body.message_id);
+    const deleted = deletedIds();
     expect(deleted).toEqual(expect.arrayContaining(pins));
     expect(deleted).not.toContain(screen);
   });
@@ -1160,7 +1222,7 @@ describe("/admin: incoming addresses and the directory", () => {
     const [screen, pins] = [lastId(), of("sendVenue").slice(-3).map((call) => call.id)];
     await press(`admin_in:next:${first}:g`, screen);
     expect(last().text).toContain("Incoming address 1 of 1\n4 Parkside Avenue");
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([screen, ...pins]));
   });
   it("Back on a group shows the admin screen and removes its pins", async () => {
     groupOf();
@@ -1168,14 +1230,14 @@ describe("/admin: incoming addresses and the directory", () => {
     const [screen, pins] = [lastId(), of("sendVenue").map((call) => call.id)];
     await press("admin_back:g", screen);
     expect(last().text).toContain("Admin console");
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([screen, ...pins]));
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "screen" }]);
   });
   it("removes what is sent while a group is on screen and keeps the group", async () => {
     groupOf();
     await press("admin_incoming");
     await message({ text: "hello" });
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toContain(500 + updateId);
+    expect(deletedIds()).toContain(500 + updateId);
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "admin_group" }]);
   });
   it("/admin while a group is on screen removes the screen and its pins", async () => {
@@ -1183,7 +1245,7 @@ describe("/admin: incoming addresses and the directory", () => {
     await press("admin_incoming");
     const [screen, pins] = [lastId(), of("sendVenue").map((call) => call.id)];
     await message({ text: "/admin" });
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([screen, ...pins]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([screen, ...pins]));
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "screen" }]);
   });
   it("a question of a former version shows the directory screen", async () => {
@@ -1212,7 +1274,7 @@ describe("/admin: incoming addresses and the directory", () => {
     ]);
     expect(sqlite.prepare("SELECT text, kind FROM addresses").all()).toEqual([{ text: "A", kind: "house" }]);
     expect(last().text).toContain("Incoming address 1 of 1\nB");
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toContain(77);
+    expect(deletedIds()).toContain(77);
   });
   it("approves all OSM addresses at once and leaves the walk addresses", async () => {
     addIncoming("A", "osm", { type: "Point", coordinates: [-6.16, 53.405] });
@@ -1232,7 +1294,7 @@ describe("/admin: incoming addresses and the directory", () => {
   it("Back removes the screen and its pin and shows the admin screen", async () => {
     await press("admin_back:77", 60);
     expect(last().text).toContain("Admin console");
-    expect(of("deleteMessage").map((call) => call.body.message_id).sort()).toEqual([60, 77]);
+    expect(deletedIds().sort()).toEqual([60, 77]);
   });
   const addRoads = () =>
     "ABCDEFGHIJKL".split("").map((letter, i) => addAddress(`${letter} Road`, "point", 53.405 + i * 0.00002, -6.16));
@@ -1243,7 +1305,7 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(labels()).toEqual(["A Road", "B Road", "C Road", "D Road", "E Road", "F Road", "G Road", "H Road", "I Road", "J Road", "Next", "Back"]);
     expect(keys()[0]).toEqual([`admin_addr:${ids[0]}:0`]);
     expect(keys().at(-2)).toEqual(["admin_list:1"]);
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual([5]);
+    expect(deletedIds()).toEqual([5]);
     await press("admin_list:1", lastId());
     expect(last().text).toBe("Directory (page 2 of 2)\nSend a text to search");
     expect(labels()).toEqual(["K Road", "L Road", "Previous", "Back"]);
@@ -1264,7 +1326,7 @@ describe("/admin: incoming addresses and the directory", () => {
     await message({ text: "  B ROAD " });
     expect(last().text).toBe("Found 1 address");
     expect(labels()).toEqual(["B Road", "Back"]);
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([prompt, 500 + updateId]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([prompt, 500 + updateId]));
     expect(sqlite.prepare("SELECT step, address FROM drafts").all()).toEqual([{ step: "admin_search", address: "B ROAD" }]);
     await message({ text: "road" });
     expect(last().text).toBe("Found 12 addresses (page 1 of 2)");
@@ -1365,7 +1427,7 @@ describe("/admin: incoming addresses and the directory", () => {
     await press(`admin_addr:${id}:0`, lastId());
     const screen = lastId();
     await message({ text: "road" });
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toContain(screen);
+    expect(deletedIds()).toContain(screen);
     expect(last().text).toBe("Found 12 addresses (page 1 of 2)");
   });
   it("shows the whole directory when the list is asked for after the search draft is gone", async () => {
@@ -1598,6 +1660,11 @@ describe("/admin: the directory file", () => {
     );
   });
   const of = (method: string) => sent.filter((call) => call.method === method);
+  // The messages deleted one by one and in batches, in the order of the calls.
+  const deletedIds = () =>
+    sent.flatMap((call) =>
+      call.method === "deleteMessage" ? [call.body.message_id] : call.method === "deleteMessages" ? call.body.message_ids : [],
+    );
   const texts = () => of("sendMessage").map((call) => call.body.text);
   const press = async (data: string, messageId = nextId) => {
     const update = privateButton(++updateId) as any;
@@ -1643,7 +1710,7 @@ describe("/admin: the directory file", () => {
     await sendFile(collection(house("3 Main St", -6.1603)));
     expect(texts().slice(1)).toEqual(["Loaded 1 address, 0 unchanged skipped", "Incoming address 1 of 1\n3 Main St\nPoint (house), from the walk"]);
     expect(sqlite.prepare("SELECT source, text FROM incoming_addresses").all()).toEqual([{ source: "walk", text: "3 Main St" }]);
-    expect(of("deleteMessage").map((call) => call.body.message_id)).toEqual(expect.arrayContaining([question, 500 + updateId]));
+    expect(deletedIds()).toEqual(expect.arrayContaining([question, 500 + updateId]));
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "screen" }]);
   });
 

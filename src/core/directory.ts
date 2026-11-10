@@ -2,7 +2,7 @@
 import { M_PER_DEG } from "./area";
 import { distanceBetween, distanceToShape, pointGeometry, shapeBounds, shapeFromGeometry } from "./shapes";
 import type { Shape } from "./shapes";
-import { TWO_MONTHS_MS } from "./shared";
+import { pageIn, TWO_MONTHS_MS } from "./shared";
 
 // Directory addresses farther than this from the point are not offered.
 const ADDRESS_RADIUS_M = 30;
@@ -120,8 +120,13 @@ export async function addUserAddress(
 
 // The next screen of the incoming addresses after afterId (the ID of the first address of the
 // previous screen), or the first one when there is none after it. Addresses without a decision that
-// have the same text are one screen, shown at the place of the lowest ID.
-export async function nextIncoming(db: D1Database, afterId: number): Promise<IncomingScreen | null> {
+// have the same text are one screen, shown at the place of the lowest ID. With groupOf, the screen is
+// the one of the address with that ID, or the next one when the address has no screen.
+export async function nextIncoming(
+  db: D1Database,
+  afterId: number,
+  groupOf: number | null = null,
+): Promise<IncomingScreen | null> {
   const { results } = await db
     .prepare("SELECT id, source, text, name, kind, geometry FROM incoming_addresses WHERE decision IS NULL ORDER BY id")
     .all<IncomingAddress>();
@@ -132,25 +137,15 @@ export async function nextIncoming(db: D1Database, afterId: number): Promise<Inc
   }
   const screens = [...groups.values()];
   if (screens.length === 0) return null;
-  const index = Math.max(0, screens.findIndex((group) => group[0].id > afterId));
+  const after =
+    groupOf === null ? afterId : (screens.find((group) => group.some((row) => row.id === groupOf))?.[0].id ?? groupOf) - 1;
+  const index = Math.max(0, screens.findIndex((group) => group[0].id > after));
   const incoming = screens[index];
   const old = await db
     .prepare(`SELECT id, text, name, kind, geometry FROM addresses WHERE ${sqlTextKey("text")} = ${sqlTextKey("?1")} ORDER BY id`)
     .bind(incoming[0].text)
     .all<NamedAddress>();
   return { position: index + 1, total: screens.length, incoming, old: old.results };
-}
-
-// The lowest ID among the incoming addresses without a decision that have the text of the address with
-// this ID: the place of its screen in the queue; null when the address has no screen.
-export async function incomingGroupStart(db: D1Database, id: number): Promise<number | null> {
-  const { results } = await db
-    .prepare("SELECT id, text FROM incoming_addresses WHERE decision IS NULL ORDER BY id")
-    .all<{ id: number; text: string }>();
-  const own = results.find((row) => row.id === id);
-  if (!own) return null;
-  const key = sameTextKey(own.text);
-  return results.find((row) => sameTextKey(row.text) === key)?.id ?? null;
 }
 
 const decideStatement = (db: D1Database, id: number, decision: Decision, kind: AddressKind | null) =>
@@ -282,8 +277,7 @@ export async function listDirectory(
     rows(wanted),
   ]);
   const total = (counted.results[0] as { n: number }).n;
-  const pages = Math.max(1, Math.ceil(total / perPage));
-  const last = Math.min(wanted, pages - 1);
+  const { page: last, pages } = pageIn(wanted, total, perPage);
   const results = last === wanted ? found.results : (await rows(last).all()).results;
   return { rows: results as { id: number; text: string }[], total, page: last, pages };
 }

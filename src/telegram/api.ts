@@ -86,6 +86,22 @@ export async function deleteMessage(token: string, chatId: number, messageId: nu
   await callTelegram(token, "deleteMessage", { chat_id: chatId, message_id: messageId });
 }
 
+// How many messages one deleteMessages call takes.
+const DELETE_BATCH = 100;
+
+// Deletes messages of the chat in batches.
+export async function deleteMessages(token: string, chatId: number, ids: number[]): Promise<void> {
+  for (let i = 0; i < ids.length; i += DELETE_BATCH) {
+    await callTelegram(token, "deleteMessages", { chat_id: chatId, message_ids: ids.slice(i, i + DELETE_BATCH) });
+  }
+}
+
+// One message goes with deleteMessage, several with deleteMessages.
+export async function deleteSome(token: string, chatId: number, ids: number[]): Promise<void> {
+  if (ids.length === 1) await deleteMessage(token, chatId, ids[0]);
+  else await deleteMessages(token, chatId, ids);
+}
+
 export async function answerButton(token: string, queryId: string, text?: string): Promise<void> {
   await callTelegram(token, "answerCallbackQuery", { callback_query_id: queryId, ...(text ? { text } : {}) });
 }

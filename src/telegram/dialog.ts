@@ -17,6 +17,7 @@ import {
   isInArea,
   MAP_PERIODS,
   nearestAddresses,
+  pageIn,
   sleep,
   PARKING_OPTIONS,
   PLATE_MAX_LENGTH,
@@ -35,7 +36,7 @@ import { directoryLink } from "../directoryLink";
 import { handleAdminInput } from "./admin";
 
 export { OUT_OF_AREA };
-import { answerButton, callTelegram, deleteMessage, downloadFile, sendMessage } from "./api";
+import { answerButton, callTelegram, deleteMessage, deleteMessages, downloadFile, sendMessage } from "./api";
 import {
   addCleanup,
   cachedPlates,
@@ -63,6 +64,7 @@ import {
 import { saveFeedback } from "./feedback";
 import { countReport, PHONES, readPhone, savePhone } from "./phone";
 import type { Phone, UserPhone } from "./phone";
+import { pageNote, pagingButtons } from "./paging";
 import { MAP_PREFIX, REPORT_MAP } from "./reportMap";
 import { stopReport } from "./stop";
 import type { AddressOption, Draft, DraftChanges, Step } from "./draft";
@@ -123,6 +125,7 @@ const CHOOSE_KIND = "Choose the kind";
 export const ADDRESS_ADDED = "Thank you for the address";
 export const SEND_PHOTOS = "Send photos, the first one with the number plate, or write the plate number";
 export const PHOTO_RECEIVED = "Photo received. Send more photos or press Create report";
+const STILL_READING = "Still reading the plate…";
 export const SEVERAL_PLATES = "Several plates found. Choose one";
 const WRITE_PLATE = "Write the plate number";
 export const NO_PLATE = "Could not read the plate. Please write it";
@@ -133,7 +136,7 @@ export const CHOOSE_PARKING = "Choose one or more options, then press Done";
 const CHOOSE_ONE = "Choose at least one option";
 export const CHOOSE_ROAD_USER = "Were you a:";
 export const CANCELLED = "Report cancelled";
-export const IS_CORRECT = "Is everything correct?";
+const IS_CORRECT = "Is everything correct?";
 export const YOUR_PHONE = "Your phone?";
 const REPORT_SENT = "Report sent";
 export const WRITE_FEEDBACK = "Write your feedback";
@@ -176,8 +179,8 @@ const MIN_PHOTO_SIDE = 1280;
 // How long the bot waits after a photo of an album before it answers.
 const ALBUM_WAIT_MS = 2000;
 const PLATES_POLL_MS = 1000;
-const PLATES_POLL_LIMIT = 20;
-const DELETE_BATCH = 100;
+// Not more: the whole wait must end within the 30 seconds that Workers give a background task.
+const PLATES_POLL_LIMIT = 24;
 
 const ROAD_USER_PREFIX = "road:";
 const KIND_PREFIX = "kind:";
@@ -356,17 +359,13 @@ const pageLink = (siteUrl: string, path: string, name: string) => `<a href="${si
 // The text and the buttons of a page of the hotspots; a page out of range becomes the nearest one.
 function hotspotPage(hotspots: readonly Hotspot[], wanted: number): { text: string; buttons: Button[] } {
   if (hotspots.length === 0) return { text: NO_HOTSPOTS, buttons: [] };
-  const pages = Math.ceil(hotspots.length / HOTSPOTS_PER_PAGE);
-  const page = Math.min(Math.max(Number.isInteger(wanted) ? wanted : 0, 0), pages - 1);
+  const { page, pages } = pageIn(wanted, hotspots.length, HOTSPOTS_PER_PAGE);
   const first = page * HOTSPOTS_PER_PAGE;
   const lines = hotspots
     .slice(first, first + HOTSPOTS_PER_PAGE)
     .map((spot, i) => `${first + i + 1}. ${spot.address.replace(/\s+/g, " ")} (${spot.plates})`);
-  const buttons: Button[] = [];
-  if (page > 0) buttons.push({ text: "Previous", callback_data: `${HOTSPOT_PREFIX}${page - 1}` });
-  if (page < pages - 1) buttons.push({ text: "Next", callback_data: `${HOTSPOT_PREFIX}${page + 1}` });
-  const title = pages === 1 ? "Hotspots" : `Hotspots (page ${page + 1} of ${pages})`;
-  return { text: `${title}\n${lines.join("\n")}`, buttons };
+  const buttons = pagingButtons(page, pages, (other) => `${HOTSPOT_PREFIX}${other}`);
+  return { text: `Hotspots${pageNote(page, pages)}\n${lines.join("\n")}`, buttons };
 }
 
 // Replaces the text and the buttons of the message with another page of the hotspots.
@@ -523,7 +522,8 @@ async function recognize(c: Context, draftId: number, photo: PhotoSize): Promise
       }
       // Logs the duration only.
       console.log(`Plate recognition took ${Date.now() - startedAt} ms`);
-      await cachePlates(c.env.DB, photo.file_unique_id, plates);
+      // Only a result with plates is kept.
+      if (plates.length > 0) await cachePlates(c.env.DB, photo.file_unique_id, plates);
     }
   } catch {
     console.error("Plate recognition failed");
@@ -813,6 +813,7 @@ async function waitForPlates(c: Context, draft: Draft): Promise<string[] | null>
 async function createReport(c: Context, draft: Draft): Promise<void> {
   if (!(await moveStep(c.env.DB, c.userId, draft.draft_id, "photos", "recognizing"))) return;
   const claimed: Draft = { ...draft, step: "recognizing" };
+  if (claimed.plates === null) await show(c, claimed, STILL_READING, {});
   const plates = await waitForPlates(c, claimed);
   if (plates === null) return;
   const current: Draft = { ...claimed, plates: JSON.stringify(plates) };
@@ -859,15 +860,7 @@ async function keepTypedAddress(c: Context, report: LoggedReport): Promise<void>
   }
 }
 
-// Deletes messages of the chat in batches.
-async function deleteMessages(c: Context, ids: number[]): Promise<void> {
-  for (let i = 0; i < ids.length; i += DELETE_BATCH) {
-    await callTelegram(c.env.TELEGRAM_BOT_TOKEN, "deleteMessages", {
-      chat_id: c.chatId,
-      message_ids: ids.slice(i, i + DELETE_BATCH),
-    });
-  }
-}
+const removeAll = (c: Context, ids: number[]) => deleteMessages(c.env.TELEGRAM_BOT_TOKEN, c.chatId, ids);
 
 // Moves the step first and moves it back if Telegram fails; the report is saved and the
 // dialog is cleared at the same time once the link is out.
@@ -931,12 +924,12 @@ async function finish(c: Context, draft: Draft, from: Step, phone: UserPhone): P
     keepReport(c, report, sentId, body),
     keepCount(c),
     draft.address_typed ? keepTypedAddress(c, report) : Promise.resolve(),
-    deleteMessages(c, [...cleanup, draft.buttons_message_id]),
+    removeAll(c, [...cleanup, draft.buttons_message_id]),
   ]);
   // Deletes the messages added to the list after it was read.
   const final = await deleteFinishedDraft(c.env.DB, c.userId, draft.draft_id);
   const late = (final ?? []).filter((id) => !cleanup.includes(id));
-  if (late.length > 0) await deleteMessages(c, late);
+  if (late.length > 0) await removeAll(c, late);
 }
 
 // The buttons of a final message work with no draft.

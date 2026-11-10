@@ -208,7 +208,7 @@ export async function listPlates(db: D1Database, list: PlateList, now: number): 
 }
 
 // The events the bot counts while it works, one number per event and day.
-export const STAT_EVENTS = [
+const STAT_EVENTS = [
   "started",
   "area_refused",
   "plate_as_is",
@@ -235,7 +235,7 @@ export async function countEvent(db: D1Database, event: StatEvent): Promise<void
 }
 
 // How many days the month column of the statistics covers, ending with yesterday.
-export const STATISTICS_MONTH_DAYS = 30;
+const STATISTICS_MONTH_DAYS = 30;
 
 // A number for yesterday, for the last STATISTICS_MONTH_DAYS days up to yesterday, and for all days up to yesterday.
 export interface Count {
