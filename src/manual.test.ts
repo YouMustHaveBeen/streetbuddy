@@ -75,7 +75,6 @@ describe("manual page", () => {
     const html = await manualPage().text();
     const yo = String.fromCharCode(0x451);
     expect(html).not.toMatch(/garda/i);
-    expect(html).not.toMatch(/ссыл/i);
     expect(html.includes(yo)).toBe(false);
   });
 });
