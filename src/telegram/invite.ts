@@ -3,7 +3,7 @@
 import { DAY_MS } from "../core/shared";
 import type { Env } from "../env";
 import { callTelegram, sendMessage } from "./api";
-import { groupMemberUser, UNKNOWN_USER, userTag } from "./notify";
+import { memberTag, userTag } from "./notify";
 import type { TelegramUser } from "./notify";
 
 type InviteEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN" | "GROUP_ID">;
@@ -73,15 +73,15 @@ export async function handleJoinRequest(env: InviteEnv, updateId: number, reques
     .bind(requester.id, inviterId, now)
     .run();
   const [inviter, admins] = await Promise.all([
-    groupMemberUser(env, inviterId),
+    memberTag(env, inviterId),
     callTelegram<{ user: { id: number; is_bot?: boolean } }[]>(env.TELEGRAM_BOT_TOKEN, "getChatAdministrators", {
       chat_id: env.GROUP_ID,
     }),
   ]);
   const text = [
     JOIN_REQUEST,
-    `${userTag({ first_name: requester.first_name, last_name: requester.last_name, username: requester.username })} wants to join the group`,
-    `Invited by ${inviter ? userTag(inviter) : UNKNOWN_USER}`,
+    `${userTag({ first_name: requester.first_name, last_name: requester.last_name, username: requester.username }, requester.id)} wants to join the group`,
+    `Invited by ${inviter}`,
   ].join("\n");
   const buttons = [
     [

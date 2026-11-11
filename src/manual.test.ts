@@ -65,7 +65,7 @@ describe("manual page", () => {
 
   it("lists the commands of the menu with the bot's own words", async () => {
     const html = await manualPage().text();
-    for (const text of ["/manual", "/setup", "/map", "/add_address", "/hotspots", "/phone", "/feedback", AREA_MAP, OPEN_MAP, ADD_SEND_LOCATION, ADDRESS_ADDED, NO_HOTSPOTS, YOUR_PHONE, WRITE_FEEDBACK, FEEDBACK_SENT]) {
+    for (const text of ["/map", "/add_address", "/hotspots", "/phone", "/help", "/feedback", AREA_MAP, OPEN_MAP, ADD_SEND_LOCATION, ADDRESS_ADDED, NO_HOTSPOTS, YOUR_PHONE, WRITE_FEEDBACK, FEEDBACK_SENT]) {
       expect(html).toContain(text);
     }
     expect(html.split("<h2>Команды бота</h2>")).toHaveLength(3);

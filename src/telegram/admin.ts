@@ -60,7 +60,7 @@ import {
 import type { Draft, Step } from "./draft";
 import { deleteFeedback, nextFeedback } from "./feedback";
 import { decideJoin, JOIN, listApprovedInvites } from "./invite";
-import { groupMemberLabel, groupMemberUser, UNKNOWN_USER, userTag } from "./notify";
+import { groupMemberLabel, memberTag, UNKNOWN_USER } from "./notify";
 import { pageNote, pagingButtons } from "./paging";
 import { REPORT_MAP, REPORT_MAP_BUTTONS } from "./reportMap";
 import { stopReport } from "./stop";
@@ -287,8 +287,8 @@ async function sendInvites(env: AdminEnv, userId: number, chatId: number, reques
   if (entries.length === 0) return remember(env, userId, send(env, chatId, NO_INVITES, buttons));
   const shown = entries.slice(page * INVITES_PAGE_SIZE, (page + 1) * INVITES_PAGE_SIZE);
   const ids = [...new Set(shown.flatMap((entry) => [entry.invitedId, entry.inviterId]))];
-  const users = await Promise.all(ids.map((id) => groupMemberUser(env, id)));
-  const tags = new Map(ids.map((id, i) => [id, users[i] ? userTag(users[i]) : UNKNOWN_USER]));
+  const found = await Promise.all(ids.map((id) => memberTag(env, id)));
+  const tags = new Map(ids.map((id, i) => [id, found[i]]));
   const lines = shown.map(
     (entry, i) => `${page * INVITES_PAGE_SIZE + i + 1}. ${tags.get(entry.invitedId)} (${tags.get(entry.inviterId)})`,
   );
@@ -329,10 +329,19 @@ async function sendStatistics(env: AdminEnv, userId: number, chatId: number): Pr
 }
 
 // The form and the kind of an incoming address and where it comes from; the kind temp is not shown.
-const describeIncoming = (form: string, address: { source: "walk" | "user" | "osm"; kind: string }): string => {
+// The author is the tag of the user who wrote the address.
+const describeIncoming = (
+  form: string,
+  address: { source: "walk" | "user" | "osm"; kind: string },
+  author: string,
+): string => {
   if (address.source !== "user") return `${form} (${address.kind}), ${SOURCE_TEXT[address.source]}`;
-  return address.kind === "temp" ? `${form}, written by a user` : `${form} (${address.kind}), written by a user`;
+  return address.kind === "temp" ? `${form}, by ${author}` : `${form} (${address.kind}), by ${author}`;
 };
+
+// The tag of the author of an incoming address of a user; a row that has no Telegram ID shows "unknown user".
+const authorOf = (env: AdminEnv, address: { source: string; user_id: number | null }): Promise<string> =>
+  address.source === "user" && address.user_id !== null ? memberTag(env, address.user_id) : Promise.resolve(UNKNOWN_USER);
 
 // The next incoming screen after afterId, or the screen of the address groupOf (see nextIncoming). One
 // address is shown with a pin on the map above it; addresses with the same text, among themselves and
@@ -371,7 +380,7 @@ async function sendIncoming(
     `Incoming address ${item.position} of ${item.total}`,
     address.text,
     ...(address.name ? [`Name: ${address.name}`] : []),
-    describeIncoming(form, address),
+    describeIncoming(form, address, await authorOf(env, address)),
   ];
   const edit: Button[] = [{ text: "Edit text", callback_data: `${IN_TEXT}:${address.id}${tail}` }];
   if (address.kind !== "area") edit.push({ text: "Edit kind", callback_data: `${IN_KIND}:${address.id}${tail}` });
@@ -398,6 +407,7 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
     const shape = shapeFromGeometry(JSON.parse(geometry));
     return { shape, form: shape ? KIND_TEXT[shape.kind] : "Unknown" };
   };
+  const authors = await Promise.all(item.incoming.map((address) => authorOf(env, address)));
   const members = [
     ...item.old.map((address, i) => ({
       from: "old" as const,
@@ -413,7 +423,7 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
       label: `new${i + 1}`,
       geometry: address.geometry,
       needsKind: address.kind === "temp",
-      description: describeIncoming(formOf(address.geometry).form, address) + nameNote(address),
+      description: describeIncoming(formOf(address.geometry).form, address, authors[i]) + nameNote(address),
     })),
   ];
   // One after another: sent together, the pins would arrive in any order.

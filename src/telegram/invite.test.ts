@@ -126,7 +126,7 @@ describe("handleJoinRequest", () => {
     ]);
   });
 
-  it("writes only the name when there is no @username, and unknown user when Telegram does not give the inviter", async () => {
+  it("writes the Telegram ID when there is no @username, and unknown user when Telegram does not give the inviter", async () => {
     givenLink();
     delete answers.getChatMember;
     vi.stubGlobal(
@@ -140,7 +140,7 @@ describe("handleJoinRequest", () => {
       }),
     );
     await handleJoinRequest(env, 1, request({ from: { id: 50, first_name: "Tom" } }));
-    expect(called("sendMessage")[0].text).toBe("Join request\nTom wants to join the group\nInvited by unknown user");
+    expect(called("sendMessage")[0].text).toBe("Join request\nTom 50 wants to join the group\nInvited by unknown user 7");
   });
 
   it("handles an update only once", async () => {
@@ -367,6 +367,6 @@ describe("/invite and the Invites screen", () => {
       callback_query: { id: "cb", data: "admin_invites:1", from: { id: 7 }, message: { message_id: 9, chat: { id: 7, type: "private" } } },
     });
     const [screen] = called("sendMessage");
-    expect(String(screen.text).split("\n")).toEqual(["Invites (page 2 of 2)", "11. Maria (Maria)", "12. Maria (Maria)"]);
+    expect(String(screen.text).split("\n")).toEqual(["Invites (page 2 of 2)", "11. Maria 111 (Maria 7)", "12. Maria 112 (Maria 7)"]);
   });
 });

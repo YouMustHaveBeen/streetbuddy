@@ -1,7 +1,7 @@
 // Manual page, served by the Worker.
 import { BASE_STYLE, CHOICE_SCRIPT, htmlResponse, INSTALL_PATH } from "./install";
 
-export const MANUAL_PATH = "/manual";
+export const MANUAL_PATH = "/userguide";
 
 const PAGE_SCRIPT = `(function () {
   "use strict";
@@ -66,8 +66,7 @@ const STEPS_10_TO_11 = `<h3>10. Проверьте форму и отправь�
 const COMMANDS = `<h2>Команды бота</h2>
 <p>Команды открываются кнопкой «Menu» рядом со строкой ввода. Любая команда останавливает начатый репорт.</p>
 <ul>
-<li>/manual: присылает сообщение «User manual», в нем открывается это руководство.</li>
-<li>/setup: присылает сообщение «Setup guide», в нем открывается руководство по установке.</li>
+<li>/help: присылает сообщение, в нем открываются две страницы: «Setup guide» (руководство по установке) и «User guide» (это руководство).</li>
 <li>/map: присылает «Area map» с кнопкой «Open map», это карта адресов района. Кнопка работает один час, потом отправьте /map снова.</li>
 <li>/add_address: добавить адрес. Бот попросит прислать место («Send the location»), потом написать адрес (не больше 100 символов) и выбрать тип: «house» (дом с номером), «appt» (многоквартирный дом), «facility» (магазин, школа, остановка и подобное), «spot» (место без номера дома: перекресток, улица, ориентир). После этого бот напишет «Thank you for the address», а адрес попадет к администратору на проверку.</li>
 <li>/hotspots: показывает «Hotspots», места, где репорты были на 10 и больше разных номеров машин, по 10 мест на странице, с кнопками «Previous» и «Next». Пока таких мест нет, бот пишет «No hotspots yet».</li>

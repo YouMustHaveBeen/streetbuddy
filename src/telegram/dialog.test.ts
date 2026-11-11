@@ -142,8 +142,8 @@ describe("/start", () => {
     expect(lastSent().text).toBe(`StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
 ***
-First, read the <a href="https://site.example/manual">manual</a>.
-Second, set up your phone: <a href="https://site.example/install">Installation guide</a>.
+First, read the setup guide: <a href="https://site.example/setupguide">Setup guide</a>.
+Second, read how to use the bot: <a href="https://site.example/userguide">User guide</a>.
 Third, to start a report, send location to the bot.
 ***
 This bot is not affiliated with An Garda Síochána.
@@ -175,13 +175,15 @@ This bot is not affiliated with An Garda Síochána.
 });
 
 describe("the commands of the menu", () => {
-  it("/manual and /setup give a link each, as HTML without a preview", async () => {
-    await text("/manual");
-    expect(lastSent().text).toBe('<a href="https://site.example/manual">User manual</a>');
+  it("/help gives the links to the setup guide and the user guide, as HTML without a preview", async () => {
+    await text("/help");
+    expect(lastSent().text).toBe(
+      '<a href="https://site.example/setupguide">Setup guide</a>\n<a href="https://site.example/userguide">User guide</a>',
+    );
     expect((lastSent() as unknown as { parse_mode: string }).parse_mode).toBe("HTML");
     expect((lastSent() as unknown as { link_preview_options: unknown }).link_preview_options).toEqual({ is_disabled: true });
-    await text("/setup@streetbuddy_bot");
-    expect(lastSent().text).toBe('<a href="https://site.example/install">Setup guide</a>');
+    await text("/help@streetbuddy_bot");
+    expect(lastSent().text).toContain("Setup guide");
     expect((lastSent() as unknown as { parse_mode: string }).parse_mode).toBe("HTML");
     expect((lastSent() as unknown as { link_preview_options: unknown }).link_preview_options).toEqual({ is_disabled: true });
   });
@@ -279,7 +281,7 @@ describe("the commands of the menu", () => {
     expect(called("sendMessage").length).toBe(before);
   });
   it("every command stops a report in progress without a word", async () => {
-    for (const command of ["/manual", "/setup", "/hotspots", "/map", "/feedback"]) {
+    for (const command of ["/help", "/hotspots", "/map", "/feedback"]) {
       await toPhotos();
       const screen = buttonId();
       await text(command);
@@ -297,7 +299,7 @@ describe("screens with buttons", () => {
     await text("/map");
     const screen = buttonId();
     expect(draft()?.step).toBe("screen");
-    await text("/manual");
+    await text("/help");
     expect(called("deleteMessage").some((call) => call.body.message_id === screen)).toBe(true);
     expect(draft()).toBeUndefined();
   });
@@ -317,7 +319,7 @@ describe("screens with buttons", () => {
     await press("map:week", menu);
     const week = buttonId();
     expect(new Set([menu, today, week]).size).toBe(3);
-    await text("/manual");
+    await text("/help");
     const deleted = called("deleteMessage").map((call) => call.body.message_id);
     expect(deleted).toEqual(expect.arrayContaining([menu, today, week]));
     expect(draft()).toBeUndefined();

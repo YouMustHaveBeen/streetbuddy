@@ -35,12 +35,18 @@ export interface TelegramUser {
 
 export const fullName = (user: TelegramUser): string => [user.first_name, user.last_name].filter(Boolean).join(" ");
 
-// Shown where Telegram does not give the user.
+// Shown where Telegram does not give the user; the Telegram ID follows it.
 export const UNKNOWN_USER = "unknown user";
 
-// The name and the @username without brackets, or only the name when there is no @username.
-export const userTag = (user: TelegramUser): string =>
-  user.username ? `${fullName(user)} @${user.username}` : fullName(user);
+// The name and the @username, or the name and the Telegram ID when there is no @username.
+export const userTag = (user: TelegramUser, id: number): string =>
+  `${fullName(user)} ${user.username ? `@${user.username}` : id}`;
+
+// The tag of a member of the closed group as Telegram gives the user; "unknown user <ID>" when it does not.
+export async function memberTag(env: Pick<Env, "TELEGRAM_BOT_TOKEN" | "GROUP_ID">, userId: number): Promise<string> {
+  const user = await groupMemberUser(env, userId);
+  return user ? userTag(user, userId) : `${UNKNOWN_USER} ${userId}`;
+}
 
 // The user as Telegram gives it for a member of the closed group; null when Telegram does not give the user.
 export async function groupMemberUser(
