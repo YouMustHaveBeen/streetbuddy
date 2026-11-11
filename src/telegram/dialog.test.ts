@@ -724,6 +724,24 @@ describe("photos", () => {
     await settle();
     expect(lastSent().text).toMatch(/^Plate: 12-D-3456\n/);
   });
+  it("asks for the plate by hand when the recognition does not finish before the deadline", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout"] });
+    try {
+      await toPhotos();
+      run.mockImplementation(() => new Promise(() => {}));
+      void photo("a");
+      await vi.advanceTimersByTimeAsync(10);
+      expect(labels()).toEqual(["Create report", "Cancel"]);
+      const creating = handleButton(env, USER, USER, { id: "q", data: "create", messageId: buttonId() }, defer);
+      await vi.advanceTimersByTimeAsync(20000);
+      await creating;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(sentTexts()).toContain("Still reading the plate…");
+    expect(lastSent().text).toBe("Could not read the plate. Please write it");
+    expect(draft().step).toBe("plate_input");
+  });
   it("does not say that the plate is still being read when it is already known", async () => {
     await toPlateTime();
     expect(sentTexts()).not.toContain("Still reading the plate…");

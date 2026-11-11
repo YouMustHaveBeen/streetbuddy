@@ -113,7 +113,7 @@ describe("cleanupExpired", () => {
     ]);
   });
 
-  it("removes members remembered more than an hour ago and keeps the rest", async () => {
+  it("removes members remembered at least an hour ago and keeps the rest", async () => {
     const { db, sqlite } = fakeD1();
     const HOUR = 60 * 60 * 1000;
     [HOUR + 1, HOUR, HOUR - 1].forEach((age, i) =>

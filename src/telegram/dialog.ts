@@ -18,6 +18,7 @@ import {
   MAP_PERIODS,
   nearestAddresses,
   pageIn,
+  REQUEST_TIMEOUT_MS,
   sleep,
   PARKING_OPTIONS,
   PLATE_MAX_LENGTH,
@@ -179,8 +180,10 @@ const MIN_PHOTO_SIDE = 1280;
 // How long the bot waits after a photo of an album before it answers.
 const ALBUM_WAIT_MS = 2000;
 const PLATES_POLL_MS = 1000;
-// Not more: the whole wait must end within the 30 seconds that Workers give a background task.
-const PLATES_POLL_LIMIT = 24;
+// The time the background work of one request has.
+const BACKGROUND_TASK_MS = 30000;
+// The time kept for the screen that follows the wait for the plate.
+const FINAL_SCREEN_RESERVE_MS = REQUEST_TIMEOUT_MS;
 
 const ROAD_USER_PREFIX = "road:";
 const KIND_PREFIX = "kind:";
@@ -796,12 +799,13 @@ async function cancel(c: Context, draft: Draft): Promise<void> {
   if (draft.step !== "feedback_input" && draft.step !== "phone_choice" && !draft.step.startsWith("add_")) await send(c, CANCELLED);
 }
 
-// Waits for the recognition started by the first photo. Returns null when the user has
-// cancelled meanwhile.
+// Waits for the recognition started by the first photo until the deadline (a time in
+// milliseconds). Returns null when the user has cancelled meanwhile, and an empty list when
+// the next read would be after the deadline.
 // QUERY BUDGET EXCEPTION: one read per second until the recognition writes its result.
-async function waitForPlates(c: Context, draft: Draft): Promise<string[] | null> {
+async function waitForPlates(c: Context, draft: Draft, deadline: number): Promise<string[] | null> {
   if (draft.plates !== null) return parsePlateList(draft);
-  for (let i = 0; i < PLATES_POLL_LIMIT; i++) {
+  while (Date.now() + PLATES_POLL_MS <= deadline) {
     await sleep(PLATES_POLL_MS);
     const latest = await loadDraft(c.env.DB, c.userId);
     if (latest?.draft_id !== draft.draft_id || latest.step !== "recognizing") return null;
@@ -811,10 +815,11 @@ async function waitForPlates(c: Context, draft: Draft): Promise<string[] | null>
 }
 
 async function createReport(c: Context, draft: Draft): Promise<void> {
+  const deadline = Date.now() + BACKGROUND_TASK_MS - FINAL_SCREEN_RESERVE_MS;
   if (!(await moveStep(c.env.DB, c.userId, draft.draft_id, "photos", "recognizing"))) return;
   const claimed: Draft = { ...draft, step: "recognizing" };
   if (claimed.plates === null) await show(c, claimed, STILL_READING, {});
-  const plates = await waitForPlates(c, claimed);
+  const plates = await waitForPlates(c, claimed, deadline);
   if (plates === null) return;
   const current: Draft = { ...claimed, plates: JSON.stringify(plates) };
   if (plates.length > 1) {
