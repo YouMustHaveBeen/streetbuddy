@@ -59,7 +59,8 @@ import {
 } from "./draft";
 import type { Draft, Step } from "./draft";
 import { deleteFeedback, nextFeedback } from "./feedback";
-import { groupMemberLabel } from "./notify";
+import { decideJoin, JOIN, listApprovedInvites } from "./invite";
+import { groupMemberLabel, groupMemberUser, UNKNOWN_USER, userTag } from "./notify";
 import { pageNote, pagingButtons } from "./paging";
 import { REPORT_MAP, REPORT_MAP_BUTTONS } from "./reportMap";
 import { stopReport } from "./stop";
@@ -88,6 +89,8 @@ const FEEDBACK = "admin_feedback";
 const FEEDBACK_NEXT = "admin_fbnext";
 const FEEDBACK_DELETE = "admin_fbdel";
 const STATISTICS = "admin_statistics";
+// With the argument ":<page>".
+const INVITES = "admin_invites";
 const OPEN_REPORT_MAP = "admin_reportmap";
 const INCOMING = "admin_incoming";
 // With arguments ":<list>:<page>", the list being "repeat" or "abandoned".
@@ -131,6 +134,8 @@ const GROUP = "g";
 const DIRECTORY_PAGE_SIZE = 10;
 // How many plates a page of a list of plates has.
 const PLATES_PAGE_SIZE = 10;
+// How many invitations a page of the Invites screen has.
+const INVITES_PAGE_SIZE = 10;
 
 const PLATE_LISTS: Record<PlateList, { title: string; empty: string }> = {
   repeat: { title: "Repeat plates", empty: "No repeat plates" },
@@ -140,7 +145,6 @@ const PLATE_LISTS: Record<PlateList, { title: string; empty: string }> = {
 const SEND_SEARCH_TEXT = "Send a text to search";
 const NO_ADDRESSES_FOUND = "No addresses found";
 const SEARCH_TOO_LONG = "The search text is too long";
-const UNKNOWN_AUTHOR = "unknown user";
 const WRITE_NEW_ADDRESS = "Write the new address";
 const WRITE_NAME = "Write the name";
 const NAME_TOO_LONG = "The name must be 100 characters or less";
@@ -152,6 +156,7 @@ const SAVED = "Saved";
 const CHOOSE_KIND = "Choose the kind";
 const NO_INCOMING = "No incoming addresses";
 const NO_FEEDBACK = "No feedback";
+const NO_INVITES = "No invites yet";
 const SEND_FILE = "Send the edited file";
 const SEND_AS_DOCUMENT = "Send the file as a document";
 const DIRECTORY_FILE_NAME = "directory.geojson";
@@ -217,7 +222,7 @@ async function sendScreen(env: AdminEnv, userId: number, chatId: number): Promis
   ];
   const maps: Button[] = [{ text: REPORT_MAP, callback_data: OPEN_REPORT_MAP }];
   if (env.DIRECTORY_LINK_SECRET) maps.push({ text: "Directory map", url: await directoryLink(env) });
-  buttons.push(maps);
+  buttons.push(maps, [{ text: "Invites", callback_data: `${INVITES}:0` }]);
   return remember(env, userId, send(env, chatId, text, buttons));
 }
 
@@ -256,7 +261,7 @@ async function sendFeedback(env: AdminEnv, userId: number, chatId: number, after
   const item = await nextFeedback(env.DB, afterId);
   if (!item) return remember(env, userId, send(env, chatId, NO_FEEDBACK, [[backButton()]]));
   const moment = dublinDateTime(item.createdAt);
-  const author = (await groupMemberLabel(env, item.userId)) ?? UNKNOWN_AUTHOR;
+  const author = (await groupMemberLabel(env, item.userId)) ?? UNKNOWN_USER;
   const text = `Feedback ${item.position} of ${item.total}\nFrom ${author} on ${moment.date} ${moment.time}\n${item.text}`;
   return remember(
     env,
@@ -269,6 +274,25 @@ async function sendFeedback(env: AdminEnv, userId: number, chatId: number, after
       [backButton()],
     ]),
   );
+}
+
+// A page of the approved invitations: the person invited and, in brackets, the member who invited them.
+async function sendInvites(env: AdminEnv, userId: number, chatId: number, requestedPage: number): Promise<number | null> {
+  const entries = await listApprovedInvites(env.DB);
+  const { page, pages } = pageIn(requestedPage, entries.length, INVITES_PAGE_SIZE);
+  const buttons: Button[][] = [];
+  const paging = pagingButtons(page, pages, (other) => `${INVITES}:${other}`);
+  if (paging.length > 0) buttons.push(paging);
+  buttons.push([backButton()]);
+  if (entries.length === 0) return remember(env, userId, send(env, chatId, NO_INVITES, buttons));
+  const shown = entries.slice(page * INVITES_PAGE_SIZE, (page + 1) * INVITES_PAGE_SIZE);
+  const ids = [...new Set(shown.flatMap((entry) => [entry.invitedId, entry.inviterId]))];
+  const users = await Promise.all(ids.map((id) => groupMemberUser(env, id)));
+  const tags = new Map(ids.map((id, i) => [id, users[i] ? userTag(users[i]) : UNKNOWN_USER]));
+  const lines = shown.map(
+    (entry, i) => `${page * INVITES_PAGE_SIZE + i + 1}. ${tags.get(entry.invitedId)} (${tags.get(entry.inviterId)})`,
+  );
+  return remember(env, userId, send(env, chatId, `Invites${pageNote(page, pages)}\n${lines.join("\n")}`, buttons));
 }
 
 // The three numbers of a count: yesterday, the last 30 days, all days up to yesterday.
@@ -567,7 +591,7 @@ export async function handleAdminButton(
   env: AdminEnv,
   userId: number,
   chatId: number,
-  query: { id: string; data?: string; messageId?: number },
+  query: { id: string; data?: string; messageId?: number; text?: string },
 ): Promise<void> {
   const answered = answerButton(env.TELEGRAM_BOT_TOKEN, query.id);
   const [name, first, second, third, fourth] = (query.data ?? "").split(":");
@@ -594,6 +618,16 @@ export async function handleAdminButton(
     next = sendFeedback(env, userId, chatId, Number(first) || 0);
   } else if (name === STATISTICS) {
     next = sendStatistics(env, userId, chatId);
+  } else if (name === INVITES) {
+    next = sendInvites(env, userId, chatId, Number(first) || 0);
+  } else if (name === JOIN) {
+    // The message about the request is changed by the decision itself; no screen follows.
+    const invitedId = Number(second);
+    if ((first === "ok" || first === "no") && Number.isSafeInteger(invitedId)) {
+      await decideJoin(env, invitedId, first === "ok", { chatId, messageId: query.messageId, text: query.text });
+    }
+    await answered;
+    return;
   } else if (name === OPEN_REPORT_MAP) {
     next = sendReportMap(env, userId, chatId);
   } else if (name === INCOMING) {

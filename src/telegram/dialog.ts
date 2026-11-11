@@ -63,6 +63,7 @@ import {
   takeDraft,
 } from "./draft";
 import { saveFeedback } from "./feedback";
+import { INVITE_FAILED, INVITE_TEXT, inviteLink } from "./invite";
 import { countReport, PHONES, readPhone, savePhone } from "./phone";
 import type { Phone, UserPhone } from "./phone";
 import { pageNote, pagingButtons } from "./paging";
@@ -351,7 +352,7 @@ async function redraw(c: Context, draft: Draft, message: Message): Promise<void>
 }
 
 // The commands of the menu, and /start. Each of them stops a report in progress without a word.
-const COMMAND = /^\/(start|manual|setup|hotspots|map|feedback|phone|add_address)(@\S+)?(\s|$)/;
+const COMMAND = /^\/(start|manual|setup|hotspots|map|feedback|phone|add_address|invite)(@\S+)?(\s|$)/;
 
 export const isStartCommand = (text: string | undefined): boolean =>
   text !== undefined && COMMAND.exec(text)?.[1] === "start";
@@ -403,6 +404,9 @@ async function handleCommand(c: Context, command: string): Promise<void> {
     await show(c, null, YOUR_PHONE, { step: "phone_choice" });
   } else if (command === "add_address") {
     await show(c, null, ADD_SEND_LOCATION, { step: "add_location" });
+  } else if (command === "invite") {
+    const link = await inviteLink(c.env, c.userId);
+    await send(c, link === null ? INVITE_FAILED : INVITE_TEXT(link), undefined, true);
   } else {
     await show(c, null, WRITE_FEEDBACK, { step: "feedback_input" });
   }

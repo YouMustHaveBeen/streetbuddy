@@ -30,6 +30,7 @@ const FILE_ROW = [
   { text: "Import file", callback_data: "admin_import" },
 ];
 const REPORT_MAP_BUTTON = { text: "Report map", callback_data: "admin_reportmap" };
+const INVITES_ROW = [{ text: "Invites", callback_data: "admin_invites:0" }];
 const MAP_ROW = [REPORT_MAP_BUTTON, { text: "Directory map", url: expect.stringContaining("https://site.example/directory?exp=") }];
 let env: WebhookEnv;
 let rows: () => number;
@@ -363,7 +364,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW, INVITES_ROW] },
     });
   });
   it("gives the map button a link that is signed with the secret and points at the directory page", async () => {
@@ -382,7 +383,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, [REPORT_MAP_BUTTON]] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, [REPORT_MAP_BUTTON], INVITES_ROW] },
     });
   });
   it("answers /admin written with the bot name", async () => {
@@ -400,7 +401,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: 03/11/2026 06:00 - form changed",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW, INVITES_ROW] },
     });
   });
   it.each([
@@ -502,7 +503,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW, INVITES_ROW] },
     });
     expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
   });

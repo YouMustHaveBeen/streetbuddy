@@ -5,6 +5,7 @@ import { handleAdminButton, handleAdminCommand, isAdminButton, isAdminCommand } 
 import { answerButton, callTelegram, sendMessage } from "./api";
 import { checksMembership, handleButton, handleMessage, isStartCommand } from "./dialog";
 import type { Message } from "./dialog";
+import { handleJoinRequest } from "./invite";
 import { rememberedMember, updateMemberCache } from "./member";
 import { secretMatches } from "../secret";
 
@@ -30,8 +31,9 @@ interface Update {
     id?: string;
     data?: string;
     from?: { id?: number };
-    message?: { message_id?: number; chat?: Chat };
+    message?: { message_id?: number; chat?: Chat; text?: string };
   };
+  chat_join_request?: Parameters<typeof handleJoinRequest>[2];
 }
 
 interface ChatMember {
@@ -83,6 +85,13 @@ async function groupAccess(env: WebhookEnv, userId: number): Promise<GroupAccess
 async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionContext): Promise<void> {
   let step = "parse";
   try {
+    if (update.chat_join_request) {
+      step = "join request";
+      if (Number.isSafeInteger(update.update_id)) {
+        await handleJoinRequest(env, update.update_id as number, update.chat_join_request);
+      }
+      return;
+    }
     const incoming = parseUpdate(update);
     if (!incoming) return;
 
@@ -121,7 +130,12 @@ async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionCont
       step = "admin";
       if (!access?.admin) return;
       if (incoming.callbackQueryId) {
-        await handleAdminButton(env, incoming.userId, incoming.chatId, { id: incoming.callbackQueryId, data, messageId });
+        await handleAdminButton(env, incoming.userId, incoming.chatId, {
+          id: incoming.callbackQueryId,
+          data,
+          messageId,
+          text: update.callback_query?.message?.text,
+        });
       } else {
         await handleAdminCommand(env, incoming.userId, incoming.chatId);
       }

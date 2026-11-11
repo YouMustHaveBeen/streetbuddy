@@ -123,6 +123,22 @@ describe("cleanupExpired", () => {
     expect(rows(sqlite, "SELECT user_id FROM member_cache")).toEqual([2]);
   });
 
+  it("removes invite links older than 7 days, invitations older than 60 days and notices of removed invitations", async () => {
+    const { db, sqlite } = fakeD1();
+    const WEEK = 7 * DAY;
+    [WEEK + 1, WEEK, WEEK - 1].forEach((age, i) =>
+      sqlite.prepare("INSERT INTO invite_links (user_id, link, created_at) VALUES (?, ?, ?)").run(i, `l${i}`, NOW - age),
+    );
+    [GEOCODE_TTL + 1, GEOCODE_TTL, GEOCODE_TTL - 1].forEach((age, i) => {
+      sqlite.prepare("INSERT INTO invites (invited_id, inviter_id, status, created_at) VALUES (?, 1, 'approved', ?)").run(i, NOW - age);
+      sqlite.prepare("INSERT INTO invite_notices (chat_id, message_id, invited_id) VALUES (1, ?, ?)").run(i, i);
+    });
+    await cleanupExpired(db, NOW);
+    expect(rows(sqlite, "SELECT user_id FROM invite_links")).toEqual([2]);
+    expect(rows(sqlite, "SELECT invited_id FROM invites")).toEqual([2]);
+    expect(rows(sqlite, "SELECT invited_id FROM invite_notices")).toEqual([2]);
+  });
+
   it("does nothing on empty tables", async () => {
     const { db } = fakeD1();
     await expect(cleanupExpired(db, NOW)).resolves.toBeUndefined();
