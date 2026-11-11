@@ -1,6 +1,6 @@
 // StreetBuddy Worker entry point.
 import { cleanupExpired } from "./cleanup";
-import { runNightlyStats } from "./core";
+import { runNightlyStats, warmUpModel } from "./core";
 import { runFormCheck } from "./dailyCheck";
 import { LINK_EXPIRED_TEXT, isDirectoryLinkValid } from "./directoryLink";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
@@ -40,7 +40,8 @@ export default {
     } catch (error) {
       console.error("scheduled: cleanup failed", error);
     }
-    // The statistics run in the trigger of 3:00 UTC, the form check and the notice of inactive users in the one of 6:00 UTC.
+    // The statistics run in the trigger of 3:00 UTC; the form check, the notice of inactive users and the
+    // warm-up of the plate model in the one of 6:00 UTC.
     const utcHour = new Date(event.scheduledTime).getUTCHours();
     if (utcHour === 3) {
       try {
@@ -59,6 +60,11 @@ export default {
         await notifyInactiveUsers(env, event.scheduledTime);
       } catch (error) {
         console.error("scheduled: inactive users notice failed", error);
+      }
+      try {
+        await warmUpModel(env.AI);
+      } catch (error) {
+        console.error("scheduled: model warm-up failed", error);
       }
     }
   },

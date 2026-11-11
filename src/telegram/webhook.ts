@@ -5,6 +5,7 @@ import { handleAdminButton, handleAdminCommand, isAdminButton, isAdminCommand } 
 import { answerButton, callTelegram, sendMessage } from "./api";
 import { checksMembership, handleButton, handleMessage, isStartCommand } from "./dialog";
 import type { Message } from "./dialog";
+import { rememberedMember, updateMemberCache } from "./member";
 import { secretMatches } from "../secret";
 
 export type WebhookEnv = Pick<
@@ -77,7 +78,8 @@ async function groupAccess(env: WebhookEnv, userId: number): Promise<GroupAccess
 }
 
 // Runs after the response has gone out; a failure is logged with the update_id and the step.
-// Membership is checked for messages, the buttons of /admin and the buttons that lead to the link.
+// Membership is checked for messages, the buttons of /admin and the buttons that lead to the link;
+// a remembered member (see member.ts) is let in without asking Telegram, except for /admin and its buttons.
 async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionContext): Promise<void> {
   let step = "parse";
   try {
@@ -87,20 +89,35 @@ async function processUpdate(env: WebhookEnv, update: Update, ctx: ExecutionCont
     const data = update.callback_query?.data;
     const messageId = update.callback_query?.message?.message_id;
     const checked = !incoming.callbackQueryId || isAdminButton(data) || checksMembership(data);
+    // /admin and its buttons always ask Telegram.
+    const adminOnly = isAdminCommand(update.message?.text) || isAdminButton(data);
+    const now = Date.now();
 
-    // A repeat is recognized by the row already being there.
+    // A repeat is recognized by the row already being there. One batch: the row and the remembered member.
     step = "repeat filter and membership check";
-    const [stored, access] = await Promise.all([
-      env.DB.prepare("INSERT OR IGNORE INTO processed_updates (update_id, created_at) VALUES (?1, ?2)")
-        .bind(incoming.updateId, Date.now())
-        .run(),
-      checked ? groupAccess(env, incoming.userId) : null,
-    ]);
+    const statements = [
+      env.DB.prepare("INSERT OR IGNORE INTO processed_updates (update_id, created_at) VALUES (?1, ?2)").bind(
+        incoming.updateId,
+        now,
+      ),
+      ...(checked ? [rememberedMember(env.DB, incoming.userId, now)] : []),
+    ];
+    const [stored, found] = await env.DB.batch(statements);
     if (stored.meta.changes === 0) return;
-    if (checked && access === null) return; // No answer from Telegram: not let in, and nothing is said.
+    let access: GroupAccess | null = null;
+    if (checked) {
+      const remembered = (found?.results.length ?? 0) > 0;
+      if (remembered && !adminOnly) {
+        access = { member: true, admin: false };
+      } else {
+        access = await groupAccess(env, incoming.userId);
+        if (access === null) return; // No answer from Telegram: not let in, and nothing is said.
+        ctx.waitUntil(updateMemberCache(env.DB, incoming.userId, access, remembered, now));
+      }
+    }
 
     // /admin and its buttons: only administrators get an answer of any kind.
-    if (isAdminCommand(update.message?.text) || isAdminButton(data)) {
+    if (adminOnly) {
       step = "admin";
       if (!access?.admin) return;
       if (incoming.callbackQueryId) {

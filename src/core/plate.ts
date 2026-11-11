@@ -2,6 +2,10 @@
 
 const MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const CHUNK_BYTES = 0x8000;
+// How long one call of the model may take, how many calls one photo gets, and the longest reply.
+export const MODEL_TIMEOUT_MS = 12000;
+const MODEL_ATTEMPTS = 2;
+const MAX_REPLY_TOKENS = 200;
 
 export const PLATE_MAX_LENGTH = 15;
 
@@ -13,6 +17,21 @@ const PROMPT =
 interface ModelReply {
   choices?: { message?: { content?: unknown } }[];
   response?: unknown;
+}
+
+type RunModel = (model: string, inputs: unknown) => Promise<ModelReply>;
+
+const runner = (ai: Ai): RunModel => ai.run.bind(ai) as unknown as RunModel;
+
+// Rejects when the work takes longer than ms.
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Workers AI timed out")), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
 }
 
 // Converts in chunks.
@@ -49,10 +68,11 @@ export function parsePlates(reply: unknown): string[] {
   return [];
 }
 
-// Throws when the model fails, including when the daily Workers AI limit is used up.
+// Each call is limited to MODEL_TIMEOUT_MS; a failed or late call is made once more.
+// Throws the last failure, including when the daily Workers AI limit is used up.
 export async function recognizePlates(ai: Ai, image: Uint8Array): Promise<string[]> {
-  const run = ai.run.bind(ai) as unknown as (model: string, inputs: unknown) => Promise<ModelReply>;
-  const reply = await run(MODEL, {
+  const run = runner(ai);
+  const inputs = {
     messages: [
       {
         role: "user",
@@ -62,6 +82,24 @@ export async function recognizePlates(ai: Ai, image: Uint8Array): Promise<string
         ],
       },
     ],
-  });
-  return parsePlates(reply.choices?.[0]?.message?.content ?? reply.response);
+    max_completion_tokens: MAX_REPLY_TOKENS,
+  };
+  let failure: unknown;
+  for (let attempt = 0; attempt < MODEL_ATTEMPTS; attempt++) {
+    try {
+      const reply = await withTimeout(run(MODEL, inputs), MODEL_TIMEOUT_MS);
+      return parsePlates(reply.choices?.[0]?.message?.content ?? reply.response);
+    } catch (error) {
+      failure = error;
+    }
+  }
+  throw failure;
+}
+
+// A short call of the same model with text only. Throws when the model fails.
+export async function warmUpModel(ai: Ai): Promise<void> {
+  await withTimeout(
+    runner(ai)(MODEL, { messages: [{ role: "user", content: "Reply with []" }], max_completion_tokens: 1 }),
+    MODEL_TIMEOUT_MS,
+  );
 }

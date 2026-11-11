@@ -15,7 +15,6 @@ export {
   nextIncoming,
   renameAddress,
   renameIncoming,
-  incomingGroupStart,
   setIncomingKind,
   searchPattern,
   listDirectory,
@@ -30,7 +29,7 @@ export type { AddressKind, Decision, DuplicateGroup, IncomingScreen } from "./di
 export { exportDirectory, importDirectoryFile } from "./directoryFile";
 export { shapeFromGeometry, shapeMiddle } from "./shapes";
 export type { Defer } from "./geocode";
-export { PLATE_MAX_LENGTH, recognizePlates } from "./plate";
+export { PLATE_MAX_LENGTH, recognizePlates, warmUpModel } from "./plate";
 export {
   buildDescription,
   buildDescriptionLines,
@@ -44,7 +43,7 @@ export {
 export { checkForm } from "./formcheck";
 export { disableBot, enableBot, getSwitchStatus, isBotEnabled, recordFormCheck } from "./switch";
 export type { FormCheckOutcome } from "./switch";
-export { DAY_MS, REQUEST_TIMEOUT_MS, sleep } from "./shared";
+export { DAY_MS, REQUEST_TIMEOUT_MS, pageIn, sleep } from "./shared";
 export { countEvent, dublinDay, getHotspots, listPlates, logReport, readStatistics, runNightlyStats } from "./stats";
 export { getDirectoryItems, getReportPlaces, MAP_PERIODS } from "./maps";
 export type { MapPeriod } from "./maps";

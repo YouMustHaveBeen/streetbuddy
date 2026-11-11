@@ -27,11 +27,11 @@ import {
   listPlates,
   movePoint,
   nextIncoming,
+  pageIn,
   PARKING_OPTIONS,
   readStatistics,
   renameAddress,
   renameIncoming,
-  incomingGroupStart,
   setIncomingKind,
   searchPattern,
   setAddressKind,
@@ -44,7 +44,7 @@ import type { Count, Decision, DuplicateGroup, FormCheckOutcome, IncomingScreen,
 import type { Env } from "../env";
 import { directoryLink } from "../directoryLink";
 import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, OUT_OF_AREA } from "./address";
-import { answerButton, callTelegram, deleteMessage, downloadFile, sendDocument, sendMessage } from "./api";
+import { answerButton, callTelegram, deleteMessage, deleteSome, downloadFile, sendDocument, sendMessage } from "./api";
 import {
   createDraft,
   deleteAdminDraft,
@@ -60,6 +60,7 @@ import {
 import type { Draft, Step } from "./draft";
 import { deleteFeedback, nextFeedback } from "./feedback";
 import { groupMemberLabel } from "./notify";
+import { pageNote, pagingButtons } from "./paging";
 import { REPORT_MAP, REPORT_MAP_BUTTONS } from "./reportMap";
 import { stopReport } from "./stop";
 
@@ -235,12 +236,9 @@ async function sendPlates(
 ): Promise<number | null> {
   const entries = await listPlates(env.DB, list, Date.now());
   const { title, empty } = PLATE_LISTS[list];
-  const pages = Math.max(1, Math.ceil(entries.length / PLATES_PAGE_SIZE));
-  const page = Math.min(Math.max(requestedPage, 0), pages - 1);
+  const { page, pages } = pageIn(requestedPage, entries.length, PLATES_PAGE_SIZE);
   const buttons: Button[][] = [];
-  const paging: Button[] = [];
-  if (page > 0) paging.push({ text: "Previous", callback_data: `${PLATES}:${list}:${page - 1}` });
-  if (page < pages - 1) paging.push({ text: "Next", callback_data: `${PLATES}:${list}:${page + 1}` });
+  const paging = pagingButtons(page, pages, (other) => `${PLATES}:${list}:${other}`);
   if (paging.length > 0) buttons.push(paging);
   buttons.push([backButton()]);
   if (entries.length === 0) return remember(env, userId, send(env, chatId, empty, buttons));
@@ -250,8 +248,7 @@ async function sendPlates(
     const dates = first === last ? first : `${first} - ${last}`;
     return `${page * PLATES_PAGE_SIZE + i + 1}. ${entry.plate}, ${entry.reports} reports, ${dates}, ${entry.address}`;
   });
-  const heading = pages > 1 ? `${title} (page ${page + 1} of ${pages})` : title;
-  return remember(env, userId, send(env, chatId, `${heading}\n${lines.join("\n")}`, buttons));
+  return remember(env, userId, send(env, chatId, `${title}${pageNote(page, pages)}\n${lines.join("\n")}`, buttons));
 }
 
 // The feedback after the one with afterId, oldest first, with the name of its author and the time.
@@ -313,10 +310,17 @@ const describeIncoming = (form: string, address: { source: "walk" | "user" | "os
   return address.kind === "temp" ? `${form}, written by a user` : `${form} (${address.kind}), written by a user`;
 };
 
-// The next incoming screen after afterId. One address is shown with a pin on the map above it;
-// addresses with the same text, among themselves and in the directory, are shown together as a group.
-async function sendIncoming(env: AdminEnv, userId: number, chatId: number, afterId: number): Promise<number | null> {
-  const item = await nextIncoming(env.DB, afterId);
+// The next incoming screen after afterId, or the screen of the address groupOf (see nextIncoming). One
+// address is shown with a pin on the map above it; addresses with the same text, among themselves and
+// in the directory, are shown together as a group.
+async function sendIncoming(
+  env: AdminEnv,
+  userId: number,
+  chatId: number,
+  afterId: number,
+  groupOf: number | null = null,
+): Promise<number | null> {
+  const item = await nextIncoming(env.DB, afterId, groupOf);
   if (!item) return remember(env, userId, send(env, chatId, NO_INCOMING, [[backButton()]]));
   if (item.incoming.length + item.old.length > 1) return sendGroup(env, userId, chatId, item);
   const [address] = item.incoming;
@@ -426,7 +430,7 @@ async function sendGroup(env: AdminEnv, userId: number, chatId: number, item: In
     [{ text: "Approve all from OSM", callback_data: `${ALL_OSM}:${GROUP}` }],
   ]);
   if (sent === null) {
-    await Promise.all(pinIds.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
+    await deleteSome(env.TELEGRAM_BOT_TOKEN, chatId, pinIds);
     return null;
   }
   const shown: DuplicateGroupScreen = {
@@ -478,7 +482,7 @@ async function sendList(
   page: number,
 ): Promise<number | null> {
   const found = await listDirectory(env.DB, search === null ? null : searchPattern(search), page, DIRECTORY_PAGE_SIZE);
-  const pages = found.pages > 1 ? ` (page ${found.page + 1} of ${found.pages})` : "";
+  const pages = pageNote(found.page, found.pages);
   let text = `Directory${pages}\n${SEND_SEARCH_TEXT}`;
   if (search !== null) {
     text = found.total === 0 ? NO_ADDRESSES_FOUND : `Found ${found.total} ${found.total === 1 ? "address" : "addresses"}${pages}`;
@@ -486,9 +490,7 @@ async function sendList(
   const buttons: Button[][] = found.rows.map((address) => [
     { text: address.text, callback_data: `${ADDRESS}:${address.id}:${found.page}` },
   ]);
-  const paging: Button[] = [];
-  if (found.page > 0) paging.push({ text: "Previous", callback_data: `${LIST}:${found.page - 1}` });
-  if (found.page < found.pages - 1) paging.push({ text: "Next", callback_data: `${LIST}:${found.page + 1}` });
+  const paging = pagingButtons(found.page, found.pages, (other) => `${LIST}:${other}`);
   if (paging.length > 0) buttons.push(paging);
   buttons.push([backButton()]);
   const messageId = await send(env, chatId, text, buttons);
@@ -764,16 +766,16 @@ export async function handleAdminButton(
     [messageId] = await Promise.all([next, answered]);
   } catch (error) {
     // The group draft is already taken, so its pins are removed even when the next screen is not sent.
-    await Promise.all(groupPins.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
+    await deleteSome(env.TELEGRAM_BOT_TOKEN, chatId, groupPins);
     throw error;
   }
   if (messageId === null) {
     // The group draft is already taken, so its pins are removed even when the next screen is not sent.
-    await Promise.all(groupPins.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
+    await deleteSome(env.TELEGRAM_BOT_TOKEN, chatId, groupPins);
     return;
   }
   const old = [query.messageId, pinId, ...groupPins].filter((id): id is number => typeof id === "number" && Number.isFinite(id));
-  await Promise.all(old.map((id) => deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, id)));
+  await deleteSome(env.TELEGRAM_BOT_TOKEN, chatId, old);
 }
 
 // The answer to a loaded file: the counts, then the skipped objects, as many lines as fit in one message.
@@ -803,22 +805,14 @@ export async function handleAdminInput(
   const text = message.text;
   const finish = async () => {
     await deleteDraft(env.DB, userId, draft.draft_id);
-    await Promise.all([
-      deleteMessage(token, chatId, draft.buttons_message_id),
-      deleteMessage(token, chatId, message.message_id),
-    ]);
+    await deleteSome(token, chatId, [draft.buttons_message_id, message.message_id]);
   };
 
   // A draft step that no /admin screen asks for any more shows the directory screen.
   if (!["admin_group", "admin_search", "admin_text", "admin_intext", "admin_name", "admin_inname", "admin_move", "admin_import"].includes(draft.step)) {
     await deleteDraft(env.DB, userId, draft.draft_id);
     const shown = await sendList(env, userId, chatId, null, 0);
-    if (shown !== null) {
-      await Promise.all([
-        deleteMessage(token, chatId, draft.buttons_message_id),
-        deleteMessage(token, chatId, message.message_id),
-      ]);
-    }
+    if (shown !== null) await deleteSome(token, chatId, [draft.buttons_message_id, message.message_id]);
     return;
   }
   // Anything sent while a group of duplicates is on screen is removed: the buttons are the answer.
@@ -839,10 +833,7 @@ export async function handleAdminInput(
       shown = await sendList(env, userId, chatId, searched === "" ? null : searched, 0);
     }
     if (shown !== null) {
-      await Promise.all([
-        deleteMessage(token, chatId, draft.buttons_message_id),
-        message.photo ? Promise.resolve() : deleteMessage(token, chatId, message.message_id),
-      ]);
+      await deleteSome(token, chatId, [draft.buttons_message_id, ...(message.photo ? [] : [message.message_id])]);
     }
     return;
   }
@@ -851,10 +842,7 @@ export async function handleAdminInput(
     const messageId = await send(env, chatId, prompt, [[backButton()]]);
     if (messageId === null) return;
     const previous = await swapScreen(env.DB, userId, draft.draft_id, draft.step, messageId, prompt, {}, []);
-    await Promise.all([
-      deleteMessage(token, chatId, previous ?? messageId),
-      message.photo ? Promise.resolve() : deleteMessage(token, chatId, message.message_id),
-    ]);
+    await deleteSome(token, chatId, [previous ?? messageId, ...(message.photo ? [] : [message.message_id])]);
   };
   // The edited directory file: its new and changed addresses go to the incoming addresses, which are
   // shown at once; a wrong feature is skipped and listed, a file that is not GeoJSON is asked for again. The question is taken
@@ -879,7 +867,7 @@ export async function handleAdminInput(
       if (result.reason !== "gone") await askAgain(SEND_AS_DOCUMENT);
       return;
     }
-    await Promise.all([deleteMessage(token, chatId, draft.buttons_message_id), deleteMessage(token, chatId, message.message_id)]);
+    await deleteSome(token, chatId, [draft.buttons_message_id, message.message_id]);
     await send(env, chatId, loadedText(result.loaded, result.unchanged, result.skipped));
     await sendIncoming(env, userId, chatId, 0);
     return;
@@ -893,7 +881,7 @@ export async function handleAdminInput(
     const id = draft.address_id as number;
     await renameIncoming(env.DB, id, withoutPostalDistrict(trimmed, district));
     await finish();
-    await sendIncoming(env, userId, chatId, ((await incomingGroupStart(env.DB, id)) ?? id) - 1);
+    await sendIncoming(env, userId, chatId, 0, id);
     return;
   }
   if (draft.step === "admin_inname" && trimmed !== "" && trimmed.length <= NAME_MAX_LENGTH) {

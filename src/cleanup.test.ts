@@ -113,6 +113,16 @@ describe("cleanupExpired", () => {
     ]);
   });
 
+  it("removes members remembered at least an hour ago and keeps the rest", async () => {
+    const { db, sqlite } = fakeD1();
+    const HOUR = 60 * 60 * 1000;
+    [HOUR + 1, HOUR, HOUR - 1].forEach((age, i) =>
+      sqlite.prepare("INSERT INTO member_cache (user_id, checked_at) VALUES (?, ?)").run(i, NOW - age),
+    );
+    await cleanupExpired(db, NOW);
+    expect(rows(sqlite, "SELECT user_id FROM member_cache")).toEqual([2]);
+  });
+
   it("does nothing on empty tables", async () => {
     const { db } = fakeD1();
     await expect(cleanupExpired(db, NOW)).resolves.toBeUndefined();
@@ -151,6 +161,48 @@ describe("scheduled", () => {
     logLine(sqlite, OTHER_RUN.scheduledTime - 12 * 60 * 60 * 1000);
     await worker.scheduled(OTHER_RUN, { DB: db } as Env, {} as ExecutionContext);
     expect(rows(sqlite, "SELECT day FROM daily_stats")).toEqual([]);
+  });
+
+  it("warms up the plate model in the run of 6:00 UTC only", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("", { status: 500 })),
+    );
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const [run, calls] of [[OTHER_RUN, 1], [NIGHT_WINTER, 0], [SCHEDULED, 0]] as const) {
+        const { db } = fakeD1();
+        const ai = { run: vi.fn(async () => ({ response: "[]" })) };
+        await worker.scheduled(run, { DB: db, AI: ai as unknown as Ai } as Env, {} as ExecutionContext);
+        expect(ai.run).toHaveBeenCalledTimes(calls);
+      }
+    } finally {
+      log.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("logs a failed warm-up and does not throw", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("", { status: 500 })),
+    );
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { db } = fakeD1();
+      const ai = {
+        run: vi.fn(async () => {
+          throw new Error("limit");
+        }),
+      };
+      await expect(
+        worker.scheduled(OTHER_RUN, { DB: db, AI: ai as unknown as Ai } as Env, {} as ExecutionContext),
+      ).resolves.toBeUndefined();
+      expect(log).toHaveBeenCalledWith("scheduled: model warm-up failed", expect.any(Error));
+    } finally {
+      log.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 
   it("leaves the approved incoming addresses alone in every run, the night one included", async () => {

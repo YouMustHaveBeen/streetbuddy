@@ -695,6 +695,57 @@ describe("photos", () => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(JSON.parse(draft().plates)).toEqual(["12-D-3456"]);
   });
+  it("does not keep a result without plates: the same photo is read again", async () => {
+    run.mockImplementationOnce(async () => ({ response: "[]" }));
+    await toPhotos();
+    await photo("a");
+    expect(JSON.parse(draft().plates)).toEqual([]);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM plate_cache").get()).toEqual({ n: 0 });
+    await press("cancel");
+    await toPhotos();
+    await photo("a");
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(draft().plates)).toEqual(["12-D-3456"]);
+  });
+  it("says that the plate is still being read, with Cancel only, and then shows it", async () => {
+    await toPhotos();
+    let finishModel = (_: unknown) => {};
+    run.mockImplementationOnce(() => new Promise((resolve) => (finishModel = resolve)));
+    const pending = photo("a");
+    await vi.waitFor(() => expect(run).toHaveBeenCalled());
+    await vi.waitFor(() => expect(labels()).toEqual(["Create report", "Cancel"]));
+    const creating = handleButton(env, USER, USER, { id: "q", data: "create", messageId: buttonId() }, defer);
+    await vi.waitFor(() => expect(lastSent().text).toBe("Still reading the plate…"));
+    expect(labels()).toEqual(["Cancel"]);
+    expect(draft().step).toBe("recognizing");
+    finishModel({ response: '["12-D-3456"]' });
+    await pending;
+    await creating;
+    await settle();
+    expect(lastSent().text).toMatch(/^Plate: 12-D-3456\n/);
+  });
+  it("asks for the plate by hand when the recognition does not finish before the deadline", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout"] });
+    try {
+      await toPhotos();
+      run.mockImplementation(() => new Promise(() => {}));
+      void photo("a");
+      await vi.advanceTimersByTimeAsync(10);
+      expect(labels()).toEqual(["Create report", "Cancel"]);
+      const creating = handleButton(env, USER, USER, { id: "q", data: "create", messageId: buttonId() }, defer);
+      await vi.advanceTimersByTimeAsync(20000);
+      await creating;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(sentTexts()).toContain("Still reading the plate…");
+    expect(lastSent().text).toBe("Could not read the plate. Please write it");
+    expect(draft().step).toBe("plate_input");
+  });
+  it("does not say that the plate is still being read when it is already known", async () => {
+    await toPlateTime();
+    expect(sentTexts()).not.toContain("Still reading the plate…");
+  });
 });
 
 describe("plate and time", () => {
