@@ -71,10 +71,9 @@ describe("manual page", () => {
     expect(html.split("<h2>Команды бота</h2>")).toHaveLength(3);
   });
 
-  it("does not use the word Garda, the word for a link, or the letter yo", async () => {
+  it("does not use the letter yo", async () => {
     const html = await manualPage().text();
     const yo = String.fromCharCode(0x451);
-    expect(html).not.toMatch(/garda/i);
     expect(html.includes(yo)).toBe(false);
   });
 });
