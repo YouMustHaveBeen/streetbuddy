@@ -632,9 +632,9 @@ export async function handleAdminButton(
     next = sendInvites(env, userId, chatId, Number(first) || 0);
   } else if (name === JOIN) {
     // The message about the request is changed by the decision itself; no screen follows.
-    const invitedId = Number(second);
-    if ((first === "ok" || first === "no") && Number.isSafeInteger(invitedId)) {
-      await decideJoin(env, invitedId, first === "ok", { chatId, messageId: query.messageId, text: query.text });
+    const [invitedId, requestedAt] = [Number(second), Number(third)];
+    if ((first === "ok" || first === "no") && Number.isSafeInteger(invitedId) && Number.isSafeInteger(requestedAt)) {
+      await decideJoin(env, invitedId, requestedAt, first === "ok", { chatId, messageId: query.messageId, text: query.text });
     }
     await answered;
     return;

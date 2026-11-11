@@ -112,8 +112,8 @@ describe("handleJoinRequest", () => {
     const text = "Join request\nAnna Kowalski @anna wants to join the group\nInvited by Maria Smith @maria";
     const buttons = [
       [
-        { text: "Approve", callback_data: "admin_join:ok:50" },
-        { text: "Reject", callback_data: "admin_join:no:50" },
+        { text: "Approve", callback_data: `admin_join:ok:50:${NOW}` },
+        { text: "Reject", callback_data: `admin_join:no:50:${NOW}` },
       ],
     ];
     expect(called("sendMessage")).toEqual([
@@ -174,6 +174,52 @@ describe("handleJoinRequest", () => {
     expect(rows("SELECT status FROM invites")).toEqual([{ status: "pending" }]);
   });
 
+  it("takes the buttons off the messages about an earlier request of the same person", async () => {
+    givenLink();
+    await handleJoinRequest(env, 1, request());
+    calls = [];
+    vi.setSystemTime(NOW + 1000);
+    await handleJoinRequest(env, 2, request());
+    expect(called("editMessageReplyMarkup")).toEqual([
+      { chat_id: 1, message_id: 100, reply_markup: { inline_keyboard: [] } },
+      { chat_id: 2, message_id: 101, reply_markup: { inline_keyboard: [] } },
+    ]);
+    expect(rows("SELECT chat_id, message_id FROM invite_notices")).toEqual([
+      { chat_id: 1, message_id: 102 },
+      { chat_id: 2, message_id: 103 },
+    ]);
+    expect(rows("SELECT created_at FROM invites")).toEqual([{ created_at: NOW + 1000 }]);
+  });
+
+  it.each([[true], [false]])(
+    "finishes the messages that a decision made during the sending did not find (approve: %s)",
+    async (approve) => {
+      givenLink();
+      const normal = globalThis.fetch;
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => (release = resolve));
+      vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+        if (String(url).endsWith("/sendMessage") && JSON.parse(String(init.body)).chat_id === 2) await held;
+        return normal(url as string, init);
+      });
+      const running = handleJoinRequest(env, 1, request());
+      await vi.waitFor(() => expect(called("sendMessage")).toHaveLength(1));
+      const text = String(called("sendMessage")[0].text);
+      await decideJoin(env, 50, NOW, approve, { chatId: 1, messageId: 100, text });
+      release();
+      await running;
+      const outcome = approve ? "Approved" : "Rejected";
+      // The pressed message is changed by the decision and again with the rest; the repeat changes nothing.
+      const edits = called("editMessageText").map((body) => [body.chat_id, body.text]);
+      expect(edits).toEqual([
+        [1, `${text}\n${outcome}`],
+        [1, `${text}\n${outcome}`],
+        [2, `${text}\n${outcome}`],
+      ]);
+      expect(rows("SELECT * FROM invite_notices")).toEqual([]);
+    },
+  );
+
   it("is reached from the webhook by a chat_join_request update", async () => {
     givenLink();
     const response = await handleWebhook(
@@ -200,7 +246,7 @@ describe("decideJoin", () => {
 
   it("approves: stores the decision, approves in Telegram and changes the message of every administrator", async () => {
     pendingRequest();
-    await decideJoin(env, 50, true, { chatId: 1, messageId: 100, text: TEXT });
+    await decideJoin(env, 50, NOW, true, { chatId: 1, messageId: 100, text: TEXT });
     expect(rows("SELECT status FROM invites")).toEqual([{ status: "approved" }]);
     expect(called("approveChatJoinRequest")).toEqual([{ chat_id: GROUP, user_id: 50 }]);
     const edited = { text: `${TEXT}\nApproved`, reply_markup: { inline_keyboard: [] } };
@@ -213,7 +259,7 @@ describe("decideJoin", () => {
 
   it("rejects: keeps the record marked rejected and declines in Telegram", async () => {
     pendingRequest();
-    await decideJoin(env, 50, false, { chatId: 2, messageId: 101, text: TEXT });
+    await decideJoin(env, 50, NOW, false, { chatId: 2, messageId: 101, text: TEXT });
     expect(rows("SELECT status FROM invites")).toEqual([{ status: "rejected" }]);
     expect(called("declineChatJoinRequest")).toEqual([{ chat_id: GROUP, user_id: 50 }]);
     expect(called("editMessageText").map((body) => body.text)).toEqual([`${TEXT}\nRejected`, `${TEXT}\nRejected`]);
@@ -221,18 +267,25 @@ describe("decideJoin", () => {
 
   it("changes the message that was pressed even when its notice was not stored", async () => {
     sqlite.prepare("INSERT INTO invites (invited_id, inviter_id, status, created_at) VALUES (50, 7, 'pending', ?)").run(NOW);
-    await decideJoin(env, 50, true, { chatId: 1, messageId: 100, text: TEXT });
+    await decideJoin(env, 50, NOW, true, { chatId: 1, messageId: 100, text: TEXT });
     expect(called("editMessageText").map((body) => body.message_id)).toEqual([100]);
   });
 
   it("does nothing for a request that is already decided or unknown", async () => {
     pendingRequest();
-    await decideJoin(env, 50, true, { chatId: 1, messageId: 100, text: TEXT });
+    await decideJoin(env, 50, NOW, true, { chatId: 1, messageId: 100, text: TEXT });
     calls = [];
-    await decideJoin(env, 50, false, { chatId: 2, messageId: 101, text: TEXT });
-    await decideJoin(env, 77, true, { chatId: 1, messageId: 100, text: TEXT });
+    await decideJoin(env, 50, NOW, false, { chatId: 2, messageId: 101, text: TEXT });
+    await decideJoin(env, 77, NOW, true, { chatId: 1, messageId: 100, text: TEXT });
     expect(calls).toEqual([]);
     expect(rows("SELECT status FROM invites")).toEqual([{ status: "approved" }]);
+  });
+
+  it("does nothing when the button belongs to an earlier request of the same person", async () => {
+    pendingRequest();
+    await decideJoin(env, 50, NOW - 1, true, { chatId: 1, messageId: 100, text: TEXT });
+    expect(calls).toEqual([]);
+    expect(rows("SELECT status FROM invites")).toEqual([{ status: "pending" }]);
   });
 
   it("is reached by the admin button, which only administrators can use", async () => {
@@ -246,7 +299,7 @@ describe("decideJoin", () => {
             update_id: userId,
             callback_query: {
               id: "cb",
-              data: "admin_join:ok:50",
+              data: `admin_join:ok:50:${NOW}`,
               from: { id: userId },
               message: { message_id: 100, text: TEXT, chat: { id: userId, type: "private" } },
             },

@@ -35,7 +35,7 @@ export interface TelegramUser {
 
 export const fullName = (user: TelegramUser): string => [user.first_name, user.last_name].filter(Boolean).join(" ");
 
-// Shown where Telegram does not give the user; the Telegram ID follows it.
+// Shown where Telegram does not give the user; the caller adds the Telegram ID when it has one.
 export const UNKNOWN_USER = "unknown user";
 
 // The name and the @username, or the name and the Telegram ID when there is no @username.

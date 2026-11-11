@@ -183,7 +183,9 @@ describe("the commands of the menu", () => {
     expect((lastSent() as unknown as { parse_mode: string }).parse_mode).toBe("HTML");
     expect((lastSent() as unknown as { link_preview_options: unknown }).link_preview_options).toEqual({ is_disabled: true });
     await text("/help@streetbuddy_bot");
-    expect(lastSent().text).toContain("Setup guide");
+    expect(lastSent().text).toBe(
+      '<a href="https://site.example/setupguide">Setup guide</a>\n<a href="https://site.example/userguide">User guide</a>',
+    );
     expect((lastSent() as unknown as { parse_mode: string }).parse_mode).toBe("HTML");
     expect((lastSent() as unknown as { link_preview_options: unknown }).link_preview_options).toEqual({ is_disabled: true });
   });
