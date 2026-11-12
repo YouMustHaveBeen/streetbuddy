@@ -271,6 +271,17 @@ describe("decideJoin", () => {
     expect(called("editMessageText").map((body) => body.message_id)).toEqual([100]);
   });
 
+  it("only takes the buttons off when Telegram does not give the text of the pressed message", async () => {
+    pendingRequest();
+    await decideJoin(env, 50, NOW, true, { chatId: 1, messageId: 100 });
+    expect(called("approveChatJoinRequest")).toHaveLength(1);
+    expect(called("editMessageText")).toEqual([]);
+    expect(called("editMessageReplyMarkup").map((body) => [body.chat_id, body.message_id])).toEqual([
+      [1, 100],
+      [2, 101],
+    ]);
+  });
+
   it("does nothing for a request that is already decided or unknown", async () => {
     pendingRequest();
     await decideJoin(env, 50, NOW, true, { chatId: 1, messageId: 100, text: TEXT });

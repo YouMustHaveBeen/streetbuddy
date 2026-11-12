@@ -152,6 +152,7 @@ export async function handleJoinRequest(env: InviteEnv, updateId: number, reques
 
 // An administrator pressed Approve or Reject: the first decision on a pending request is stored and given to
 // Telegram, and the message about it changes for every administrator who was sent it, the one who pressed included.
+// When Telegram does not give the text of the pressed message, the messages only lose their buttons.
 // A button of a request that is already decided, or of an earlier request of the same person, does nothing.
 // QUERY BUDGET EXCEPTION: the decision, the removal of the notices.
 export async function decideJoin(
@@ -178,12 +179,12 @@ export async function decideJoin(
   if (pressed.messageId !== undefined) {
     targets.set(`${pressed.chatId}:${pressed.messageId}`, { chat_id: pressed.chatId, message_id: pressed.messageId });
   }
-  const edits =
+  // Telegram does not give the text of a message that is too old: then the messages only lose their buttons.
+  const edits = [...targets.values()].map((notice) =>
     pressed.text === undefined
-      ? []
-      : [...targets.values()].map((notice) =>
-          showOutcome(env, notice.chat_id, notice.message_id, pressed.text as string, approve),
-        );
+      ? removeButtons(env, notice.chat_id, notice.message_id)
+      : showOutcome(env, notice.chat_id, notice.message_id, pressed.text, approve),
+  );
   await Promise.all([decided, ...edits]);
 }
 
