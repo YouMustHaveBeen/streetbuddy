@@ -27,8 +27,37 @@ const MESSAGE_MAX_LENGTH = 4096;
 
 type InactiveEnv = Pick<Env, "DB" | "TELEGRAM_BOT_TOKEN" | "OWNER_TELEGRAM_ID" | "GROUP_ID">;
 
-interface GroupMember {
-  user: { first_name: string; last_name?: string; username?: string };
+export interface TelegramUser {
+  first_name: string;
+  last_name?: string;
+  username?: string;
+}
+
+export const fullName = (user: TelegramUser): string => [user.first_name, user.last_name].filter(Boolean).join(" ");
+
+// Shown where Telegram does not give the user; the caller adds the Telegram ID when it has one.
+export const UNKNOWN_USER = "unknown user";
+
+// The name and the @username, or the name and the Telegram ID when there is no @username.
+export const userTag = (user: TelegramUser, id: number): string =>
+  `${fullName(user)} ${user.username ? `@${user.username}` : id}`;
+
+// The tag of a member of the closed group as Telegram gives the user; "unknown user <ID>" when it does not.
+export async function memberTag(env: Pick<Env, "TELEGRAM_BOT_TOKEN" | "GROUP_ID">, userId: number): Promise<string> {
+  const user = await groupMemberUser(env, userId);
+  return user ? userTag(user, userId) : `${UNKNOWN_USER} ${userId}`;
+}
+
+// The user as Telegram gives it for a member of the closed group; null when Telegram does not give the user.
+export async function groupMemberUser(
+  env: Pick<Env, "TELEGRAM_BOT_TOKEN" | "GROUP_ID">,
+  userId: number,
+): Promise<TelegramUser | null> {
+  const member = await callTelegram<{ user: TelegramUser }>(env.TELEGRAM_BOT_TOKEN, "getChatMember", {
+    chat_id: env.GROUP_ID,
+    user_id: userId,
+  });
+  return member?.user ?? null;
 }
 
 // The name and the @username of a member of the closed group as Telegram gives them, or only the name
@@ -37,14 +66,10 @@ export async function groupMemberLabel(
   env: Pick<Env, "TELEGRAM_BOT_TOKEN" | "GROUP_ID">,
   userId: number,
 ): Promise<string | null> {
-  const member = await callTelegram<GroupMember>(env.TELEGRAM_BOT_TOKEN, "getChatMember", {
-    chat_id: env.GROUP_ID,
-    user_id: userId,
-  });
-  if (!member) return null;
-  const { first_name, last_name, username } = member.user;
-  const name = [first_name, last_name].filter(Boolean).join(" ");
-  return username ? `${name} (@${username})` : name;
+  const user = await groupMemberUser(env, userId);
+  if (!user) return null;
+  const name = fullName(user);
+  return user.username ? `${name} (@${user.username})` : name;
 }
 
 // Tells the owner who has just become inactive: the name and the @username in the closed group.

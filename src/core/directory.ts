@@ -34,6 +34,7 @@ interface IncomingAddress {
   name: string | null;
   kind: AddressKind | "temp";
   geometry: string;
+  user_id: number | null;
 }
 
 // What the incoming screen shows: the addresses without a decision that have the same text (the
@@ -128,7 +129,7 @@ export async function nextIncoming(
   groupOf: number | null = null,
 ): Promise<IncomingScreen | null> {
   const { results } = await db
-    .prepare("SELECT id, source, text, name, kind, geometry FROM incoming_addresses WHERE decision IS NULL ORDER BY id")
+    .prepare("SELECT id, source, text, name, kind, geometry, user_id FROM incoming_addresses WHERE decision IS NULL ORDER BY id")
     .all<IncomingAddress>();
   const groups = new Map<string, IncomingAddress[]>();
   for (const row of results) {

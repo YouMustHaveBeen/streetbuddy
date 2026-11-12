@@ -30,6 +30,7 @@ const FILE_ROW = [
   { text: "Import file", callback_data: "admin_import" },
 ];
 const REPORT_MAP_BUTTON = { text: "Report map", callback_data: "admin_reportmap" };
+const INVITES_ROW = [{ text: "Invites", callback_data: "admin_invites:0" }];
 const MAP_ROW = [REPORT_MAP_BUTTON, { text: "Directory map", url: expect.stringContaining("https://site.example/directory?exp=") }];
 let env: WebhookEnv;
 let rows: () => number;
@@ -243,7 +244,7 @@ describe("membership", () => {
     await send(textUpdate("/start@streetbuddy_bot"));
     expect(methods(mock)).toEqual(["getChatMember", "sendMessage"]);
   });
-  it.each([["/map"], ["/manual"], ["/hotspots"], ["/feedback"], ["/phone"], ["hello"]])(
+  it.each([["/map"], ["/help"], ["/hotspots"], ["/feedback"], ["/phone"], ["hello"]])(
     "says nothing to a non-member who writes %s",
     async (text) => {
       const mock = telegram(memberOf("left"));
@@ -363,7 +364,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW, INVITES_ROW] },
     });
   });
   it("gives the map button a link that is signed with the secret and points at the directory page", async () => {
@@ -382,7 +383,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: on\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, [REPORT_MAP_BUTTON]] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch off", callback_data: "admin_off" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, [REPORT_MAP_BUTTON], INVITES_ROW] },
     });
   });
   it("answers /admin written with the bot name", async () => {
@@ -400,7 +401,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: 03/11/2026 06:00 - form changed",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW, INVITES_ROW] },
     });
   });
   it.each([
@@ -470,7 +471,7 @@ describe("/admin", () => {
     expect(sqlite.prepare("SELECT step, buttons_message_id FROM drafts").all()).toEqual([
       { step: "screen", buttons_message_id: SCREEN_ID },
     ]);
-    await send(textMessage("/manual", 2));
+    await send(textMessage("/help", 2));
     expect(bodyOf(mock, "deleteMessage").message_id).toBe(SCREEN_ID);
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
     sqlite
@@ -502,7 +503,7 @@ describe("/admin", () => {
     expect(bodyOf(mock, "sendMessage")).toEqual({
       chat_id: 42,
       text: "Admin console\nBot: off\nLast form check: none yet",
-      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW] },
+      reply_markup: { inline_keyboard: [[{ text: "Switch on", callback_data: "admin_on" }], ADMIN_ROW, PLATES_ROW, ADDRESS_ROW, FILE_ROW, MAP_ROW, INVITES_ROW] },
     });
     expect(bodyOf(mock, "deleteMessage")).toEqual({ chat_id: 42, message_id: OLD_SCREEN_ID });
   });
@@ -808,6 +809,8 @@ describe("/admin: incoming addresses and the directory", () => {
   let nextId = 0;
   let sent: { method: string; body: any; id: number }[] = [];
   let status = "administrator";
+  // The user that getChatMember gives for each user ID; a missing ID gets no user.
+  let users: Record<number, object> = {};
   // While true, Telegram does not take sendMessage.
   let failSend = false;
   beforeEach(() => {
@@ -815,12 +818,16 @@ describe("/admin: incoming addresses and the directory", () => {
     nextId = 100;
     sent = [];
     status = "administrator";
+    users = {};
     failSend = false;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit) => {
         const method = String(url).split("/").pop() as string;
-        if (method === "getChatMember") return new Response(JSON.stringify(memberOf(status)));
+        if (method === "getChatMember") {
+          const user = users[JSON.parse(String(init.body)).user_id];
+          return new Response(JSON.stringify(user ? { ok: true, result: { status, user } } : memberOf(status)));
+        }
         if (failSend && method === "sendMessage") return new Response(JSON.stringify({ ok: false, error_code: 400 }));
         nextId += 1;
         sent.push({ method, body: JSON.parse(String(init.body)), id: nextId });
@@ -885,7 +892,7 @@ describe("/admin: incoming addresses and the directory", () => {
     await press("admin_incoming", 5);
     expect(of("sendLocation")[0].body).toEqual({ chat_id: 42, latitude: 53.405, longitude: -6.16 });
     const pin = pinId();
-    expect(last().text).toBe("Incoming address 1 of 2\n5 New Street\nPoint, written by a user");
+    expect(last().text).toBe("Incoming address 1 of 2\n5 New Street\nPoint, by unknown user 7");
     expect(keys()).toEqual([
       [`admin_kind:ok:${id}:${pin}`, `admin_in:no:${id}:${pin}`, `admin_in:next:${id}:${pin}`],
       [`admin_intext:${id}:${pin}`, `admin_inkind:${id}:${pin}`],
@@ -904,22 +911,31 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(labels()).toEqual(["house", "appt", "facility", "spot", "Back"]);
     await press(`admin_insetkind:spot:${id}:${pin}`, lastId());
     expect(sqlite.prepare("SELECT kind, decision FROM incoming_addresses WHERE id = ?").get(id)).toEqual({ kind: "spot", decision: null });
-    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint (spot), written by a user");
+    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint (spot), by unknown user 7");
   });
   it("shows the kind of an address of a user, and not the kind temp", async () => {
     const id = addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.16, 53.405] });
     await press("admin_incoming", 5);
-    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint, written by a user");
+    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint, by unknown user 7");
     sqlite.prepare("UPDATE incoming_addresses SET kind = 'facility' WHERE id = ?").run(id);
     await press("admin_incoming", 5);
-    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint (facility), written by a user");
+    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint (facility), by unknown user 7");
+  });
+  it("shows the author of an address of a user by name and @username, or by name and Telegram ID", async () => {
+    users = { 7: { first_name: "Anna", last_name: "Kowalski", username: "anna" } };
+    addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.16, 53.405] });
+    await press("admin_incoming", 5);
+    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint, by Anna Kowalski @anna");
+    users = { 7: { first_name: "Anna" } };
+    await press("admin_incoming", 5);
+    expect(last().text).toBe("Incoming address 1 of 1\n5 New Street\nPoint, by Anna 7");
   });
   it("shows the kind of an address of a user in a group of duplicates", async () => {
     addIncoming("5 New Street", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
     const id = addIncoming("5 New Street", "user", { type: "Point", coordinates: [-6.1601, 53.405] });
     sqlite.prepare("UPDATE incoming_addresses SET kind = 'appt' WHERE id = ?").run(id);
     await press("admin_incoming", 5);
-    expect(last().text).toContain("new2: Point (appt), written by a user");
+    expect(last().text).toContain("new2: Point (appt), by unknown user 7");
   });
   it("after the text is changed to that of an earlier address, shows the group of that text", async () => {
     addIncoming("A St", "walk", { type: "Point", coordinates: [-6.16, 53.405] });
@@ -1051,7 +1067,7 @@ describe("/admin: incoming addresses and the directory", () => {
       ["new2", "4 Parkside Avenue"],
     ]);
     expect(last().text).toBe(
-      "Incoming address 1 of 1\n4 Parkside Avenue\nSame address, 3 objects\nold: Point (house), in the directory\nnew1: Point (house), from OSM\nnew2: Point, written by a user",
+      "Incoming address 1 of 1\n4 Parkside Avenue\nSame address, 3 objects\nold: Point (house), in the directory\nnew1: Point (house), from OSM\nnew2: Point, by unknown user 7",
     );
     expect(labels()).toEqual(["Keep old", "Keep new1", "Keep new2", "Reject all", "Next", "Approve all from the walk", "Back", "Approve all from OSM"]);
     expect(keys()).toEqual([
@@ -1172,7 +1188,7 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(sqlite.prepare("SELECT step, buttons_message_id FROM drafts").all()).toEqual([
       { step: "admin_group", buttons_message_id: kindScreen },
     ]);
-    await message({ text: "/manual" });
+    await message({ text: "/help" });
     expect(deletedIds()).toEqual(expect.arrayContaining([kindScreen, ...pins]));
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM drafts").get()).toEqual({ n: 0 });
   });
@@ -1185,7 +1201,7 @@ describe("/admin: incoming addresses and the directory", () => {
     expect(sqlite.prepare("SELECT step, buttons_message_id, cleanup FROM drafts").all()).toEqual([
       { step: "screen", buttons_message_id: kindScreen, cleanup: JSON.stringify([pin]) },
     ]);
-    await message({ text: "/manual" });
+    await message({ text: "/help" });
     expect(deletedIds()).toEqual(expect.arrayContaining([kindScreen, pin]));
   });
   it("a screen remembered over a group draft that has expired keeps the group screen and its pins for a command", async () => {
@@ -1195,7 +1211,7 @@ describe("/admin: incoming addresses and the directory", () => {
     sqlite.prepare("UPDATE drafts SET created_at = ?").run(Date.now() - 25 * 60 * 60 * 1000);
     await press("admin_back", 8);
     expect(sqlite.prepare("SELECT step FROM drafts").all()).toEqual([{ step: "screen" }]);
-    await message({ text: "/manual" });
+    await message({ text: "/help" });
     expect(deletedIds()).toEqual(expect.arrayContaining([screen, ...pins]));
   });
   it("removes the pins of a group when the next screen could not be sent", async () => {

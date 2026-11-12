@@ -63,6 +63,7 @@ import {
   takeDraft,
 } from "./draft";
 import { saveFeedback } from "./feedback";
+import { INVITE_FAILED, INVITE_TEXT, inviteLink } from "./invite";
 import { countReport, PHONES, readPhone, savePhone } from "./phone";
 import type { Phone, UserPhone } from "./phone";
 import { pageNote, pagingButtons } from "./paging";
@@ -105,12 +106,12 @@ interface Context {
   defer: Defer;
 }
 
-// Sent as HTML: the words "manual" and "Installation guide" are links.
+// Sent as HTML: the words "Setup guide" and "User guide" are links.
 const startText = (siteUrl: string) => `StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
 ***
-First, read the <a href="${siteUrl}${MANUAL_PATH}">manual</a>.
-Second, set up your phone: <a href="${siteUrl}${INSTALL_PATH}">Installation guide</a>.
+First, read the setup guide: <a href="${siteUrl}${INSTALL_PATH}">Setup guide</a>.
+Second, read how to use the bot: <a href="${siteUrl}${MANUAL_PATH}">User guide</a>.
 Third, to start a report, send location to the bot.
 ***
 This bot is not affiliated with An Garda Síochána.
@@ -351,7 +352,7 @@ async function redraw(c: Context, draft: Draft, message: Message): Promise<void>
 }
 
 // The commands of the menu, and /start. Each of them stops a report in progress without a word.
-const COMMAND = /^\/(start|manual|setup|hotspots|map|feedback|phone|add_address)(@\S+)?(\s|$)/;
+const COMMAND = /^\/(start|help|hotspots|map|feedback|phone|add_address|invite)(@\S+)?(\s|$)/;
 
 export const isStartCommand = (text: string | undefined): boolean =>
   text !== undefined && COMMAND.exec(text)?.[1] === "start";
@@ -386,10 +387,9 @@ async function handleCommand(c: Context, command: string): Promise<void> {
   await stopReport(c.env, c.userId, c.chatId);
   if (command === "start") {
     await send(c, startText(c.env.SITE_URL), undefined, true);
-  } else if (command === "manual") {
-    await send(c, pageLink(c.env.SITE_URL, MANUAL_PATH, "User manual"), undefined, true);
-  } else if (command === "setup") {
-    await send(c, pageLink(c.env.SITE_URL, INSTALL_PATH, "Setup guide"), undefined, true);
+  } else if (command === "help") {
+    const links = [pageLink(c.env.SITE_URL, INSTALL_PATH, "Setup guide"), pageLink(c.env.SITE_URL, MANUAL_PATH, "User guide")];
+    await send(c, links.join("\n"), undefined, true);
   } else if (command === "hotspots") {
     const page = hotspotPage(await getHotspots(c.env.DB), 0);
     const shown = await send(c, page.text, page.buttons.length === 0 ? undefined : { inline_keyboard: [page.buttons] });
@@ -403,6 +403,9 @@ async function handleCommand(c: Context, command: string): Promise<void> {
     await show(c, null, YOUR_PHONE, { step: "phone_choice" });
   } else if (command === "add_address") {
     await show(c, null, ADD_SEND_LOCATION, { step: "add_location" });
+  } else if (command === "invite") {
+    const link = await inviteLink(c.env, c.userId);
+    await send(c, link === null ? INVITE_FAILED : INVITE_TEXT(link), undefined, true);
   } else {
     await show(c, null, WRITE_FEEDBACK, { step: "feedback_input" });
   }

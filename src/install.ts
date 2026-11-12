@@ -1,7 +1,7 @@
 // Installation guide page and the userscript file, both served by the Worker.
 import userscript from "../userscript/streetbuddy.user.js";
 
-export const INSTALL_PATH = "/install";
+export const INSTALL_PATH = "/setupguide";
 export const SCRIPT_PATH = "/streetbuddy.user.js";
 
 export function htmlResponse(page: string): Response {
@@ -280,7 +280,7 @@ const GUIDE_EN = `<h1>StreetBuddy<br>Installation guide</h1>
 <p>Tick the two boxes on the Traffic Watch Online Reporting page: about this not being an emergency and about attending court, tap “Click Here to Start” and check how the form fields were filled in.</p>
 <p class="warn">WARNING: you do not need to pass the captcha or press “Submit Report” for the test report, otherwise the test data will be sent to Garda.</p>
 <p>Go back to Telegram and tap “Cancel” under the description of the test report: the bot will delete this message together with the buttons.</p>
-<p>This completes the setup, now you can use the bot to send real reports. The instructions for using the bot are <a href="/manual">here</a>.</p>
+<p>This completes the setup, now you can use the bot to send real reports. The instructions for using the bot are <a href="/userguide">here</a>.</p>
 </section>`;
 
 const GUIDE_RU = `<h1>StreetBuddy<br>Руководство по установке</h1>
@@ -418,7 +418,7 @@ const GUIDE_RU = `<h1>StreetBuddy<br>Руководство по установ�
 <p>Поставьте две галочки на странице Traffic Watch Online Reporting: об отсутствии emergency и о явке в суд, нажмите «Click Here to Start» и проверьте, как заполнились поля формы.</p>
 <p class="warn">ВНИМАНИЕ: проходить капчу и нажимать «Submit Report» для тестового репорта не нужно, иначе тестовые данные уйдут в Гарду.</p>
 <p>Вернитесь в Telegram и под описанием тестового репорта нажмите «Cancel»: бот удалит это сообщение вместе с кнопками.</p>
-<p>На этом установка закончена, теперь вы можете пользоваться ботом для отправки реальных репортов. Инструкция по использованию бота находится <a href="/manual">здесь</a>.</p>
+<p>На этом установка закончена, теперь вы можете пользоваться ботом для отправки реальных репортов. Инструкция по использованию бота находится <a href="/userguide">здесь</a>.</p>
 </section>`;
 
 // Static page.
