@@ -37,12 +37,10 @@ function guideRu(os: Os): string {
   const android = os === "android";
   const browser = android ? "Chrome" : "Safari";
   return `<section data-os-section="${os}"${android ? "" : " hidden"}>
-<ul>
-<li><a href="#${id("1")}">1 Перед началом</a></li>
-<li><a href="#${id("2")}">2 Как подать репорт</a></li>
-<li><a href="#${id("3")}">3 Команды бота</a></li>
-<li><a href="#${id("4")}">4 Полезно знать</a></li>
-</ul>
+<p><a href="#${id("1")}">1 Перед началом</a><br>
+<a href="#${id("2")}">2 Как подать репорт</a><br>
+<a href="#${id("3")}">3 Команды бота</a><br>
+<a href="#${id("4")}">4 Полезно знать</a></p>
 
 <h2 id="${id("1")}">1 Перед началом</h2>
 <p>Чтобы использовать бот, вам нужно один раз настроить ваш телефон согласно <a href="${INSTALL_PATH}">руководству по установке</a>: добавить в браузер ${browser} на вашем телефоне закладку с вашими личными данными.<br>
@@ -140,12 +138,10 @@ function guideEn(os: Os): string {
   const android = os === "android";
   const browser = android ? "Chrome" : "Safari";
   return `<section data-os-section="${os}"${android ? "" : " hidden"}>
-<ul>
-<li><a href="#${id("1")}">1 Before you start</a></li>
-<li><a href="#${id("2")}">2 How to file a report</a></li>
-<li><a href="#${id("3")}">3 Bot commands</a></li>
-<li><a href="#${id("4")}">4 Good to know</a></li>
-</ul>
+<p><a href="#${id("1")}">1 Before you start</a><br>
+<a href="#${id("2")}">2 How to file a report</a><br>
+<a href="#${id("3")}">3 Bot commands</a><br>
+<a href="#${id("4")}">4 Good to know</a></p>
 
 <h2 id="${id("1")}">1 Before you start</h2>
 <p>To use the bot, you need to set up your phone once, following the <a href="${INSTALL_PATH}">setup guide</a>: add a bookmark with your personal data to the ${browser} browser on your phone.<br>
