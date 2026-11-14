@@ -37,17 +37,17 @@ function guideRu(os: Os): string {
   const android = os === "android";
   const browser = android ? "Chrome" : "Safari";
   return `<section data-os-section="${os}"${android ? "" : " hidden"}>
-<p><a href="#${id("1")}">1 Перед началом</a><br>
-<a href="#${id("2")}">2 Как подать репорт</a><br>
-<a href="#${id("3")}">3 Команды бота</a><br>
-<a href="#${id("4")}">4 Полезно знать</a></p>
+<p><a href="#${id("1")}">1. Перед началом</a><br>
+<a href="#${id("2")}">2. Как подать репорт</a><br>
+<a href="#${id("3")}">3. Команды бота</a><br>
+<a href="#${id("4")}">4. Полезно знать</a></p>
 
-<h2 id="${id("1")}">1 Перед началом</h2>
+<h2 id="${id("1")}">1. Перед началом</h2>
 <p>Чтобы использовать бот, вам нужно один раз настроить ваш телефон согласно <a href="${INSTALL_PATH}">руководству по установке</a>: добавить в браузер ${browser} на вашем телефоне закладку с вашими личными данными.<br>
 Бот не собирает и не хранит ваши личные данные, поэтому вам нужно заранее сохранить их на вашем телефоне, чтобы использовать в репорте.<br>
 Если вы еще не создали закладку, вернитесь к этому руководству после установки.</p>
 
-<h2 id="${id("2")}">2 Как подать репорт</h2>
+<h2 id="${id("2")}">2. Как подать репорт</h2>
 
 <h3>2.1. Укажите адрес</h3>
 <p>Откройте чат с ботом StreetBuddy в Telegram. Нажмите скрепку в строке ввода, затем «Location»; Telegram покажет карту с вашим текущим местоположением.</p>
@@ -110,7 +110,7 @@ ${
 Если не нажать ни одну из кнопок, ближайшая очистка после 48 часов уберет кнопки, оставив описание репорта.</p>
 <p>Присланные вами фотографии бот не удаляет, они остаются в чате с ботом на случай, если у вас их запросят.</p>
 
-<h2 id="${id("3")}">3 Команды бота</h2>
+<h2 id="${id("3")}">3. Команды бота</h2>
 <p>Команды открываются кнопкой «Menu» рядом со строкой ввода. Любая команда останавливает начатый репорт.</p>
 <ul>
 <li>/map: присылает «Area map» - карту адресов района. Ссылка на карту работает один час, потом отправьте /map снова.</li>
@@ -122,7 +122,7 @@ ${
 <li>/feedback: здесь вы можете написать админам о проблемах в работе бота или предложить новый функционал.</li>
 </ul>
 
-<h2 id="${id("4")}">4 Полезно знать</h2>
+<h2 id="${id("4")}">4. Полезно знать</h2>
 <ul>
 <li>Отсылка репорта может потребовать дачи показаний в суде.</li>
 <li>Бот не получает и не хранит ваши имя, фамилию, телефон, email и адрес: они хранятся только в закладке на вашем телефоне.</li>
@@ -138,17 +138,17 @@ function guideEn(os: Os): string {
   const android = os === "android";
   const browser = android ? "Chrome" : "Safari";
   return `<section data-os-section="${os}"${android ? "" : " hidden"}>
-<p><a href="#${id("1")}">1 Before you start</a><br>
-<a href="#${id("2")}">2 How to file a report</a><br>
-<a href="#${id("3")}">3 Bot commands</a><br>
-<a href="#${id("4")}">4 Good to know</a></p>
+<p><a href="#${id("1")}">1. Before you start</a><br>
+<a href="#${id("2")}">2. How to file a report</a><br>
+<a href="#${id("3")}">3. Bot commands</a><br>
+<a href="#${id("4")}">4. Good to know</a></p>
 
-<h2 id="${id("1")}">1 Before you start</h2>
+<h2 id="${id("1")}">1. Before you start</h2>
 <p>To use the bot, you need to set up your phone once, following the <a href="${INSTALL_PATH}">setup guide</a>: add a bookmark with your personal data to the ${browser} browser on your phone.<br>
 The bot does not collect or store your personal data, so you need to save it on your phone beforehand to use it in a report.<br>
 If you have not created the bookmark yet, come back to this guide after the setup.</p>
 
-<h2 id="${id("2")}">2 How to file a report</h2>
+<h2 id="${id("2")}">2. How to file a report</h2>
 
 <h3>2.1. Give the address</h3>
 <p>Open the chat with the StreetBuddy bot in Telegram. Tap the paperclip in the input bar, then «Location»; Telegram will show a map with your current location.</p>
@@ -211,7 +211,7 @@ If you decided not to send the report, tap «Cancel»: the bot will delete the r
 If you tap neither button, the next cleanup after 48 hours will remove the buttons and leave the report description.</p>
 <p>The bot does not delete the photos you sent; they stay in the chat with the bot in case you are asked for them.</p>
 
-<h2 id="${id("3")}">3 Bot commands</h2>
+<h2 id="${id("3")}">3. Bot commands</h2>
 <p>The commands open with the «Menu» button next to the input bar. Any command stops a report you have started.</p>
 <ul>
 <li>/map: sends «Area map», a map of the addresses of the area. The link to the map works for one hour, then send /map again.</li>
@@ -223,7 +223,7 @@ If you tap neither button, the next cleanup after 48 hours will remove the butto
 <li>/feedback: here you can write to the admins about problems in the bot's work or suggest a new feature.</li>
 </ul>
 
-<h2 id="${id("4")}">4 Good to know</h2>
+<h2 id="${id("4")}">4. Good to know</h2>
 <ul>
 <li>Sending a report may require you to give a statement in court.</li>
 <li>The bot does not receive or store your name, surname, phone, email and address: they are stored only in the bookmark on your phone.</li>

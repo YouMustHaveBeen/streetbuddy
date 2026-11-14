@@ -57,8 +57,8 @@ describe("manual page", () => {
     for (const text of ["/map", "/add_address", "/hotspots", "/invite", "/phone", "/help", "/feedback", AREA_MAP]) {
       expect(html).toContain(text);
     }
-    expect(html.split("3 Команды бота</h2>")).toHaveLength(3);
-    expect(html.split("3 Bot commands</h2>")).toHaveLength(3);
+    expect(html.split("3. Команды бота</h2>")).toHaveLength(3);
+    expect(html.split("3. Bot commands</h2>")).toHaveLength(3);
   });
 
   it("does not use the letter yo", async () => {
