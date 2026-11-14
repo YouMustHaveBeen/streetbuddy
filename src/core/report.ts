@@ -22,7 +22,6 @@ export const ROAD_USER_TYPES = [
   "Driver",
   "Cyclist",
   "Motorcyclist",
-  "E-Scooter User, E-Moped User, E-Cyclist",
 ] as const;
 
 type RoadUserType = (typeof ROAD_USER_TYPES)[number];
@@ -96,8 +95,7 @@ export function buildDescriptionLines(report: ReportText): string {
 
 // The "Were you a" answer for the messages of the bot; the form keeps its own wording.
 export function buildRoadUserLine(roadUser: RoadUserType): string {
-  const [main, ...others] = roadUser.toLowerCase().split(", ");
-  return `I was a ${others.length > 0 ? `${main} (${others.join(", ")})` : main}.`;
+  return `I was a ${roadUser.toLowerCase()}.`;
 }
 
 export function buildLocation(address: string, lat: number, lon: number): string {

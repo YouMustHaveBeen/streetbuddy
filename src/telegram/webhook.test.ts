@@ -748,7 +748,6 @@ describe("which buttons check membership", () => {
       "plate_add",
       "plate_ok",
       "plate_edit",
-      "time_edit",
       "final_cancel",
       "final_done",
       "phone:android",

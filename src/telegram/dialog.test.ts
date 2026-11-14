@@ -726,7 +726,7 @@ describe("photos", () => {
     await pending;
     await creating;
     await settle();
-    expect(lastSent().text).toMatch(/^Plate: 12-D-3456\n/);
+    expect(lastSent().text).toBe("Plate: 12-D-3456");
   });
   it("asks for the plate by hand when the recognition does not finish before the deadline", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout"] });
@@ -752,11 +752,11 @@ describe("photos", () => {
   });
 });
 
-describe("plate and time", () => {
+describe("plate", () => {
   it("shows one screen for a single plate", async () => {
     await toPlateTime();
-    expect(lastSent().text).toMatch(/^Plate: 12-D-3456\nTime: \d\d\/\d\d\/\d{4} \d\d:\d\d$/);
-    expect(labels()).toEqual(["Confirm", "Edit plate", "Change time", "Cancel"]);
+    expect(lastSent().text).toBe("Plate: 12-D-3456");
+    expect(labels()).toEqual(["Confirm", "Edit", "Cancel"]);
   });
   it("offers several plates and Add", async () => {
     run.mockImplementation(async () => ({ response: '["12-D-1", "13-D-2"]' }));
@@ -800,20 +800,6 @@ describe("plate and time", () => {
     expect(lastSent().text).toBe("Write the plate number");
     expect(draft().step).toBe("plate_input");
   });
-  it("changes only the time and rejects a wrong or future one", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1793000000000 + 3600000);
-    const original = draftTime(1793000000000);
-    await toPlateTime();
-    await press("time_edit");
-    expect(lastSent().text).toBe(`${original}\n\nWrite the time as hh:mm`);
-    await text("25:00");
-    expect(lastSent().text).toBe("Wrong time. Please write it again");
-    await text("23:59");
-    expect(lastSent().text).toBe("Wrong time. Please write it again");
-    await text(original);
-    expect(draft().time).toBe(original);
-    expect(lastSent().text).toContain(original);
-  });
 });
 
 function draftTime(ms: number): string {
@@ -856,12 +842,11 @@ describe("parking and the final message", () => {
     expect(draft().step).toBe("road_user");
     expect(lastSent().text).toBe("Were you a:");
     expect(labels()).toEqual([
-      "Pedestrian",
-      "Passenger",
-      "Driver",
-      "Cyclist",
-      "Motorcyclist",
-      "E-Scooter User, E-Moped User, E-Cyclist",
+      "pedestrian",
+      "passenger",
+      "driver",
+      "cyclist",
+      "motorcyclist",
       "Cancel",
     ]);
     expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
@@ -1041,7 +1026,7 @@ describe("final message buttons", () => {
     await press("opt:0");
     await press("done");
     const data = lastSent().reply_markup.inline_keyboard.flat().map((b: { callback_data: string }) => b.callback_data);
-    expect(data).toHaveLength(7);
+    expect(data).toHaveLength(6);
     for (const value of data) expect(Buffer.byteLength(value)).toBeLessThanOrEqual(64);
   });
 
@@ -1326,6 +1311,22 @@ describe("review, Edit and the phone", () => {
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM report_log").get()).toEqual({ n: 0 });
   });
 
+  it("changes only the time on the Edit screen and rejects a wrong or future one", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1793000000000 + 3600000);
+    const original = draftTime(1793000000000);
+    await toReview();
+    await press("review_edit");
+    await press("edit_time");
+    expect(lastSent().text).toBe(`${original}\n\nWrite the time as hh:mm`);
+    await text("25:00");
+    expect(lastSent().text).toBe("Wrong time. Please write it again");
+    await text("23:59");
+    expect(lastSent().text).toBe("Wrong time. Please write it again");
+    await text(original);
+    expect(draft().time).toBe(original);
+    expect(draft().step).toBe("edit");
+  });
+
   it("shows the Edit screen, and Save goes back to the review", async () => {
     await toReview();
     await press("review_edit");
@@ -1383,21 +1384,21 @@ describe("review, Edit and the phone", () => {
     expect(lastSent().text).toContain("parked on a cycle track\nand on a footpath");
 
     await press("edit_road_user");
-    await press("road:E-Scooter User, E-Moped User, E-Cyclist");
+    await press("road:Cyclist");
     expect(draft().step).toBe("edit");
-    expect(lastSent().text).toContain("I was a e-scooter user (e-moped user, e-cyclist).");
+    expect(lastSent().text).toContain("I was a cyclist.");
   });
 
   it("sends the form wording of Were you a in the link", async () => {
     await toReview();
     await press("review_edit");
     await press("edit_road_user");
-    await press("road:E-Scooter User, E-Moped User, E-Cyclist");
+    await press("road:Cyclist");
     await press("edit_save");
     await press("review_ok");
     const url = lastSent().reply_markup.inline_keyboard[0][0].url as string;
     const data = JSON.parse(new TextDecoder().decode(Buffer.from(url.split("#sb=")[1], "base64url")));
-    expect(data.r).toBe("E-Scooter User, E-Moped User, E-Cyclist");
+    expect(data.r).toBe("Cyclist");
     expect(data.d).not.toContain("I was a");
   });
 
@@ -1479,7 +1480,7 @@ describe("review, Edit and the phone", () => {
     await toPhotos();
     await text("12-d-3456");
     expect(draft().step).toBe("plate_time");
-    expect(lastSent().text).toBe("Plate: 12-D-3456\nTime: 26/10/2026 07:33");
+    expect(lastSent().text).toBe("Plate: 12-D-3456");
     await press("plate_ok");
     await press("opt:1");
     await press("done");

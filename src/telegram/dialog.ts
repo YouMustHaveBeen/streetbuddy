@@ -233,10 +233,7 @@ function buttonsFor(
     case "plate_time":
       return [
         [{ text: "Confirm", callback_data: "plate_ok" }],
-        [
-          { text: "Edit plate", callback_data: "plate_edit" },
-          { text: "Change time", callback_data: "time_edit" },
-        ],
+        [{ text: "Edit", callback_data: "plate_edit" }],
         [CANCEL],
       ];
     case "parking":
@@ -250,7 +247,7 @@ function buttonsFor(
         [{ text: "Done", callback_data: "done" }, CANCEL],
       ];
     case "road_user":
-      return [...ROAD_USER_TYPES.map((type) => [{ text: type, callback_data: `${ROAD_USER_PREFIX}${type}` }]), [CANCEL]];
+      return [...ROAD_USER_TYPES.map((type) => [{ text: type.toLowerCase(), callback_data: `${ROAD_USER_PREFIX}${type}` }]), [CANCEL]];
     case "review":
       return [
         [{ text: "Yes, it’s correct", callback_data: REVIEW_OK }],
@@ -613,10 +610,8 @@ async function showPlateTime(
   changes: DraftChanges,
   cleanupIds: number[] = [],
 ): Promise<boolean> {
-  const next = { ...draft, plate: changes.plate ?? draft.plate, time: changes.time ?? draft.time };
-  const moment = reportMoment(next);
-  const text = `Plate: ${next.plate}\nTime: ${moment.date} ${moment.time}`;
-  return show(c, draft, text, { ...changes, step: "plate_time" }, cleanupIds);
+  const next = { ...draft, plate: changes.plate ?? draft.plate };
+  return show(c, draft, `Plate: ${next.plate}`, { ...changes, step: "plate_time" }, cleanupIds);
 }
 
 async function handlePlateInput(
@@ -669,11 +664,7 @@ async function handleTimeInput(
     await show(c, draft, WRONG_TIME, {}, cleanupIds);
     return;
   }
-  if (draft.editing) {
-    await showReport(c, draft, "edit", { time }, cleanupIds);
-    return;
-  }
-  await showPlateTime(c, draft, { time }, cleanupIds);
+  await showReport(c, draft, "edit", { time }, cleanupIds);
 }
 
 // The steps of /add_address: the location, the address as text, the kind. A location out of the area
@@ -1054,8 +1045,6 @@ export async function handleButton(
     await show(c, draft, CHOOSE_PARKING, { step: "parking" });
   } else if (action === "plate_edit" && step === "plate_time") {
     await show(c, draft, `${draft.plate}\n\n${WRITE_PLATE}`, { step: "plate_input" });
-  } else if (action === "time_edit" && step === "plate_time") {
-    await show(c, draft, `${reportMoment(draft).time}\n\n${WRITE_TIME}`, { step: "time_input" });
   } else if (action === "opt" && step === "parking") {
     const parking = await toggleParking(env.DB, userId, draft.draft_id, 1 << Number(argument));
     if (parking !== null) {
