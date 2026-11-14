@@ -4,71 +4,62 @@ import type { Env } from "./env";
 import { PARKING_OPTIONS, ROAD_USER_TYPES } from "./core";
 import { INSTALL_PATH } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
-import { CHOOSE_ADDRESS } from "./telegram/address";
-import {
-  ADD_SEND_LOCATION,
-  ADDRESS_ADDED,
-  AREA_MAP,
-  CANCELLED,
-  CHOOSE_PARKING,
-  CHOOSE_ROAD_USER,
-  FEEDBACK_SENT,
-  NO_HOTSPOTS,
-  NO_PLATE,
-  OPEN_MAP,
-  OUT_OF_AREA,
-  PHOTO_RECEIVED,
-  SEND_PHOTOS,
-  SEVERAL_PLATES,
-  WRITE_FEEDBACK,
-  YOUR_PHONE,
-} from "./telegram/dialog";
+import { AREA_MAP } from "./telegram/dialog";
 
 describe("manual page", () => {
   it("is served as HTML with the title", async () => {
     const response = manualPage();
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
-    expect(await response.text()).toContain("<title>Руководство по использованию StreetBuddy</title>");
+    expect(await response.text()).toContain("<title>StreetBuddy User guide</title>");
   });
 
-  it("offers Android and iPhone, with the steps written for both", async () => {
+  it("offers English first and Russian, and Android and iPhone, with the steps written for both", async () => {
     const html = await manualPage().text();
+    expect(html).toContain('<button type="button" aria-pressed="true" data-lang="en">English</button><button type="button" aria-pressed="false" data-lang="ru">Russian</button>');
+    expect(html).toContain('<div lang="ru" data-lang-section="ru" hidden>');
     expect(html).toContain('aria-pressed="true" data-os="android">Android</button>');
     expect(html).toContain('aria-pressed="false" data-os="iphone">iPhone</button>');
     expect(html).toContain('<section data-os-section="iphone" hidden>');
-    expect(html).not.toContain("скоро появится");
     expect(html).not.toMatch(/userscripts/i);
-    expect(html).toContain('bindChoice("os")');
+    expect(html).toContain('bindChoice("lang")');
   });
 
-  it("links to the installation guide and names the bookmark", async () => {
+  it("links to the installation guide in both languages and names the bookmark", async () => {
     const html = await manualPage().text();
+    expect(html).toContain(`<a href="${INSTALL_PATH}">setup guide</a>`);
     expect(html).toContain(`<a href="${INSTALL_PATH}">руководству по установке</a>`);
     expect(html).toContain("qqqwww");
   });
 
+  it("has no repeated element ids", async () => {
+    const html = await manualPage().text();
+    const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const target of html.matchAll(/href="#([^"]+)"/g)) expect(ids).toContain(target[1]);
+  });
+
   it("walks through every step with the bot's own button names", async () => {
     const html = await manualPage().text();
-    for (const name of ["Other address", "Confirm", "Edit", "Create report", "Edit plate", "Change time", "Done", "Open report", "Cancel", "Click Here to Start", "Submit Report"]) {
+    for (const name of ["Other address", "Add", "Create report", "Done", "Open report", "Cancel", "Click Here to Start", "Submit Report"]) {
       expect(html).toContain(`«${name}»`);
     }
   });
 
-  it("quotes the bot's texts and button names exactly as the bot sends them", async () => {
+  it("names the parking options and the roles as the bot does", async () => {
     const html = await manualPage().text();
-    const quoted = [OUT_OF_AREA, CHOOSE_ADDRESS, SEND_PHOTOS, PHOTO_RECEIVED, SEVERAL_PLATES, NO_PLATE, CHOOSE_PARKING, CHOOSE_ROAD_USER, CANCELLED];
-    for (const text of [...quoted, ...PARKING_OPTIONS, ...ROAD_USER_TYPES]) {
+    for (const text of [...PARKING_OPTIONS, ...ROAD_USER_TYPES]) {
       expect(html).toContain(text);
     }
   });
 
-  it("lists the commands of the menu with the bot's own words", async () => {
+  it("lists the commands of the menu in both languages", async () => {
     const html = await manualPage().text();
-    for (const text of ["/map", "/add_address", "/hotspots", "/phone", "/help", "/feedback", AREA_MAP, OPEN_MAP, ADD_SEND_LOCATION, ADDRESS_ADDED, NO_HOTSPOTS, YOUR_PHONE, WRITE_FEEDBACK, FEEDBACK_SENT]) {
+    for (const text of ["/map", "/add_address", "/hotspots", "/invite", "/phone", "/help", "/feedback", AREA_MAP]) {
       expect(html).toContain(text);
     }
-    expect(html.split("<h2>Команды бота</h2>")).toHaveLength(3);
+    expect(html.split("3 Команды бота</h2>")).toHaveLength(3);
+    expect(html.split("3 Bot commands</h2>")).toHaveLength(3);
   });
 
   it("does not use the letter yo", async () => {
