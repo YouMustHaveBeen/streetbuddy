@@ -726,7 +726,7 @@ describe("photos", () => {
     await pending;
     await creating;
     await settle();
-    expect(lastSent().text).toMatch(/^Plate: 12-D-3456\n/);
+    expect(lastSent().text).toBe("Plate: 12-D-3456");
   });
   it("asks for the plate by hand when the recognition does not finish before the deadline", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout"] });
@@ -752,11 +752,11 @@ describe("photos", () => {
   });
 });
 
-describe("plate and time", () => {
+describe("plate", () => {
   it("shows one screen for a single plate", async () => {
     await toPlateTime();
-    expect(lastSent().text).toMatch(/^Plate: 12-D-3456\nTime: \d\d\/\d\d\/\d{4} \d\d:\d\d$/);
-    expect(labels()).toEqual(["Confirm", "Edit plate", "Change time", "Cancel"]);
+    expect(lastSent().text).toBe("Plate: 12-D-3456");
+    expect(labels()).toEqual(["Confirm", "Edit", "Cancel"]);
   });
   it("offers several plates and Add", async () => {
     run.mockImplementation(async () => ({ response: '["12-D-1", "13-D-2"]' }));
@@ -799,20 +799,6 @@ describe("plate and time", () => {
     await text("\u00a0");
     expect(lastSent().text).toBe("Write the plate number");
     expect(draft().step).toBe("plate_input");
-  });
-  it("changes only the time and rejects a wrong or future one", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1793000000000 + 3600000);
-    const original = draftTime(1793000000000);
-    await toPlateTime();
-    await press("time_edit");
-    expect(lastSent().text).toBe(`${original}\n\nWrite the time as hh:mm`);
-    await text("25:00");
-    expect(lastSent().text).toBe("Wrong time. Please write it again");
-    await text("23:59");
-    expect(lastSent().text).toBe("Wrong time. Please write it again");
-    await text(original);
-    expect(draft().time).toBe(original);
-    expect(lastSent().text).toContain(original);
   });
 });
 
@@ -1326,6 +1312,22 @@ describe("review, Edit and the phone", () => {
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM report_log").get()).toEqual({ n: 0 });
   });
 
+  it("changes only the time on the Edit screen and rejects a wrong or future one", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1793000000000 + 3600000);
+    const original = draftTime(1793000000000);
+    await toReview();
+    await press("review_edit");
+    await press("edit_time");
+    expect(lastSent().text).toBe(`${original}\n\nWrite the time as hh:mm`);
+    await text("25:00");
+    expect(lastSent().text).toBe("Wrong time. Please write it again");
+    await text("23:59");
+    expect(lastSent().text).toBe("Wrong time. Please write it again");
+    await text(original);
+    expect(draft().time).toBe(original);
+    expect(draft().step).toBe("edit");
+  });
+
   it("shows the Edit screen, and Save goes back to the review", async () => {
     await toReview();
     await press("review_edit");
@@ -1479,7 +1481,7 @@ describe("review, Edit and the phone", () => {
     await toPhotos();
     await text("12-d-3456");
     expect(draft().step).toBe("plate_time");
-    expect(lastSent().text).toBe("Plate: 12-D-3456\nTime: 26/10/2026 07:33");
+    expect(lastSent().text).toBe("Plate: 12-D-3456");
     await press("plate_ok");
     await press("opt:1");
     await press("done");
