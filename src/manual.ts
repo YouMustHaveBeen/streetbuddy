@@ -78,12 +78,12 @@ ${PARKING_LIST}
 <h3 id="${id("2.4")}">2.4. Укажите вашу роль</h3>
 <p>Последнее поле для заполнения - ваша роль:</p>
 <ul>
-<li>Pedestrian;</li>
-<li>Passenger;</li>
-<li>Driver;</li>
-<li>Cyclist;</li>
-<li>Motorcyclist;</li>
-<li>E-Scooter User, E-Moped User, E-Cyclist.</li>
+<li>pedestrian;</li>
+<li>passenger;</li>
+<li>driver;</li>
+<li>cyclist;</li>
+<li>motorcyclist;</li>
+<li>e-scooter user, e-moped user, e-cyclist.</li>
 </ul>
 
 <h3 id="${id("2.5")}">2.5. Проверьте данные</h3>
@@ -185,12 +185,12 @@ ${PARKING_LIST}
 <h3 id="${id("2.4")}">2.4. Give your role</h3>
 <p>The last field to fill in is your role:</p>
 <ul>
-<li>Pedestrian;</li>
-<li>Passenger;</li>
-<li>Driver;</li>
-<li>Cyclist;</li>
-<li>Motorcyclist;</li>
-<li>E-Scooter User, E-Moped User, E-Cyclist.</li>
+<li>pedestrian;</li>
+<li>passenger;</li>
+<li>driver;</li>
+<li>cyclist;</li>
+<li>motorcyclist;</li>
+<li>e-scooter user, e-moped user, e-cyclist.</li>
 </ul>
 
 <h3 id="${id("2.5")}">2.5. Check the data</h3>

@@ -46,11 +46,10 @@ describe("manual page", () => {
     }
   });
 
-  it("names the parking options and the roles as the bot does", async () => {
+  it("names the parking options as the bot does and the roles in lower case", async () => {
     const html = await manualPage().text();
-    for (const text of [...PARKING_OPTIONS, ...ROAD_USER_TYPES]) {
-      expect(html).toContain(text);
-    }
+    for (const text of PARKING_OPTIONS) expect(html).toContain(text);
+    for (const text of ROAD_USER_TYPES) expect(html).toContain(text.toLowerCase());
   });
 
   it("lists the commands of the menu in both languages", async () => {
