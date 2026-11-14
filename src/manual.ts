@@ -37,30 +37,27 @@ function guideRu(os: Os): string {
   const android = os === "android";
   const browser = android ? "Chrome" : "Safari";
   return `<section data-os-section="${os}"${android ? "" : " hidden"}>
+<ul>
+<li><a href="#${id("1")}">1 Перед началом</a></li>
+<li><a href="#${id("2")}">2 Как подать репорт</a></li>
+<li><a href="#${id("3")}">3 Команды бота</a></li>
+<li><a href="#${id("4")}">4 Полезно знать</a></li>
+</ul>
+
 <h2 id="${id("1")}">1 Перед началом</h2>
 <p>Чтобы использовать бот, вам нужно один раз настроить ваш телефон согласно <a href="${INSTALL_PATH}">руководству по установке</a>: добавить в браузер ${browser} на вашем телефоне закладку с вашими личными данными.<br>
 Бот не собирает и не хранит ваши личные данные, поэтому вам нужно заранее сохранить их на вашем телефоне, чтобы использовать в репорте.<br>
 Если вы еще не создали закладку, вернитесь к этому руководству после установки.</p>
 
 <h2 id="${id("2")}">2 Как подать репорт</h2>
-<ul>
-<li><a href="#${id("2.1")}">2.1. Укажите адрес</a></li>
-<li><a href="#${id("2.2")}">2.2. Укажите номер</a></li>
-<li><a href="#${id("2.3")}">2.3. Укажите тип нарушения</a></li>
-<li><a href="#${id("2.4")}">2.4. Укажите вашу роль</a></li>
-<li><a href="#${id("2.5")}">2.5. Проверьте данные</a></li>
-<li><a href="#${id("2.6")}">2.6. Откройте форму для репортов</a></li>
-<li><a href="#${id("2.7")}">2.7. Отошлите репорт</a></li>
-<li><a href="#${id("2.8")}">2.8. Завершите репорт в боте</a></li>
-</ul>
 
-<h3 id="${id("2.1")}">2.1. Укажите адрес</h3>
+<h3>2.1. Укажите адрес</h3>
 <p>Откройте чат с ботом StreetBuddy в Telegram. Нажмите скрепку в строке ввода, затем «Location»; Telegram покажет карту с вашим текущим местоположением.</p>
 <p>Если вы находитесь рядом с машиной, нажмите «Send selected location». Если вы находитесь в другом месте, сначала передвиньте указатель на карте на то место, где стоит машина, затем нажмите «Send selected location».</p>
 <p>Бот проверит координаты и покажет два ближайших адреса с карты. Нажмите подходящий, и бот перейдет к фото. Если бот не смог найти подходящий адрес, нажмите «Other address» и напишите адрес сами.</p>
 <p>Бот работает только в районе, указанном на карте (область между Belmayne/Marrsfield Ave, Park Ave, Main Street и Belmayne ave), поэтому если прислать ему местоположение вне района, репорт не будет создан.</p>
 
-<h3 id="${id("2.2")}">2.2. Укажите номер</h3>
+<h3>2.2. Укажите номер</h3>
 <p>После определения адреса бот предложит прислать фото с номером машины для распознавания или ввести номер вручную. Отправьте фото машины или вместо фото напишите номер машины сообщением боту.</p>
 <p>Для создания репорта достаточно одного фото с номером машины. Его можно снять прямо из чата в процессе создания репорта (скрепка - камера) или прислать боту сохраненное ранее фото.</p>
 <p>Вы можете прислать дополнительные фото, показывающие, где и как стоит машина. Бот не будет их анализировать, они будут храниться все вместе над описанием репорта для вашего удобства.</p>
@@ -69,12 +66,12 @@ function guideRu(os: Os): string {
 <p>Если бот не смог прочитать номер, напишите номер сообщением.</p>
 <p>Когда все фото отправлены, нажмите «Create report». Если вы написали номер сообщением, бот сразу перейдет к следующему шагу.</p>
 
-<h3 id="${id("2.3")}">2.3. Укажите тип нарушения</h3>
+<h3>2.3. Укажите тип нарушения</h3>
 <p>Бот предложит варианты нарушений, выберите подходящие варианты. Рядом с выбранным вариантом появится ✅, повторное нажатие его снимает. Выбрать нужно хотя бы один вариант:</p>
 ${PARKING_LIST}
 <p>Затем нажмите «Done».</p>
 
-<h3 id="${id("2.4")}">2.4. Укажите вашу роль</h3>
+<h3>2.4. Укажите вашу роль</h3>
 <p>Последнее поле для заполнения - ваша роль:</p>
 <ul>
 <li>pedestrian;</li>
@@ -84,12 +81,12 @@ ${PARKING_LIST}
 <li>motorcyclist.</li>
 </ul>
 
-<h3 id="${id("2.5")}">2.5. Проверьте данные</h3>
+<h3>2.5. Проверьте данные</h3>
 <p>Далее бот покажет готовое описание нарушения (номер машины, описание нарушения, адрес, дату, время и роль) для проверки и даст возможность внести исправления.</p>
 <p>После подтверждения корректности данных бот уберет свои промежуточные сообщения и пришлет итоговое сообщение с описанием нарушения. Первые 10 репортов под описанием нарушения бот показывает список шагов, которые нужно сделать дальше.</p>
 <p>Если бот не знает тип вашего телефона (при первом репорте или если вы не пользовались ботом больше двух месяцев), он попросит выбрать между «iPhone» и «Android», чтобы выдать подходящий список следующих шагов.</p>
 
-<h3 id="${id("2.6")}">2.6. Откройте форму для репортов</h3>
+<h3>2.6. Откройте форму для репортов</h3>
 ${
     android
       ? `<p>Нажмите кнопку «Open report». Форма Traffic Watch Online Reporting откроется во встроенном браузере Telegram.<br>
@@ -104,12 +101,12 @@ ${
 Нажмите на нее, Safari откроет форму для репортов снова.</p>`
   }
 
-<h3 id="${id("2.7")}">2.7. Отошлите репорт</h3>
+<h3>2.7. Отошлите репорт</h3>
 <p>На странице формы для репортов поставьте две галочки: «I confirm that this is not an emergency» и «I confirm that I am willing to make a statement and attend Court», нажмите «Click Here to Start».</p>
 <p>Скрипт в закладке заполнит поля репорта сам.</p>
 <p>Проверьте все поля, исправьте текст, при необходимости, пройдите капчу «I'm not a robot» и нажмите «Submit Report». Подтверждение с номером репорта придет на ваш email.</p>
 
-<h3 id="${id("2.8")}">2.8. Завершите репорт в боте</h3>
+<h3>2.8. Завершите репорт в боте</h3>
 <p>Вернитесь в Telegram и нажмите «Done» под описанием репорта: бот уберет кнопки и допишет, когда репорт был отправлен.<br>
 Если вы решили не отправлять репорт, нажмите «Cancel»: бот удалит описание репорта.<br>
 Если не нажать ни одну из кнопок, ближайшая очистка после 48 часов уберет кнопки, оставив описание репорта.</p>
@@ -143,30 +140,27 @@ function guideEn(os: Os): string {
   const android = os === "android";
   const browser = android ? "Chrome" : "Safari";
   return `<section data-os-section="${os}"${android ? "" : " hidden"}>
+<ul>
+<li><a href="#${id("1")}">1 Before you start</a></li>
+<li><a href="#${id("2")}">2 How to file a report</a></li>
+<li><a href="#${id("3")}">3 Bot commands</a></li>
+<li><a href="#${id("4")}">4 Good to know</a></li>
+</ul>
+
 <h2 id="${id("1")}">1 Before you start</h2>
 <p>To use the bot, you need to set up your phone once, following the <a href="${INSTALL_PATH}">setup guide</a>: add a bookmark with your personal data to the ${browser} browser on your phone.<br>
 The bot does not collect or store your personal data, so you need to save it on your phone beforehand to use it in a report.<br>
 If you have not created the bookmark yet, come back to this guide after the setup.</p>
 
 <h2 id="${id("2")}">2 How to file a report</h2>
-<ul>
-<li><a href="#${id("2.1")}">2.1. Give the address</a></li>
-<li><a href="#${id("2.2")}">2.2. Give the plate number</a></li>
-<li><a href="#${id("2.3")}">2.3. Give the type of the violation</a></li>
-<li><a href="#${id("2.4")}">2.4. Give your role</a></li>
-<li><a href="#${id("2.5")}">2.5. Check the data</a></li>
-<li><a href="#${id("2.6")}">2.6. Open the report form</a></li>
-<li><a href="#${id("2.7")}">2.7. Send the report</a></li>
-<li><a href="#${id("2.8")}">2.8. Finish the report in the bot</a></li>
-</ul>
 
-<h3 id="${id("2.1")}">2.1. Give the address</h3>
+<h3>2.1. Give the address</h3>
 <p>Open the chat with the StreetBuddy bot in Telegram. Tap the paperclip in the input bar, then «Location»; Telegram will show a map with your current location.</p>
 <p>If you are next to the car, tap «Send selected location». If you are somewhere else, first move the pin on the map to the place where the car is parked, then tap «Send selected location».</p>
 <p>The bot will check the coordinates and show the two nearest addresses from the map. Tap the right one, and the bot will move on to the photos. If the bot could not find a suitable address, tap «Other address» and write the address yourself.</p>
 <p>The bot works only in the area shown on the map (the area between Belmayne/Marrsfield Ave, Park Ave, Main Street and Belmayne ave), so if you send it a location outside the area, the report will not be created.</p>
 
-<h3 id="${id("2.2")}">2.2. Give the plate number</h3>
+<h3>2.2. Give the plate number</h3>
 <p>After the address is set, the bot will ask you to send a photo with the number plate for recognition or to type the plate number yourself. Send a photo of the car, or write the plate number to the bot instead of a photo.</p>
 <p>One photo with the number plate is enough to create a report. You can take it right from the chat while creating the report (paperclip - camera) or send the bot a photo saved earlier.</p>
 <p>You can send additional photos that show where and how the car is parked. The bot will not analyse them; they will all be kept together above the report description for your convenience.</p>
@@ -175,12 +169,12 @@ If you have not created the bookmark yet, come back to this guide after the setu
 <p>If the bot could not read the plate, write the plate number as a message.</p>
 <p>When all the photos are sent, tap «Create report». If you wrote the plate number as a message, the bot moves on to the next step at once.</p>
 
-<h3 id="${id("2.3")}">2.3. Give the type of the violation</h3>
+<h3>2.3. Give the type of the violation</h3>
 <p>The bot will offer the options for the violation; choose the ones that fit. A ✅ appears next to a chosen option, and tapping it again removes it. You must choose at least one option:</p>
 ${PARKING_LIST}
 <p>Then tap «Done».</p>
 
-<h3 id="${id("2.4")}">2.4. Give your role</h3>
+<h3>2.4. Give your role</h3>
 <p>The last field to fill in is your role:</p>
 <ul>
 <li>pedestrian;</li>
@@ -190,12 +184,12 @@ ${PARKING_LIST}
 <li>motorcyclist.</li>
 </ul>
 
-<h3 id="${id("2.5")}">2.5. Check the data</h3>
+<h3>2.5. Check the data</h3>
 <p>Next, the bot will show the ready description of the violation (the plate number, the description of the violation, the address, the date, the time and the role) for you to check, and will let you make corrections.</p>
 <p>After you confirm that the data is correct, the bot will remove its intermediate messages and send the final message with the description of the violation. For your first 10 reports, the bot shows a list of the next steps under the description.</p>
 <p>If the bot does not know your phone type (for your first report, or if you have not used the bot for more than two months), it will ask you to choose between «iPhone» and «Android», to give you the right list of next steps.</p>
 
-<h3 id="${id("2.6")}">2.6. Open the report form</h3>
+<h3>2.6. Open the report form</h3>
 ${
     android
       ? `<p>Tap the «Open report» button. The Traffic Watch Online Reporting form will open in Telegram's built-in browser.<br>
@@ -210,12 +204,12 @@ The bookmark with your personal data does not work there, so open the form in Sa
 Tap it, and Safari will open the report form again.</p>`
   }
 
-<h3 id="${id("2.7")}">2.7. Send the report</h3>
+<h3>2.7. Send the report</h3>
 <p>On the report form page, tick the two boxes: «I confirm that this is not an emergency» and «I confirm that I am willing to make a statement and attend Court», then tap «Click Here to Start».</p>
 <p>The script in the bookmark will fill in the report fields by itself.</p>
 <p>Check all the fields, correct the text if necessary, pass the captcha «I'm not a robot» and tap «Submit Report». The confirmation with the report number will arrive at your email.</p>
 
-<h3 id="${id("2.8")}">2.8. Finish the report in the bot</h3>
+<h3>2.8. Finish the report in the bot</h3>
 <p>Go back to Telegram and tap «Done» under the report description: the bot will remove the buttons and add when the report was sent.<br>
 If you decided not to send the report, tap «Cancel»: the bot will delete the report description.<br>
 If you tap neither button, the next cleanup after 48 hours will remove the buttons and leave the report description.</p>
