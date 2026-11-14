@@ -247,7 +247,7 @@ function buttonsFor(
         [{ text: "Done", callback_data: "done" }, CANCEL],
       ];
     case "road_user":
-      return [...ROAD_USER_TYPES.map((type) => [{ text: type, callback_data: `${ROAD_USER_PREFIX}${type}` }]), [CANCEL]];
+      return [...ROAD_USER_TYPES.map((type) => [{ text: type.toLowerCase(), callback_data: `${ROAD_USER_PREFIX}${type}` }]), [CANCEL]];
     case "review":
       return [
         [{ text: "Yes, it’s correct", callback_data: REVIEW_OK }],

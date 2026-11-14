@@ -842,12 +842,12 @@ describe("parking and the final message", () => {
     expect(draft().step).toBe("road_user");
     expect(lastSent().text).toBe("Were you a:");
     expect(labels()).toEqual([
-      "Pedestrian",
-      "Passenger",
-      "Driver",
-      "Cyclist",
-      "Motorcyclist",
-      "E-Scooter User, E-Moped User, E-Cyclist",
+      "pedestrian",
+      "passenger",
+      "driver",
+      "cyclist",
+      "motorcyclist",
+      "e-scooter user, e-moped user, e-cyclist",
       "Cancel",
     ]);
     expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
