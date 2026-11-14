@@ -284,7 +284,7 @@ describe("form-filling script on a copy of the report form", () => {
         time: "23:59",
       }),
       date,
-      roadUser: "E-Scooter User, E-Moped User, E-Cyclist" as const,
+      roadUser: "Cyclist" as const,
     };
     expect(report.description.length).toBeLessThanOrEqual(300);
     expect(report.description).toMatch(/[áé]/);

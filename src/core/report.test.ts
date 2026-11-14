@@ -108,7 +108,7 @@ describe("buildReportLink", () => {
       county: "Dublin",
       description: "á é",
       date: "02/11/2026",
-      roadUser: "E-Scooter User, E-Moped User, E-Cyclist" as const,
+      roadUser: "Cyclist" as const,
     };
     const link = buildReportLink(fields);
     expect(link.startsWith("https://www.garda.ie/en/trafficwatchreport/#sb=")).toBe(true);
@@ -126,10 +126,5 @@ describe("buildReportLink", () => {
 describe("buildRoadUserLine", () => {
   it("writes the answer in lower case with a full stop", () => {
     expect(buildRoadUserLine("Pedestrian")).toBe("I was a pedestrian.");
-  });
-  it("puts the other names of the scooter option in brackets", () => {
-    expect(buildRoadUserLine("E-Scooter User, E-Moped User, E-Cyclist")).toBe(
-      "I was a e-scooter user (e-moped user, e-cyclist).",
-    );
   });
 });

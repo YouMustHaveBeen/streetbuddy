@@ -847,7 +847,6 @@ describe("parking and the final message", () => {
       "driver",
       "cyclist",
       "motorcyclist",
-      "e-scooter user, e-moped user, e-cyclist",
       "Cancel",
     ]);
     expect(called("deleteMessage").at(-1)?.body.message_id).toBe(screen);
@@ -1027,7 +1026,7 @@ describe("final message buttons", () => {
     await press("opt:0");
     await press("done");
     const data = lastSent().reply_markup.inline_keyboard.flat().map((b: { callback_data: string }) => b.callback_data);
-    expect(data).toHaveLength(7);
+    expect(data).toHaveLength(6);
     for (const value of data) expect(Buffer.byteLength(value)).toBeLessThanOrEqual(64);
   });
 
@@ -1385,21 +1384,21 @@ describe("review, Edit and the phone", () => {
     expect(lastSent().text).toContain("parked on a cycle track\nand on a footpath");
 
     await press("edit_road_user");
-    await press("road:E-Scooter User, E-Moped User, E-Cyclist");
+    await press("road:Cyclist");
     expect(draft().step).toBe("edit");
-    expect(lastSent().text).toContain("I was a e-scooter user (e-moped user, e-cyclist).");
+    expect(lastSent().text).toContain("I was a cyclist.");
   });
 
   it("sends the form wording of Were you a in the link", async () => {
     await toReview();
     await press("review_edit");
     await press("edit_road_user");
-    await press("road:E-Scooter User, E-Moped User, E-Cyclist");
+    await press("road:Cyclist");
     await press("edit_save");
     await press("review_ok");
     const url = lastSent().reply_markup.inline_keyboard[0][0].url as string;
     const data = JSON.parse(new TextDecoder().decode(Buffer.from(url.split("#sb=")[1], "base64url")));
-    expect(data.r).toBe("E-Scooter User, E-Moped User, E-Cyclist");
+    expect(data.r).toBe("Cyclist");
     expect(data.d).not.toContain("I was a");
   });
 

@@ -5,8 +5,7 @@ export const MANUAL_PATH = "/userguide";
 
 type Os = "android" | "iphone";
 
-// The language buttons are one group (CHOICE_SCRIPT); the phone buttons exist in every language, so the
-// phone choice is shared by both languages.
+// Language and phone choice controls.
 const PAGE_SCRIPT = `(function () {
   "use strict";
   ${CHOICE_SCRIPT}
@@ -68,7 +67,7 @@ function guideRu(os: Os): string {
 <p>Отправляйте именно фото, а не файл: файл бот не принимает.</p>
 <p>Если на фото несколько машин и бот распознал несколько номеров на фото, он предложит выбрать верный. Если нужного номера нет, нажмите «Add» и напишите номер сообщением.</p>
 <p>Если бот не смог прочитать номер, напишите номер сообщением.</p>
-<p>Когда все фото отправлены, нажмите «Create report».</p>
+<p>Когда все фото отправлены, нажмите «Create report». Если вы написали номер сообщением, бот сразу перейдет к следующему шагу.</p>
 
 <h3 id="${id("2.3")}">2.3. Укажите тип нарушения</h3>
 <p>Бот предложит варианты нарушений, выберите подходящие варианты. Рядом с выбранным вариантом появится ✅, повторное нажатие его снимает. Выбрать нужно хотя бы один вариант:</p>
@@ -82,8 +81,7 @@ ${PARKING_LIST}
 <li>passenger;</li>
 <li>driver;</li>
 <li>cyclist;</li>
-<li>motorcyclist;</li>
-<li>e-scooter user, e-moped user, e-cyclist.</li>
+<li>motorcyclist.</li>
 </ul>
 
 <h3 id="${id("2.5")}">2.5. Проверьте данные</h3>
@@ -175,7 +173,7 @@ If you have not created the bookmark yet, come back to this guide after the setu
 <p>Send a photo, not a file: the bot does not accept files.</p>
 <p>If there are several cars in the photo and the bot recognised several plates, it will offer you to choose the right one. If the plate you need is not there, tap «Add» and write the plate number as a message.</p>
 <p>If the bot could not read the plate, write the plate number as a message.</p>
-<p>When all the photos are sent, tap «Create report».</p>
+<p>When all the photos are sent, tap «Create report». If you wrote the plate number as a message, the bot moves on to the next step at once.</p>
 
 <h3 id="${id("2.3")}">2.3. Give the type of the violation</h3>
 <p>The bot will offer the options for the violation; choose the ones that fit. A ✅ appears next to a chosen option, and tapping it again removes it. You must choose at least one option:</p>
@@ -189,8 +187,7 @@ ${PARKING_LIST}
 <li>passenger;</li>
 <li>driver;</li>
 <li>cyclist;</li>
-<li>motorcyclist;</li>
-<li>e-scooter user, e-moped user, e-cyclist.</li>
+<li>motorcyclist.</li>
 </ul>
 
 <h3 id="${id("2.5")}">2.5. Check the data</h3>
