@@ -29,6 +29,18 @@ describe("recognizePlates", () => {
     };
     expect(inputs.messages[0].content[1].image_url?.url).toBe("data:image/jpeg;base64,AQID");
   });
+  it("tells the finish reason and the length of the reply", async () => {
+    const run = vi.fn(async () => ({ choices: [{ message: { content: '["12-D-3456"]' }, finish_reason: "length" }] }));
+    const onReply = vi.fn();
+    await recognizePlates({ run } as unknown as Ai, new Uint8Array(1), onReply);
+    expect(onReply).toHaveBeenCalledWith({ finishReason: "length", replyLength: 13 });
+  });
+  it("tells an unknown finish reason and no length for a reply without text", async () => {
+    const run = vi.fn(async () => ({}));
+    const onReply = vi.fn();
+    await recognizePlates({ run } as unknown as Ai, new Uint8Array(1), onReply);
+    expect(onReply).toHaveBeenCalledWith({ finishReason: "unknown", replyLength: 0 });
+  });
   it("reads the plain reply shape", async () => {
     const run = vi.fn(async () => ({ response: '["12-D-3456"]' }));
     expect(await recognizePlates({ run } as unknown as Ai, new Uint8Array(1))).toEqual(["12-D-3456"]);

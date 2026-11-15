@@ -522,14 +522,17 @@ async function recognize(c: Context, draftId: number, photo: PhotoSize): Promise
       const image = await downloadFile(c.env.TELEGRAM_BOT_TOKEN, photo.file_id);
       const startedAt = Date.now();
       c.defer(countEvent(c.env.DB, "recognitions"));
+      let replyInfo = "";
       try {
-        plates = await recognizePlates(c.env.AI, image);
+        plates = await recognizePlates(c.env.AI, image, (info) => {
+          replyInfo = `, finish reason ${info.finishReason}, reply length ${info.replyLength}`;
+        });
       } catch (error) {
         c.defer(countEvent(c.env.DB, "ai_errors"));
         throw error;
       }
-      // Logs the duration only.
-      console.log(`Plate recognition took ${Date.now() - startedAt} ms`);
+      // Logs the duration, the finish reason and the length of the reply; never the reply or the plates.
+      console.log(`Plate recognition took ${Date.now() - startedAt} ms${replyInfo}`);
       // Only a result with plates is kept.
       if (plates.length > 0) await cachePlates(c.env.DB, photo.file_unique_id, plates);
     }
