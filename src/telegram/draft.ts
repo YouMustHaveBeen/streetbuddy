@@ -61,6 +61,7 @@ export type Step =
   | "finishing"
   | "feedback_input" // Not a report: waiting for the text of a feedback.
   | "phone_choice" // Not a report: /phone.
+  | "forget_confirm" // Not a report: /forget_me waits for Delete or Cancel.
   | "screen" // Not a report: a screen with buttons (a command of the menu or /admin) that a command removes.
   | "add_location" // Not a report: /add_address waits for the location of the address.
   | "add_text" // Not a report: /add_address waits for the address as text.

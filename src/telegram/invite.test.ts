@@ -174,21 +174,51 @@ describe("handleJoinRequest", () => {
     expect(rows("SELECT status FROM invites")).toEqual([{ status: "pending" }]);
   });
 
-  it("takes the buttons off the messages about an earlier request of the same person", async () => {
+  it("marks an earlier pending request of the same person withdrawn and says so in its messages", async () => {
     givenLink();
     await handleJoinRequest(env, 1, request());
     calls = [];
     vi.setSystemTime(NOW + 1000);
     await handleJoinRequest(env, 2, request());
-    expect(called("editMessageReplyMarkup")).toEqual([
-      { chat_id: 1, message_id: 100, reply_markup: { inline_keyboard: [] } },
-      { chat_id: 2, message_id: 101, reply_markup: { inline_keyboard: [] } },
+    const withdrawn = {
+      text: "Join request\nAnna Kowalski @anna wants to join the group\nInvited by Maria Smith @maria\nRequest withdrawn",
+      reply_markup: { inline_keyboard: [] },
+    };
+    expect(called("editMessageText")).toEqual([
+      { chat_id: 1, message_id: 100, ...withdrawn },
+      { chat_id: 2, message_id: 101, ...withdrawn },
     ]);
+    expect(called("editMessageReplyMarkup")).toEqual([]);
     expect(rows("SELECT chat_id, message_id FROM invite_notices")).toEqual([
       { chat_id: 1, message_id: 102 },
       { chat_id: 2, message_id: 103 },
     ]);
-    expect(rows("SELECT created_at FROM invites")).toEqual([{ created_at: NOW + 1000 }]);
+    expect(rows("SELECT id, invited_id, status, created_at FROM invites ORDER BY id")).toEqual([
+      { id: 1, invited_id: 50, status: "withdrawn", created_at: NOW },
+      { id: 2, invited_id: 50, status: "pending", created_at: NOW + 1000 },
+    ]);
+  });
+
+  it("names the inviter of the earlier request in its messages when the new request came by another link", async () => {
+    givenLink();
+    await handleJoinRequest(env, 1, request());
+    sqlite.prepare("INSERT INTO invite_links (user_id, link, created_at) VALUES (8, 'https://t.me/+Other', ?)").run(NOW);
+    calls = [];
+    vi.setSystemTime(NOW + 1000);
+    await handleJoinRequest(env, 2, request({ invite_link: { invite_link: "https://t.me/+Other" } }));
+    expect(called("getChatMember").map((body) => body.user_id).sort()).toEqual([7, 8]);
+    expect(rows("SELECT inviter_id, status FROM invites ORDER BY id")).toEqual([
+      { inviter_id: 7, status: "withdrawn" },
+      { inviter_id: 8, status: "pending" },
+    ]);
+  });
+
+  it("keeps an earlier decided request of the same person and adds the new one", async () => {
+    givenLink();
+    sqlite.prepare("INSERT INTO invites (invited_id, inviter_id, status, created_at) VALUES (50, 7, 'approved', ?)").run(NOW - 5000);
+    await handleJoinRequest(env, 1, request());
+    expect(called("editMessageText")).toEqual([]);
+    expect(rows("SELECT status FROM invites ORDER BY id")).toEqual([{ status: "approved" }, { status: "pending" }]);
   });
 
   it.each([[true], [false]])(
@@ -282,6 +312,41 @@ describe("decideJoin", () => {
     ]);
   });
 
+  it.each([[true], [false]])("marks the request withdrawn when Telegram has it no more (approve: %s)", async (approve) => {
+    pendingRequest();
+    const method = approve ? "approveChatJoinRequest" : "declineChatJoinRequest";
+    const normal = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        if (String(url).endsWith(method)) {
+          calls.push({ method, body: JSON.parse(String(init.body)) });
+          return new Response(JSON.stringify({ ok: false, error_code: 400, description: "Bad Request: HIDE_REQUESTER_MISSING" }));
+        }
+        return normal(url, init);
+      }),
+    );
+    await decideJoin(env, 50, NOW, approve, { chatId: 1, messageId: 100, text: TEXT });
+    expect(rows("SELECT status FROM invites")).toEqual([{ status: "withdrawn" }]);
+    expect(called("editMessageText").map((body) => body.text)).toEqual([`${TEXT}\nRequest withdrawn`, `${TEXT}\nRequest withdrawn`]);
+  });
+
+  it("keeps the decision when Telegram fails for another reason", async () => {
+    pendingRequest();
+    const normal = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) =>
+        String(url).endsWith("approveChatJoinRequest")
+          ? new Response(JSON.stringify({ ok: false, error_code: 400, description: "Bad Request: USER_ALREADY_PARTICIPANT" }))
+          : normal(url, init),
+      ),
+    );
+    await decideJoin(env, 50, NOW, true, { chatId: 1, messageId: 100, text: TEXT });
+    expect(rows("SELECT status FROM invites")).toEqual([{ status: "approved" }]);
+    expect(called("editMessageText").map((body) => body.text)).toEqual([`${TEXT}\nApproved`, `${TEXT}\nApproved`]);
+  });
+
   it("does nothing for a request that is already decided or unknown", async () => {
     pendingRequest();
     await decideJoin(env, 50, NOW, true, { chatId: 1, messageId: 100, text: TEXT });
@@ -338,9 +403,12 @@ describe("listApprovedInvites", () => {
     add(11, 1, "pending", 20);
     add(12, 2, "rejected", 10);
     add(13, 2, "approved", 5);
+    add(14, 3, "withdrawn", 1);
+    add(10, 3, "approved", 40);
     expect(await listApprovedInvites(env.DB)).toEqual([
       { invitedId: 13, inviterId: 2 },
       { invitedId: 10, inviterId: 1 },
+      { invitedId: 10, inviterId: 3 },
     ]);
   });
 });

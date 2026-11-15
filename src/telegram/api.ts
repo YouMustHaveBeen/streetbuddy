@@ -5,6 +5,7 @@ interface TelegramResponse<T> {
   ok: boolean;
   result?: T;
   error_code?: number;
+  description?: string;
 }
 
 // Downloads a file by the Telegram file_id; throws when it cannot be fetched.
@@ -24,6 +25,15 @@ export async function callTelegram<T>(
   method: string,
   body: Record<string, unknown>,
 ): Promise<T | null> {
+  return (await callTelegramWithError<T>(token, method, body)).result;
+}
+
+// Returns the method result, or null with the description of the error that Telegram gave, if any.
+export async function callTelegramWithError<T>(
+  token: string,
+  method: string,
+  body: Record<string, unknown>,
+): Promise<{ result: T | null; description?: string }> {
   try {
     const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
       method: "POST",
@@ -34,12 +44,12 @@ export async function callTelegram<T>(
     const data = (await response.json()) as TelegramResponse<T>;
     if (!data.ok) {
       console.error(`Telegram ${method} failed with code ${data.error_code}`);
-      return null;
+      return { result: null, description: data.description };
     }
-    return data.result ?? null;
+    return { result: data.result ?? null };
   } catch {
     console.error(`Telegram ${method} request failed`);
-    return null;
+    return { result: null };
   }
 }
 

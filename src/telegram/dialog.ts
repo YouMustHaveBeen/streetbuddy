@@ -64,7 +64,9 @@ import {
   takeDraft,
 } from "./draft";
 import { saveFeedback } from "./feedback";
+import { FORGET_CONFIRM, FORGET_DELETE, FORGOTTEN, FORGOTTEN_ADMIN, forgetUser, removeFromGroup, revokeLink } from "./forget";
 import { INVITE_FAILED, INVITE_TEXT, inviteLink } from "./invite";
+import { groupAccess } from "./member";
 import { countReport, PHONES, readPhone, savePhone } from "./phone";
 import type { Phone, UserPhone } from "./phone";
 import { pageNote, pagingButtons } from "./paging";
@@ -265,6 +267,8 @@ function buttonsFor(
     case "phone":
     case "phone_choice":
       return PHONE_BUTTONS;
+    case "forget_confirm":
+      return [[{ text: "Delete", callback_data: FORGET_DELETE }, CANCEL]];
     case "add_kind":
       return [...CHOOSABLE_KINDS.map((kind) => [{ text: kind, callback_data: `${KIND_PREFIX}${kind}` }]), [CANCEL]];
     default:
@@ -348,7 +352,7 @@ async function redraw(c: Context, draft: Draft, message: Message): Promise<void>
 }
 
 // The commands of the menu, and /start. Each of them stops a report in progress without a word.
-const COMMAND = /^\/(start|help|hotspots|map|feedback|phone|add_address|invite)(@\S+)?(\s|$)/;
+const COMMAND = /^\/(start|help|hotspots|map|feedback|phone|add_address|invite|forget_me)(@\S+)?(\s|$)/;
 
 export const isStartCommand = (text: string | undefined): boolean =>
   text !== undefined && COMMAND.exec(text)?.[1] === "start";
@@ -402,6 +406,8 @@ async function handleCommand(c: Context, command: string): Promise<void> {
   } else if (command === "invite") {
     const link = await inviteLink(c.env, c.userId);
     await send(c, link === null ? INVITE_FAILED : INVITE_TEXT(link), undefined, true);
+  } else if (command === "forget_me") {
+    await show(c, null, FORGET_CONFIRM, { step: "forget_confirm" });
   } else {
     await show(c, null, WRITE_FEEDBACK, { step: "feedback_input" });
   }
@@ -788,8 +794,9 @@ export async function handleMessage(
 
 async function cancel(c: Context, draft: Draft): Promise<void> {
   await dropDraft(c, draft);
-  // Feedback and /phone are not a report: their Cancel only removes the screen.
-  if (draft.step !== "feedback_input" && draft.step !== "phone_choice" && !draft.step.startsWith("add_")) await send(c, CANCELLED);
+  // Feedback, /phone and /forget_me are not a report: their Cancel only removes the screen.
+  const notReport = ["feedback_input", "phone_choice", "forget_confirm"].includes(draft.step) || draft.step.startsWith("add_");
+  if (!notReport) await send(c, CANCELLED);
 }
 
 // Waits for the recognition started by the first photo until the deadline (a time in
@@ -1079,7 +1086,21 @@ export async function handleButton(
   } else if (action === "phone" && (step === "phone" || step === "phone_choice")) {
     const phone = PHONES.find((value) => value === argument);
     if (phone !== undefined) await choosePhone(c, draft, phone);
+  } else if (action === FORGET_DELETE && step === "forget_confirm") {
+    await forgetMe(c, draft);
   } else if (action === "done") {
     await answerButton(token, query.id);
   }
+}
+
+// Delete on the /forget_me screen: the data goes and the invite link is revoked, then the user gets the message and,
+// unless an administrator, is removed from the group. Two presses delete once.
+async function forgetMe(c: Context, draft: Draft): Promise<void> {
+  if (!(await takeDraft(c.env.DB, c.userId, draft.draft_id, draft.buttons_message_id))) return;
+  const [, link] = await Promise.all([remove(c, draft.buttons_message_id), forgetUser(c.env, c.userId, c.chatId)]);
+  const [access] = await Promise.all([groupAccess(c.env, c.userId), link === null ? null : revokeLink(c.env, link)]);
+  const admin = access?.admin === true;
+  // The message goes before the removal from the group: do not change the order.
+  await send(c, admin ? FORGOTTEN_ADMIN : FORGOTTEN);
+  if (!admin) await removeFromGroup(c.env, c.userId);
 }
