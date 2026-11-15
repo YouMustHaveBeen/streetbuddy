@@ -525,13 +525,15 @@ async function recognize(c: Context, draftId: number, photo: PhotoSize): Promise
       let replyInfo = "";
       try {
         plates = await recognizePlates(c.env.AI, image, (info) => {
-          replyInfo = `, finish reason ${info.finishReason}, reply length ${info.replyLength}`;
+          replyInfo =
+            `, finish reason ${info.finishReason}, reply length ${info.replyLength}` +
+            `, prompt tokens ${info.promptTokens ?? "unknown"}, completion tokens ${info.completionTokens ?? "unknown"}`;
         });
       } catch (error) {
         c.defer(countEvent(c.env.DB, "ai_errors"));
         throw error;
       }
-      // Logs the duration, the finish reason and the length of the reply; never the reply or the plates.
+      // Logs the duration, the finish reason, the length of the reply and the tokens used; never the reply or the plates.
       console.log(`Plate recognition took ${Date.now() - startedAt} ms${replyInfo}`);
       // Only a result with plates is kept.
       if (plates.length > 0) await cachePlates(c.env.DB, photo.file_unique_id, plates);

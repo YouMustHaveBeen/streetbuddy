@@ -5,7 +5,7 @@ const CHUNK_BYTES = 0x8000;
 // How long one call of the model may take, how many calls one photo gets, and the longest reply.
 export const MODEL_TIMEOUT_MS = 12000;
 const MODEL_ATTEMPTS = 2;
-const MAX_REPLY_TOKENS = 200;
+const MAX_REPLY_TOKENS = 1000;
 
 export const PLATE_MAX_LENGTH = 15;
 
@@ -17,13 +17,18 @@ const PROMPT =
 interface ModelReply {
   choices?: { message?: { content?: unknown }; finish_reason?: unknown }[];
   response?: unknown;
+  usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
 }
 
-// What is known about the reply of the model without its text: why it ended and how long it is.
+// What is known about the reply of the model without its text: why it ended, how long it is and the tokens used.
 interface ReplyInfo {
   finishReason: string;
   replyLength: number;
+  promptTokens: number | undefined;
+  completionTokens: number | undefined;
 }
+
+const tokenCount = (value: unknown): number | undefined => (typeof value === "number" ? value : undefined);
 
 type RunModel = (model: string, inputs: unknown) => Promise<ModelReply>;
 
@@ -76,7 +81,7 @@ export function parsePlates(reply: unknown): string[] {
 
 // Each call is limited to MODEL_TIMEOUT_MS; a failed or late call is made once more.
 // Throws the last failure, including when the daily Workers AI limit is used up.
-// onReply, when given, gets the finish reason and the length of the reply that was read.
+// onReply, when given, gets the finish reason, the length of the reply and the tokens used for the reply that was read.
 export async function recognizePlates(
   ai: Ai,
   image: Uint8Array,
@@ -94,6 +99,7 @@ export async function recognizePlates(
       },
     ],
     max_completion_tokens: MAX_REPLY_TOKENS,
+    chat_template_kwargs: { enable_thinking: false },
   };
   let failure: unknown;
   for (let attempt = 0; attempt < MODEL_ATTEMPTS; attempt++) {
@@ -104,6 +110,8 @@ export async function recognizePlates(
       onReply?.({
         finishReason: typeof finishReason === "string" ? finishReason : "unknown",
         replyLength: typeof text === "string" ? text.length : 0,
+        promptTokens: tokenCount(reply.usage?.prompt_tokens),
+        completionTokens: tokenCount(reply.usage?.completion_tokens),
       });
       return parsePlates(text);
     } catch (error) {
