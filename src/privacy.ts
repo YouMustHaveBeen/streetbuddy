@@ -14,7 +14,8 @@ const TABLE_STYLE = `  table { border-collapse: collapse; }
 
 const POLICY_EN = `<h2>Who runs StreetBuddy</h2>
 <p>StreetBuddy is run by one of your neighbours, not by a company. It helps people in the area prepare Traffic Watch reports about illegal parking, and only members of the closed Street Buddy Group can use it. The bot is not connected to An Garda Síochána.</p>
-<p>If you have a question, or want your data deleted, write to the admins with /feedback in the bot.</p>
+<p>The operator of the bot, and the contact for any question about your data, is the owner of the closed group. Write to the owner in Telegram.</p>
+<p>The bot handles your data because you agreed to it by joining the group. If you no longer agree, leave the group.</p>
 <h2>What the bot knows about you, and why</h2>
 <p>The bot only needs what it takes to put a report together:</p>
 <ul>
@@ -36,7 +37,7 @@ const POLICY_EN = `<h2>Who runs StreetBuddy</h2>
 <li><strong>Mapbox</strong> shows the maps on the bot's web pages, so your browser talks to Mapbox when you open a map.</li>
 <li><strong>The bot's server</strong> answers when your bookmark loads the script file, so it sees the request address and your IP address, like any website. The script runs on the Traffic Watch page every time you use the bookmark, so you are trusting whoever runs the bot with that.</li>
 </ul>
-<p>The bot never sends a report. You send it yourself from the Traffic Watch form, and the admins of the group see only what the bot shows them: addresses waiting for approval, feedback, and invite requests with names.</p>
+<p>The bot never sends a report. You send it yourself from the Traffic Watch form, and the admins of the group see only what the bot shows them: addresses waiting for approval, feedback, invite requests with names, lists of plates that were reported many times or are possibly abandoned, and a map of where and when reports were made.</p>
 <h2>How long things are kept</h2>
 <p>The bot cleans up by itself, twice a day.</p>
 <table>
@@ -44,7 +45,7 @@ const POLICY_EN = `<h2>Who runs StreetBuddy</h2>
 <tr><td>Draft of the report you are making</td><td>24 hours</td></tr>
 <tr><td>Text of the final message (plate, address, date), to keep the Done and Cancel buttons working</td><td>until you tap Done or Cancel, at most 48 hours</td></tr>
 <tr><td>Result of reading a photo</td><td>24 hours</td></tr>
-<tr><td>Report log: plate, date, type of violation, address (no Telegram ID)</td><td>66 days</td></tr>
+<tr><td>Report log: plate, date, type of violation, address and location coordinates (no Telegram ID)</td><td>66 days</td></tr>
 <tr><td>Your Telegram ID with the date you last used the bot, your phone choice and link counter</td><td>2 months after the last use</td></tr>
 <tr><td>Feedback you wrote, with your Telegram ID</td><td>2 months</td></tr>
 <tr><td>Invite link you made</td><td>7 days</td></tr>
@@ -55,14 +56,14 @@ const POLICY_EN = `<h2>Who runs StreetBuddy</h2>
 </table>
 <p>Photos are not stored by the bot at all. They stay in your own chat with the bot until you delete them there.</p>
 <h2>Your rights</h2>
-<p>You can ask what the bot has about you, ask for a correction, or ask for your data to be deleted. Write to the admins with /feedback and say what you want. Since the bot keeps data for weeks, not years, most of it will be gone on its own soon anyway.</p>
-<p>You can also stop at any time: leave the group and the bot stops answering you.</p>
+<p>You can stop at any time: leave the group. The bot stops answering you within an hour; buttons already in your chat may still work for a while.</p>
 <h2>Changes to this text</h2>
 <p>If the bot starts handling data in a new way, this text is updated first.</p>`;
 
 const POLICY_RU = `<h2>Кто делает StreetBuddy</h2>
 <p>StreetBuddy делает один из ваших соседей, а не компания. Бот помогает подготовить репорты Traffic Watch о неправильной парковке, и пользоваться им могут только участники закрытой группы Street Buddy Group. К Garda бот отношения не имеет.</p>
-<p>Если у вас есть вопрос или вы хотите, чтобы ваши данные удалили, напишите админам через /feedback в боте.</p>
+<p>Оператор бота и контакт по любым вопросам о ваших данных — владелица закрытой группы. Напишите ей в Telegram.</p>
+<p>Бот обрабатывает ваши данные на основании вашего согласия, которое вы дали, вступив в группу. Если вы больше не согласны, выйдите из группы.</p>
 <h2>Что бот знает о вас и зачем</h2>
 <p>Боту нужно только то, что требуется, чтобы собрать репорт:</p>
 <ul>
@@ -84,7 +85,7 @@ const POLICY_RU = `<h2>Кто делает StreetBuddy</h2>
 <li><strong>Mapbox</strong> показывает карты на веб-страницах бота, поэтому ваш браузер обращается к Mapbox, когда вы открываете карту.</li>
 <li><strong>Сервер бота</strong> отвечает, когда закладка загружает файл скрипта, поэтому видит адрес запроса и ваш IP-адрес, как любой сайт. Скрипт выполняется на странице Traffic Watch при каждом запуске закладки, то есть вы доверяете тому, кто делает бота.</li>
 </ul>
-<p>Бот сам репорты не отправляет: вы отправляете их сами из формы Traffic Watch. Админы группы видят только то, что показывает им бот: адреса на одобрении, отзывы и запросы на вступление с именами.</p>
+<p>Бот сам репорты не отправляет: вы отправляете их сами из формы Traffic Watch. Админы группы видят только то, что показывает им бот: адреса на одобрении, отзывы, запросы на вступление с именами, списки номеров, на которые жалуются часто или которые, возможно, брошены, и карту мест и дат репортов.</p>
 <h2>Как долго хранятся данные</h2>
 <p>Бот чистит данные сам, два раза в сутки.</p>
 <table>
@@ -92,7 +93,7 @@ const POLICY_RU = `<h2>Кто делает StreetBuddy</h2>
 <tr><td>Черновик репорта, который вы делаете</td><td>24 часа</td></tr>
 <tr><td>Текст итогового сообщения (номер, адрес, дата), чтобы работали кнопки Done и Cancel</td><td>пока вы не нажмете Done или Cancel, но не дольше 48 часов</td></tr>
 <tr><td>Результат чтения фото</td><td>24 часа</td></tr>
-<tr><td>Журнал репортов: номер, дата, тип нарушения, адрес (без Telegram ID)</td><td>66 дней</td></tr>
+<tr><td>Журнал репортов: номер, дата, тип нарушения, адрес и координаты места (без Telegram ID)</td><td>66 дней</td></tr>
 <tr><td>Ваш Telegram ID с датой последнего использования бота, выбранный телефон и счетчик ссылок</td><td>2 месяца после последнего использования</td></tr>
 <tr><td>Отзыв, который вы написали, с вашим Telegram ID</td><td>2 месяца</td></tr>
 <tr><td>Ссылка-приглашение, которую вы создали</td><td>7 дней</td></tr>
@@ -103,8 +104,7 @@ const POLICY_RU = `<h2>Кто делает StreetBuddy</h2>
 </table>
 <p>Фото бот не хранит вообще. Они остаются в вашем чате с ботом, пока вы сами их там не удалите.</p>
 <h2>Ваши права</h2>
-<p>Вы можете спросить, что бот о вас знает, попросить исправить данные или удалить их. Напишите админам через /feedback и скажите, что вам нужно. Бот хранит данные неделями, а не годами, поэтому большая часть и так скоро исчезнет сама.</p>
-<p>Вы также можете в любой момент перестать пользоваться ботом: выйдите из группы, и бот перестанет вам отвечать.</p>
+<p>Вы можете в любой момент перестать пользоваться ботом: выйдите из группы. В течение часа бот перестанет вам отвечать; кнопки, которые уже есть в вашем чате, могут еще какое-то время работать.</p>
 <h2>Изменения в этом тексте</h2>
 <p>Если бот начнет обращаться с данными по-новому, сначала обновится этот текст.</p>`;
 
