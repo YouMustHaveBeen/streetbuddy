@@ -108,15 +108,13 @@ interface Context {
 }
 
 // Sent as HTML: the words "Setup guide", "User guide" and "Privacy Policy" are links.
-const startText = (siteUrl: string) => `StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
+const startText = (siteUrl: string) => `StreetBuddy creates a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
 ***
 First, read the setup guide: <a href="${siteUrl}${INSTALL_PATH}">Setup guide</a>.
-Second, read how to use the bot: <a href="${siteUrl}${MANUAL_PATH}">User guide</a>.
-Third, to start a report, send location to the bot.
+Use /help to see <a href="${siteUrl}${MANUAL_PATH}">User guide</a> and <a href="${siteUrl}${PRIVACY_PATH}">Privacy Policy</a>.
 ***
 This bot is not affiliated with An Garda Síochána.
-Read the <a href="${siteUrl}${PRIVACY_PATH}">Privacy Policy</a>.
 © OpenStreetMap contributors`;
 
 const TRY_AGAIN = "Could not get the address. Please try again in a minute";

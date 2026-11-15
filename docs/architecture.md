@@ -53,15 +53,13 @@ StreetBuddy — Telegram-бот, который превращает фото н
 12. [сделано] Команда /start показывает текст ниже; слова «Setup guide», «User guide» и «Privacy Policy» в нем — ссылки на страницы установки, руководства и политики приватности (бот отправляет текст как HTML и отключает предпросмотр ссылок):
 
 ```
-StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
+StreetBuddy creates a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
 ***
 First, read the setup guide: Setup guide.
-Second, read how to use the bot: User guide.
-Third, to start a report, send location to the bot.
+Use /help to see User guide and Privacy Policy.
 ***
 This bot is not affiliated with An Garda Síochána.
-Read the Privacy Policy.
 © OpenStreetMap contributors
 ```
 
