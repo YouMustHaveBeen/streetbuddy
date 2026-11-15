@@ -1,4 +1,33 @@
-// Members of the group who are not administrators, remembered for a short time in D1.
+// The status of a user in the closed group, and members of the group who are not administrators,
+// remembered for a short time in D1.
+import type { Env } from "../env";
+import { callTelegram } from "./api";
+
+const MEMBER_STATUSES = ["creator", "administrator", "member"];
+const ADMIN_STATUSES = ["creator", "administrator"];
+
+interface ChatMember {
+  status: string;
+  is_member?: boolean;
+}
+
+export interface GroupAccess {
+  member: boolean;
+  admin: boolean;
+}
+
+// "restricted" counts as a member while is_member is true. Returns null when Telegram does not answer.
+export async function groupAccess(env: Pick<Env, "TELEGRAM_BOT_TOKEN" | "GROUP_ID">, userId: number): Promise<GroupAccess | null> {
+  const member = await callTelegram<ChatMember>(env.TELEGRAM_BOT_TOKEN, "getChatMember", {
+    chat_id: env.GROUP_ID,
+    user_id: userId,
+  });
+  if (!member) return null;
+  return {
+    member: MEMBER_STATUSES.includes(member.status) || (member.status === "restricted" && member.is_member === true),
+    admin: ADMIN_STATUSES.includes(member.status),
+  };
+}
 
 // How long a remembered member is let in without asking Telegram.
 export const MEMBER_CACHE_TTL_MS = 60 * 60 * 1000;

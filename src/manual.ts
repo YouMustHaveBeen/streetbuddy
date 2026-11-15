@@ -120,6 +120,7 @@ ${
 <li>/phone: команда позволяет указать ваш тип телефона, чтобы напоминать шаги для выбранного телефона под описанием репорта. Подсказка работает первые 10 репортов, затем исчезает. Чтобы ее вернуть, нужно снова выбрать телефон.</li>
 <li>/help: показывает ссылки на Setup guide и User guide.</li>
 <li>/feedback: здесь вы можете написать админам о проблемах в работе бота или предложить новый функционал.</li>
+<li>/forget_me: удаляет данные, которые бот хранит о вас, и убирает вас из группы.</li>
 </ul>
 
 <h2 id="${id("4")}">4. Полезно знать</h2>
@@ -221,6 +222,7 @@ If you tap neither button, the next cleanup after 48 hours will remove the butto
 <li>/phone: lets you set your phone type, so that the bot reminds you of the steps for the chosen phone under the report description. The hint works for the first 10 reports and then disappears. To bring it back, choose the phone again.</li>
 <li>/help: shows the links to the Setup guide and the User guide.</li>
 <li>/feedback: here you can write to the admins about problems in the bot's work or suggest a new feature.</li>
+<li>/forget_me: deletes the data the bot keeps about you and removes you from the group.</li>
 </ul>
 
 <h2 id="${id("4")}">4. Good to know</h2>

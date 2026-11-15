@@ -54,7 +54,7 @@ describe("manual page", () => {
 
   it("lists the commands of the menu in both languages", async () => {
     const html = await manualPage().text();
-    for (const text of ["/map", "/add_address", "/hotspots", "/invite", "/phone", "/help", "/feedback", AREA_MAP]) {
+    for (const text of ["/map", "/add_address", "/hotspots", "/invite", "/phone", "/help", "/feedback", "/forget_me", AREA_MAP]) {
       expect(html).toContain(text);
     }
     expect(html.split("3. Команды бота</h2>")).toHaveLength(3);

@@ -2,11 +2,12 @@
 import { countEvent } from "../core";
 import type { Env } from "../env";
 import { handleAdminButton, handleAdminCommand, isAdminButton, isAdminCommand } from "./admin";
-import { answerButton, callTelegram, sendMessage } from "./api";
+import { answerButton, sendMessage } from "./api";
 import { checksMembership, handleButton, handleMessage, isStartCommand } from "./dialog";
 import type { Message } from "./dialog";
 import { handleJoinRequest } from "./invite";
-import { rememberedMember, updateMemberCache } from "./member";
+import { groupAccess, rememberedMember, updateMemberCache } from "./member";
+import type { GroupAccess } from "./member";
 import { secretMatches } from "../secret";
 
 export type WebhookEnv = Pick<
@@ -16,8 +17,6 @@ export type WebhookEnv = Pick<
 
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 const NOT_MEMBER_TEXT = "This bot is only for members of the group";
-const MEMBER_STATUSES = ["creator", "administrator", "member"];
-const ADMIN_STATUSES = ["creator", "administrator"];
 
 interface Chat {
   id?: number;
@@ -34,16 +33,6 @@ interface Update {
     message?: { message_id?: number; chat?: Chat; text?: string };
   };
   chat_join_request?: Parameters<typeof handleJoinRequest>[2];
-}
-
-interface ChatMember {
-  status: string;
-  is_member?: boolean;
-}
-
-interface GroupAccess {
-  member: boolean;
-  admin: boolean;
 }
 
 interface Incoming {
@@ -64,19 +53,6 @@ function parseUpdate(update: Update): Incoming | null {
     return null;
   }
   return { updateId, userId, chatId: chat.id, callbackQueryId: query?.id };
-}
-
-// "restricted" counts as a member while is_member is true. Returns null when Telegram does not answer.
-async function groupAccess(env: WebhookEnv, userId: number): Promise<GroupAccess | null> {
-  const member = await callTelegram<ChatMember>(env.TELEGRAM_BOT_TOKEN, "getChatMember", {
-    chat_id: env.GROUP_ID,
-    user_id: userId,
-  });
-  if (!member) return null;
-  return {
-    member: MEMBER_STATUSES.includes(member.status) || (member.status === "restricted" && member.is_member === true),
-    admin: ADMIN_STATUSES.includes(member.status),
-  };
 }
 
 // Runs after the response has gone out; a failure is logged with the update_id and the step.

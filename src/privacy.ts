@@ -55,7 +55,7 @@ const POLICY_EN = `<h2>Who runs StreetBuddy</h2>
 </table>
 <p>Photos are not stored by the bot at all. They stay in your own chat with the bot until you delete them there.</p>
 <h2>Your rights</h2>
-<p>You can ask what the bot has about you, ask for a correction, or ask for your data to be deleted. Write to the admins with /feedback and say what you want. Since the bot keeps data for weeks, not years, most of it will be gone on its own soon anyway.</p>
+<p>To delete your data from the bot's database, send /forget_me to the bot: it deletes the data and removes you from the group, because the group is how access to the bot is controlled. You can join the group again by invitation.</p>
 <p>You can also stop at any time: leave the group and the bot stops answering you.</p>
 <h2>Changes to this text</h2>
 <p>If the bot starts handling data in a new way, this text is updated first.</p>`;
@@ -103,7 +103,7 @@ const POLICY_RU = `<h2>Кто делает StreetBuddy</h2>
 </table>
 <p>Фото бот не хранит вообще. Они остаются в вашем чате с ботом, пока вы сами их там не удалите.</p>
 <h2>Ваши права</h2>
-<p>Вы можете спросить, что бот о вас знает, попросить исправить данные или удалить их. Напишите админам через /feedback и скажите, что вам нужно. Бот хранит данные неделями, а не годами, поэтому большая часть и так скоро исчезнет сама.</p>
+<p>Чтобы удалить ваши данные из базы данных бота, отправьте боту /forget_me: он удалит данные и удалит вас из группы, поскольку группа используется для доступа к боту. Вы можете снова вернуться в группу по приглашению.</p>
 <p>Вы также можете в любой момент перестать пользоваться ботом: выйдите из группы, и бот перестанет вам отвечать.</p>
 <h2>Изменения в этом тексте</h2>
 <p>Если бот начнет обращаться с данными по-новому, сначала обновится этот текст.</p>`;

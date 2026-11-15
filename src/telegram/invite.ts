@@ -2,7 +2,7 @@
 // the message about the request that the administrators get, and the decision of an administrator.
 import { DAY_MS } from "../core/shared";
 import type { Env } from "../env";
-import { callTelegram, sendMessage } from "./api";
+import { callTelegram, callTelegramWithError, sendMessage } from "./api";
 import { memberTag, userTag } from "./notify";
 import type { TelegramUser } from "./notify";
 
@@ -45,14 +45,28 @@ const removeButtons = (env: InviteEnv, chatId: number, messageId: number) =>
     reply_markup: { inline_keyboard: [] },
   });
 
+type Outcome = "approved" | "rejected" | "withdrawn";
+
+const OUTCOME_LINE: Record<Outcome, string> = {
+  approved: "Approved",
+  rejected: "Rejected",
+  withdrawn: "Request withdrawn",
+};
+
+// What Telegram says when the person has no request to decide any more.
+const REQUEST_GONE = "HIDE_REQUESTER_MISSING";
+
 // The text of the message with the outcome added, and no buttons.
-const showOutcome = (env: InviteEnv, chatId: number, messageId: number, text: string, approved: boolean) =>
+const showOutcome = (env: InviteEnv, chatId: number, messageId: number, text: string, outcome: Outcome) =>
   callTelegram(env.TELEGRAM_BOT_TOKEN, "editMessageText", {
     chat_id: chatId,
     message_id: messageId,
-    text: `${text}\n${approved ? "Approved" : "Rejected"}`,
+    text: `${text}\n${OUTCOME_LINE[outcome]}`,
     reply_markup: { inline_keyboard: [] },
   });
+
+const requestText = (requester: string, inviter: string) =>
+  [JOIN_REQUEST, `${requester} wants to join the group`, `Invited by ${inviter}`].join("\n");
 
 interface JoinRequest {
   chat?: { id?: number };
@@ -62,9 +76,10 @@ interface JoinRequest {
 
 // A person asked to join by a link of a member: the request is recorded as pending and every administrator
 // of the group, except bots, gets a message with the buttons. A request by a link that is not
-// in the table is left to Telegram. The messages about an earlier request of the same person lose their buttons.
-// QUERY BUDGET EXCEPTION: the repeat filter with the link lookup (one batch), the request with the earlier
-// notices (one batch), the messages sent, the new notices with the check of the request (one batch).
+// in the table is left to Telegram. An earlier pending request of the same person is marked withdrawn, and the
+// messages about it get "Request withdrawn" instead of the buttons.
+// QUERY BUDGET EXCEPTION: the repeat filter with the link lookup (one batch), the earlier request, the new request
+// and the earlier notices (one batch), the messages sent, the new notices with the check of the request (one batch).
 export async function handleJoinRequest(env: InviteEnv, updateId: number, request: JoinRequest): Promise<void> {
   const requester = request.from;
   const link = request.invite_link?.invite_link;
@@ -85,26 +100,39 @@ export async function handleJoinRequest(env: InviteEnv, updateId: number, reques
   const inviterId = (found.results[0] as { inviterId: number } | undefined)?.inviterId;
   if (inviterId === undefined) return;
 
-  const [, earlier] = await env.DB.batch([
+  const [withdrawn, inserted, earlier] = await env.DB.batch([
     env.DB.prepare(
-      "INSERT OR REPLACE INTO invites (invited_id, inviter_id, status, created_at) VALUES (?1, ?2, 'pending', ?3)",
+      "UPDATE invites SET status = 'withdrawn' WHERE invited_id = ?1 AND status = 'pending' RETURNING inviter_id AS inviterId",
+    ).bind(requester.id),
+    env.DB.prepare(
+      "INSERT INTO invites (invited_id, inviter_id, status, created_at) VALUES (?1, ?2, 'pending', ?3) RETURNING id",
     ).bind(requester.id, inviterId, now),
     env.DB.prepare("DELETE FROM invite_notices WHERE invited_id = ?1 RETURNING chat_id, message_id").bind(requester.id),
   ]);
-  const closing = (earlier.results as { chat_id: number; message_id: number }[]).map((notice) =>
-    removeButtons(env, notice.chat_id, notice.message_id),
+  const requestId = (inserted.results[0] as { id: number }).id;
+  const earlierInviterId = (withdrawn.results[0] as { inviterId: number } | undefined)?.inviterId;
+  const earlierNotices = earlier.results as { chat_id: number; message_id: number }[];
+  const requesterTag = userTag(
+    { first_name: requester.first_name, last_name: requester.last_name, username: requester.username },
+    requester.id,
   );
-  const [inviter, admins] = await Promise.all([
+  const [inviter, admins, earlierInviter] = await Promise.all([
     memberTag(env, inviterId),
     callTelegram<{ user: { id: number; is_bot?: boolean } }[]>(env.TELEGRAM_BOT_TOKEN, "getChatAdministrators", {
       chat_id: env.GROUP_ID,
     }),
+    earlierInviterId === undefined || earlierInviterId === inviterId || earlierNotices.length === 0
+      ? Promise.resolve(null)
+      : memberTag(env, earlierInviterId),
   ]);
-  const text = [
-    JOIN_REQUEST,
-    `${userTag({ first_name: requester.first_name, last_name: requester.last_name, username: requester.username }, requester.id)} wants to join the group`,
-    `Invited by ${inviter}`,
-  ].join("\n");
+  // The messages about the earlier request: "Request withdrawn" when it was pending, otherwise only no buttons.
+  const earlierText = earlierInviterId === undefined ? null : requestText(requesterTag, earlierInviter ?? inviter);
+  const closing = earlierNotices.map((notice) =>
+    earlierText === null
+      ? removeButtons(env, notice.chat_id, notice.message_id)
+      : showOutcome(env, notice.chat_id, notice.message_id, earlierText, "withdrawn"),
+  );
+  const text = requestText(requesterTag, inviter);
   const buttons = [
     [
       { text: "Approve", callback_data: `${JOIN}:ok:${requester.id}:${now}` },
@@ -128,11 +156,11 @@ export async function handleJoinRequest(env: InviteEnv, updateId: number, reques
         requester.id,
       ),
     ),
-    env.DB.prepare("SELECT status FROM invites WHERE invited_id = ?1 AND created_at = ?2").bind(requester.id, now),
+    env.DB.prepare("SELECT status FROM invites WHERE id = ?1").bind(requestId),
   ]);
-  const status = (written[notices.length].results[0] as { status: string } | undefined)?.status;
-  // The request was decided or replaced while the messages were being sent, so the decision did not find these
-  // messages: they get the outcome, or lose their buttons when the request was replaced.
+  const status = (written[notices.length].results[0] as { status: Outcome | "pending" } | undefined)?.status;
+  // The request was decided or withdrawn while the messages were being sent, so that did not find these
+  // messages: they get the outcome, or lose their buttons when the request is gone.
   if (status !== "pending") {
     await env.DB.batch(
       notices.map((notice) =>
@@ -143,7 +171,7 @@ export async function handleJoinRequest(env: InviteEnv, updateId: number, reques
       ...notices.map((notice) =>
         status === undefined
           ? removeButtons(env, notice.chatId, notice.messageId)
-          : showOutcome(env, notice.chatId, notice.messageId, text, status === "approved"),
+          : showOutcome(env, notice.chatId, notice.messageId, text, status),
       ),
     );
   }
@@ -152,9 +180,10 @@ export async function handleJoinRequest(env: InviteEnv, updateId: number, reques
 
 // An administrator pressed Approve or Reject: the first decision on a pending request is stored and given to
 // Telegram, and the message about it changes for every administrator who was sent it, the one who pressed included.
+// When Telegram says the person has no request any more, the request is marked withdrawn instead.
 // When Telegram does not give the text of the pressed message, the messages only lose their buttons.
 // A button of a request that is already decided, or of an earlier request of the same person, does nothing.
-// QUERY BUDGET EXCEPTION: the decision, the removal of the notices.
+// QUERY BUDGET EXCEPTION: the decision, the removal of the notices, the withdrawn mark when the request is gone.
 export async function decideJoin(
   env: InviteEnv,
   invitedId: number,
@@ -162,30 +191,38 @@ export async function decideJoin(
   approve: boolean,
   pressed: { chatId: number; messageId?: number; text?: string },
 ): Promise<void> {
-  const claimed = await env.DB.prepare("UPDATE invites SET status = ?2 WHERE invited_id = ?1 AND created_at = ?3 AND status = 'pending'")
-    .bind(invitedId, approve ? "approved" : "rejected", requestedAt)
-    .run();
-  if (claimed.meta.changes === 0) return;
-  const decided = callTelegram(env.TELEGRAM_BOT_TOKEN, approve ? "approveChatJoinRequest" : "declineChatJoinRequest", {
-    chat_id: env.GROUP_ID,
-    user_id: invitedId,
-  });
-  const { results } = await env.DB.prepare(
-    "DELETE FROM invite_notices WHERE invited_id = ?1 RETURNING chat_id, message_id",
+  const claimed = await env.DB.prepare(
+    "UPDATE invites SET status = ?2 WHERE invited_id = ?1 AND created_at = ?3 AND status = 'pending' RETURNING id",
   )
-    .bind(invitedId)
-    .all<{ chat_id: number; message_id: number }>();
-  const targets = new Map(results.map((notice) => [`${notice.chat_id}:${notice.message_id}`, notice]));
+    .bind(invitedId, approve ? "approved" : "rejected", requestedAt)
+    .first<{ id: number }>();
+  if (claimed === null) return;
+  const [decided, removed] = await Promise.all([
+    callTelegramWithError(env.TELEGRAM_BOT_TOKEN, approve ? "approveChatJoinRequest" : "declineChatJoinRequest", {
+      chat_id: env.GROUP_ID,
+      user_id: invitedId,
+    }),
+    env.DB.prepare("DELETE FROM invite_notices WHERE invited_id = ?1 RETURNING chat_id, message_id")
+      .bind(invitedId)
+      .all<{ chat_id: number; message_id: number }>(),
+  ]);
+  let outcome: Outcome = approve ? "approved" : "rejected";
+  if (decided.result === null && decided.description?.includes(REQUEST_GONE)) {
+    outcome = "withdrawn";
+    await env.DB.prepare("UPDATE invites SET status = 'withdrawn' WHERE id = ?1").bind(claimed.id).run();
+  }
+  const targets = new Map(removed.results.map((notice) => [`${notice.chat_id}:${notice.message_id}`, notice]));
   if (pressed.messageId !== undefined) {
     targets.set(`${pressed.chatId}:${pressed.messageId}`, { chat_id: pressed.chatId, message_id: pressed.messageId });
   }
   // Telegram does not give the text of a message that is too old: then the messages only lose their buttons.
-  const edits = [...targets.values()].map((notice) =>
-    pressed.text === undefined
-      ? removeButtons(env, notice.chat_id, notice.message_id)
-      : showOutcome(env, notice.chat_id, notice.message_id, pressed.text, approve),
+  await Promise.all(
+    [...targets.values()].map((notice) =>
+      pressed.text === undefined
+        ? removeButtons(env, notice.chat_id, notice.message_id)
+        : showOutcome(env, notice.chat_id, notice.message_id, pressed.text, outcome),
+    ),
   );
-  await Promise.all([decided, ...edits]);
 }
 
 export interface ApprovedInvite {
@@ -197,7 +234,7 @@ export interface ApprovedInvite {
 export async function listApprovedInvites(db: D1Database): Promise<ApprovedInvite[]> {
   const { results } = await db
     .prepare(
-      "SELECT invited_id AS invitedId, inviter_id AS inviterId FROM invites WHERE status = 'approved' ORDER BY created_at, invited_id",
+      "SELECT invited_id AS invitedId, inviter_id AS inviterId FROM invites WHERE status = 'approved' ORDER BY created_at, id",
     )
     .all<ApprovedInvite>();
   return results;

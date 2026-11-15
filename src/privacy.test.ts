@@ -27,6 +27,12 @@ describe("privacy policy page", () => {
     expect(html).not.toMatch(/draft text|not yet published/i);
   });
 
+  it("tells in both languages that /forget_me deletes the data", async () => {
+    const html = await privacyPage().text();
+    expect(html).toContain("send /forget_me to the bot: it deletes the data and removes you from the group");
+    expect(html).toContain("отправьте боту /forget_me: он удалит данные и удалит вас из группы");
+  });
+
   it("is served by the Worker on GET and HEAD only", async () => {
     const env = {} as Env;
     const ctx = {} as ExecutionContext;
