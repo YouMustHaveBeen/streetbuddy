@@ -32,7 +32,7 @@ export async function forgetUser(env: ForgetEnv, userId: number, chatId: number)
   return (results[5].results[0] as { link: string } | undefined)?.link ?? null;
 }
 
-// Revokes the invite link in Telegram, so that nobody can ask to join by it any more. A failure is only logged.
+// Revokes the invite link in Telegram. A failure is only logged.
 export async function revokeLink(env: ForgetEnv, link: string): Promise<void> {
   await callTelegram(env.TELEGRAM_BOT_TOKEN, "revokeChatInviteLink", { chat_id: env.GROUP_ID, invite_link: link });
 }
