@@ -33,13 +33,37 @@ describe("recognizePlates", () => {
     const run = vi.fn(async () => ({ choices: [{ message: { content: '["12-D-3456"]' }, finish_reason: "length" }] }));
     const onReply = vi.fn();
     await recognizePlates({ run } as unknown as Ai, new Uint8Array(1), onReply);
-    expect(onReply).toHaveBeenCalledWith({ finishReason: "length", replyLength: 13 });
+    expect(onReply).toHaveBeenCalledWith({
+      finishReason: "length",
+      replyLength: 13,
+      promptTokens: undefined,
+      completionTokens: undefined,
+    });
+  });
+  it("tells the tokens used when the model reports them", async () => {
+    const run = vi.fn(async () => ({
+      response: "[]",
+      usage: { prompt_tokens: 812, completion_tokens: 1000, total_tokens: 1812 },
+    }));
+    const onReply = vi.fn();
+    await recognizePlates({ run } as unknown as Ai, new Uint8Array(1), onReply);
+    expect(onReply).toHaveBeenCalledWith({
+      finishReason: "unknown",
+      replyLength: 2,
+      promptTokens: 812,
+      completionTokens: 1000,
+    });
   });
   it("tells an unknown finish reason and no length for a reply without text", async () => {
     const run = vi.fn(async () => ({}));
     const onReply = vi.fn();
     await recognizePlates({ run } as unknown as Ai, new Uint8Array(1), onReply);
-    expect(onReply).toHaveBeenCalledWith({ finishReason: "unknown", replyLength: 0 });
+    expect(onReply).toHaveBeenCalledWith({
+      finishReason: "unknown",
+      replyLength: 0,
+      promptTokens: undefined,
+      completionTokens: undefined,
+    });
   });
   it("reads the plain reply shape", async () => {
     const run = vi.fn(async () => ({ response: '["12-D-3456"]' }));
@@ -72,10 +96,16 @@ describe("recognizePlates", () => {
     expect(await recognizePlates({ run } as unknown as Ai, new Uint8Array(1))).toEqual(["12-D-3456"]);
     expect(run).toHaveBeenCalledTimes(2);
   });
+  it("asks the model not to think before the answer", async () => {
+    const run = vi.fn(async () => ({ response: "[]" }));
+    await recognizePlates({ run } as unknown as Ai, new Uint8Array(1));
+    const inputs = (run.mock.calls[0] as unknown[])[1] as { chat_template_kwargs: { enable_thinking: boolean } };
+    expect(inputs.chat_template_kwargs).toEqual({ enable_thinking: false });
+  });
   it("limits the length of the reply", async () => {
     const run = vi.fn(async () => ({ response: "[]" }));
     await recognizePlates({ run } as unknown as Ai, new Uint8Array(1));
-    expect(((run.mock.calls[0] as unknown[])[1] as { max_completion_tokens: number }).max_completion_tokens).toBe(200);
+    expect(((run.mock.calls[0] as unknown[])[1] as { max_completion_tokens: number }).max_completion_tokens).toBe(1000);
   });
   describe("with a late model", () => {
     beforeEach(() => {
