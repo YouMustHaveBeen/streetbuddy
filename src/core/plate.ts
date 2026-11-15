@@ -15,8 +15,14 @@ const PROMPT =
   "If no plate can be read, reply with [].";
 
 interface ModelReply {
-  choices?: { message?: { content?: unknown } }[];
+  choices?: { message?: { content?: unknown }; finish_reason?: unknown }[];
   response?: unknown;
+}
+
+// What is known about the reply of the model without its text: why it ended and how long it is.
+interface ReplyInfo {
+  finishReason: string;
+  replyLength: number;
 }
 
 type RunModel = (model: string, inputs: unknown) => Promise<ModelReply>;
@@ -70,7 +76,12 @@ export function parsePlates(reply: unknown): string[] {
 
 // Each call is limited to MODEL_TIMEOUT_MS; a failed or late call is made once more.
 // Throws the last failure, including when the daily Workers AI limit is used up.
-export async function recognizePlates(ai: Ai, image: Uint8Array): Promise<string[]> {
+// onReply, when given, gets the finish reason and the length of the reply that was read.
+export async function recognizePlates(
+  ai: Ai,
+  image: Uint8Array,
+  onReply?: (info: ReplyInfo) => void,
+): Promise<string[]> {
   const run = runner(ai);
   const inputs = {
     messages: [
@@ -88,7 +99,13 @@ export async function recognizePlates(ai: Ai, image: Uint8Array): Promise<string
   for (let attempt = 0; attempt < MODEL_ATTEMPTS; attempt++) {
     try {
       const reply = await withTimeout(run(MODEL, inputs), MODEL_TIMEOUT_MS);
-      return parsePlates(reply.choices?.[0]?.message?.content ?? reply.response);
+      const text = reply.choices?.[0]?.message?.content ?? reply.response;
+      const finishReason = reply.choices?.[0]?.finish_reason;
+      onReply?.({
+        finishReason: typeof finishReason === "string" ? finishReason : "unknown",
+        replyLength: typeof text === "string" ? text.length : 0,
+      });
+      return parsePlates(text);
     } catch (error) {
       failure = error;
     }
