@@ -386,7 +386,7 @@ async function handleCommand(c: Context, command: string): Promise<void> {
   if (command === "start") {
     await send(c, startText(c.env.SITE_URL), undefined, true);
   } else if (command === "help") {
-    const links = [pageLink(c.env.SITE_URL, INSTALL_PATH, "Setup guide"), pageLink(c.env.SITE_URL, MANUAL_PATH, "User guide")];
+    const links = [pageLink(c.env.SITE_URL, INSTALL_PATH, "Setup guide"), pageLink(c.env.SITE_URL, MANUAL_PATH, "User guide"), pageLink(c.env.SITE_URL, PRIVACY_PATH, "Privacy policy")];
     await send(c, links.join("\n"), undefined, true);
   } else if (command === "hotspots") {
     const page = hotspotPage(await getHotspots(c.env.DB), 0);
