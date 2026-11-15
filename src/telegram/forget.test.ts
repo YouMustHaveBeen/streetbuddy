@@ -103,7 +103,7 @@ describe("/forget_me", () => {
     expect(called("sendMessage")).toEqual([
       {
         chat_id: USER,
-        text: "Delete your data and remove you from the group? You can join again by invitation.",
+        text: "Delete your data and remove you from the group? You can join again by invitation",
         reply_markup: { inline_keyboard: [[{ text: "Delete", callback_data: "forget_delete" }, { text: "Cancel", callback_data: "cancel" }]] },
       },
     ]);
@@ -137,8 +137,9 @@ describe("/forget_me", () => {
     ]);
     expect(called("deleteMessage")).toEqual([{ chat_id: USER, message_id: 500 }]);
     expect(called("sendMessage")).toEqual([
-      { chat_id: USER, text: "Your data is deleted. You have been removed from the group." },
+      { chat_id: USER, text: "Your data is deleted. You have been removed from the group" },
     ]);
+    expect(called("revokeChatInviteLink")).toEqual([{ chat_id: GROUP, invite_link: "https://t.me/+A" }]);
     expect(called("banChatMember")).toEqual([{ chat_id: GROUP, user_id: USER }]);
     expect(called("unbanChatMember")).toEqual([{ chat_id: GROUP, user_id: USER, only_if_banned: true }]);
     const order = methods();
@@ -154,7 +155,7 @@ describe("/forget_me", () => {
     await press("forget_delete", 500);
     expect(rows("SELECT user_id FROM user_phones")).toEqual([{ user_id: 8 }]);
     expect(called("sendMessage")).toEqual([
-      { chat_id: USER, text: "Your data is deleted. You are an admin, so the bot cannot remove you from the group." },
+      { chat_id: USER, text: "Your data is deleted. You are an admin, so the bot cannot remove you from the group" },
     ]);
     expect(called("banChatMember")).toEqual([]);
     expect(called("unbanChatMember")).toEqual([]);
@@ -186,7 +187,7 @@ describe("/forget_me", () => {
     calls = [];
     await press("forget_delete", 500);
     expect(rows("SELECT user_id FROM user_phones")).toEqual([{ user_id: 8 }]);
-    expect(called("sendMessage").map((body) => body.text)).toEqual(["Your data is deleted. You have been removed from the group."]);
+    expect(called("sendMessage").map((body) => body.text)).toEqual(["Your data is deleted. You have been removed from the group"]);
   });
 
   it("deletes once when Delete is pressed twice, and a Delete of an old screen does nothing", async () => {
@@ -210,6 +211,13 @@ describe("/forget_me", () => {
     expect(called("sendMessage")).toEqual([]);
     expect(rows("SELECT * FROM drafts")).toEqual([]);
     expect(rows("SELECT user_id FROM user_phones ORDER BY user_id")).toEqual([{ user_id: USER }, { user_id: 8 }]);
+  });
+
+  it("revokes nothing when the user has no invite link", async () => {
+    await message("/forget_me");
+    await press("forget_delete", 500);
+    expect(called("revokeChatInviteLink")).toEqual([]);
+    expect(called("banChatMember")).toHaveLength(1);
   });
 
   it("goes away with another command, like any screen", async () => {

@@ -14,7 +14,7 @@ const TABLE_STYLE = `  table { border-collapse: collapse; }
 
 const POLICY_EN = `<h2>Who runs StreetBuddy</h2>
 <p>StreetBuddy is run by one of your neighbours, not by a company. It helps people in the area prepare Traffic Watch reports about illegal parking, and only members of the closed Street Buddy Group can use it. The bot is not connected to An Garda Síochána.</p>
-<p>If you have a question, or want your data deleted, write to the admins with /feedback in the bot.</p>
+<p>If you have a question, write to the admins with /feedback in the bot. To delete your data, send /forget_me.</p>
 <h2>What the bot knows about you, and why</h2>
 <p>The bot only needs what it takes to put a report together:</p>
 <ul>
@@ -62,7 +62,7 @@ const POLICY_EN = `<h2>Who runs StreetBuddy</h2>
 
 const POLICY_RU = `<h2>Кто делает StreetBuddy</h2>
 <p>StreetBuddy делает один из ваших соседей, а не компания. Бот помогает подготовить репорты Traffic Watch о неправильной парковке, и пользоваться им могут только участники закрытой группы Street Buddy Group. К Garda бот отношения не имеет.</p>
-<p>Если у вас есть вопрос или вы хотите, чтобы ваши данные удалили, напишите админам через /feedback в боте.</p>
+<p>Если у вас есть вопрос, напишите админам через /feedback в боте. Чтобы удалить ваши данные, отправьте боту /forget_me.</p>
 <h2>Что бот знает о вас и зачем</h2>
 <p>Боту нужно только то, что требуется, чтобы собрать репорт:</p>
 <ul>

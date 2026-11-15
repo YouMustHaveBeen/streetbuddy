@@ -64,7 +64,7 @@ import {
   takeDraft,
 } from "./draft";
 import { saveFeedback } from "./feedback";
-import { FORGET_CONFIRM, FORGET_DELETE, FORGOTTEN, FORGOTTEN_ADMIN, forgetUser, removeFromGroup } from "./forget";
+import { FORGET_CONFIRM, FORGET_DELETE, FORGOTTEN, FORGOTTEN_ADMIN, forgetUser, removeFromGroup, revokeLink } from "./forget";
 import { INVITE_FAILED, INVITE_TEXT, inviteLink } from "./invite";
 import { groupAccess } from "./member";
 import { countReport, PHONES, readPhone, savePhone } from "./phone";
@@ -1093,12 +1093,13 @@ export async function handleButton(
   }
 }
 
-// Delete on the /forget_me screen: the data goes, then the user gets the message and, unless an administrator,
-// is removed from the group. Two presses delete once.
+// Delete on the /forget_me screen: the data goes and the invite link is revoked, then the user gets the message and,
+// unless an administrator, is removed from the group. Two presses delete once.
 async function forgetMe(c: Context, draft: Draft): Promise<void> {
   if (!(await takeDraft(c.env.DB, c.userId, draft.draft_id, draft.buttons_message_id))) return;
-  await Promise.all([remove(c, draft.buttons_message_id), forgetUser(c.env, c.userId, c.chatId)]);
-  const admin = (await groupAccess(c.env, c.userId))?.admin === true;
+  const [, link] = await Promise.all([remove(c, draft.buttons_message_id), forgetUser(c.env, c.userId, c.chatId)]);
+  const [access] = await Promise.all([groupAccess(c.env, c.userId), link === null ? null : revokeLink(c.env, link)]);
+  const admin = access?.admin === true;
   // The message goes before the removal from the group: do not change the order.
   await send(c, admin ? FORGOTTEN_ADMIN : FORGOTTEN);
   if (!admin) await removeFromGroup(c.env, c.userId);
