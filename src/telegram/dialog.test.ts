@@ -147,7 +147,7 @@ Second, read how to use the bot: <a href="https://site.example/userguide">User g
 Third, to start a report, send location to the bot.
 ***
 This bot is not affiliated with An Garda Síochána.
-(A link to the Privacy Policy will be here.)
+Read the <a href="https://site.example/privacy">Privacy Policy</a>.
 © OpenStreetMap contributors`);
     expect(lastSent().reply_markup).toBeUndefined();
     expect(draft()).toBeUndefined();
