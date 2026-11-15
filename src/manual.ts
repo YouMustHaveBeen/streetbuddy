@@ -118,7 +118,7 @@ ${
 <li>/add_address: добавить адрес. Если вы хотите дополнить карту, вам нужно прислать локейшн, адрес и выбрать тип: «house» (дом с номером), «appt» (многоквартирный дом), «facility» (магазин, школа, остановка и подобное), «spot» (место без номера дома: перекресток, улица, ориентир для репорта). Перед добавлением на карту адрес попадет к админам на проверку.</li>
 <li>/invite: команда выдает вам ссылку, по которой вы можете пригласить соседей в группу.</li>
 <li>/phone: команда позволяет указать ваш тип телефона, чтобы напоминать шаги для выбранного телефона под описанием репорта. Подсказка работает первые 10 репортов, затем исчезает. Чтобы ее вернуть, нужно снова выбрать телефон.</li>
-<li>/help: показывает ссылки на Setup guide и User guide.</li>
+<li>/help: показывает ссылки на Setup guide, User guide и Privacy policy.</li>
 <li>/feedback: здесь вы можете написать админам о проблемах в работе бота или предложить новый функционал.</li>
 </ul>
 
@@ -219,7 +219,7 @@ If you tap neither button, the next cleanup after 48 hours will remove the butto
 <li>/add_address: add an address. If you want to add to the map, you need to send a location and an address and choose a type: «house» (a house with a number), «appt» (an apartment block), «facility» (a shop, a school, a bus stop and the like), «spot» (a place without a house number: a crossroad, a street, a landmark for a report). Before it is added to the map, the address goes to the admins for checking.</li>
 <li>/invite: gives you a link with which you can invite neighbours to the group.</li>
 <li>/phone: lets you set your phone type, so that the bot reminds you of the steps for the chosen phone under the report description. The hint works for the first 10 reports and then disappears. To bring it back, choose the phone again.</li>
-<li>/help: shows the links to the Setup guide and the User guide.</li>
+<li>/help: shows the links to the Setup guide, the User guide and the Privacy policy.</li>
 <li>/feedback: here you can write to the admins about problems in the bot's work or suggest a new feature.</li>
 </ul>
 

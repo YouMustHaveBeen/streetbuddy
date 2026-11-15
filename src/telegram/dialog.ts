@@ -31,6 +31,7 @@ import type { Defer, Hotspot, LoggedReport, StatEvent } from "../core";
 import type { Env } from "../env";
 import { INSTALL_PATH } from "../install";
 import { MANUAL_PATH } from "../manual";
+import { PRIVACY_PATH } from "../privacy";
 import { REPORT_MAP_PATH } from "../maps";
 import { ADDRESS_MAX_LENGTH, ADDRESS_TOO_LONG, CHOOSE_ADDRESS, OUT_OF_AREA } from "./address";
 import { directoryLink } from "../directoryLink";
@@ -106,16 +107,14 @@ interface Context {
   defer: Defer;
 }
 
-// Sent as HTML: the words "Setup guide" and "User guide" are links.
-const startText = (siteUrl: string) => `StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
+// Sent as HTML: the words "Setup guide", "User guide" and "Privacy Policy" are links.
+const startText = (siteUrl: string) => `StreetBuddy creates a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
 ***
 First, read the setup guide: <a href="${siteUrl}${INSTALL_PATH}">Setup guide</a>.
-Second, read how to use the bot: <a href="${siteUrl}${MANUAL_PATH}">User guide</a>.
-Third, to start a report, send location to the bot.
+Use /help to see <a href="${siteUrl}${MANUAL_PATH}">User guide</a> and <a href="${siteUrl}${PRIVACY_PATH}">Privacy Policy</a>.
 ***
 This bot is not affiliated with An Garda Síochána.
-(A link to the Privacy Policy will be here.)
 © OpenStreetMap contributors`;
 
 const TRY_AGAIN = "Could not get the address. Please try again in a minute";
@@ -385,7 +384,7 @@ async function handleCommand(c: Context, command: string): Promise<void> {
   if (command === "start") {
     await send(c, startText(c.env.SITE_URL), undefined, true);
   } else if (command === "help") {
-    const links = [pageLink(c.env.SITE_URL, INSTALL_PATH, "Setup guide"), pageLink(c.env.SITE_URL, MANUAL_PATH, "User guide")];
+    const links = [pageLink(c.env.SITE_URL, INSTALL_PATH, "Setup guide"), pageLink(c.env.SITE_URL, MANUAL_PATH, "User guide"), pageLink(c.env.SITE_URL, PRIVACY_PATH, "Privacy policy")];
     await send(c, links.join("\n"), undefined, true);
   } else if (command === "hotspots") {
     const page = hotspotPage(await getHotspots(c.env.DB), 0);

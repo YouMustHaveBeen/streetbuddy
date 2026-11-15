@@ -5,6 +5,7 @@ import { runFormCheck } from "./dailyCheck";
 import { LINK_EXPIRED_TEXT, isDirectoryLinkValid } from "./directoryLink";
 import { INSTALL_PATH, SCRIPT_PATH, installPage, userscriptFile } from "./install";
 import { MANUAL_PATH, manualPage } from "./manual";
+import { PRIVACY_PATH, privacyPage } from "./privacy";
 import { DIRECTORY_PATH, REPORT_MAP_PATH, directoryPage, reportMapPage } from "./maps";
 import { closeExpiredFinalMessages, handleWebhook, notifyInactiveUsers } from "./telegram";
 import type { Env } from "./env";
@@ -19,6 +20,7 @@ export default {
     const reads = request.method === "GET" || request.method === "HEAD";
     if (reads && url.pathname === INSTALL_PATH) return installPage();
     if (reads && url.pathname === MANUAL_PATH) return manualPage();
+    if (reads && url.pathname === PRIVACY_PATH) return privacyPage();
     if (reads && url.pathname === SCRIPT_PATH) return userscriptFile();
     if (reads && url.pathname === REPORT_MAP_PATH) return reportMapPage(env, url.searchParams.get("period"));
     if (reads && url.pathname === DIRECTORY_PATH) {

@@ -139,15 +139,13 @@ afterEach(() => {
 describe("/start", () => {
   it("shows the /start text", async () => {
     await text("/start");
-    expect(lastSent().text).toBe(`StreetBuddy turns a photo of an illegally parked car into a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
+    expect(lastSent().text).toBe(`StreetBuddy creates a pre-filled Garda Traffic Watch report form. You tick the two boxes, pass the captcha and press Submit yourself.
 Please note: a report may require you to give a statement in court.
 ***
 First, read the setup guide: <a href="https://site.example/setupguide">Setup guide</a>.
-Second, read how to use the bot: <a href="https://site.example/userguide">User guide</a>.
-Third, to start a report, send location to the bot.
+Use /help to see <a href="https://site.example/userguide">User guide</a> and <a href="https://site.example/privacy">Privacy Policy</a>.
 ***
 This bot is not affiliated with An Garda Síochána.
-(A link to the Privacy Policy will be here.)
 © OpenStreetMap contributors`);
     expect(lastSent().reply_markup).toBeUndefined();
     expect(draft()).toBeUndefined();
@@ -170,7 +168,7 @@ This bot is not affiliated with An Garda Síochána.
     expect(draft()).toBeUndefined();
     expect(called("deleteMessage").at(-1)?.body.message_id).toBe(before);
     expect(sentTexts()).not.toContain("Report cancelled");
-    expect(lastSent().text).toContain("StreetBuddy turns a photo");
+    expect(lastSent().text).toContain("StreetBuddy creates a pre-filled");
   });
 });
 
@@ -178,13 +176,13 @@ describe("the commands of the menu", () => {
   it("/help gives the links to the setup guide and the user guide, as HTML without a preview", async () => {
     await text("/help");
     expect(lastSent().text).toBe(
-      '<a href="https://site.example/setupguide">Setup guide</a>\n<a href="https://site.example/userguide">User guide</a>',
+      '<a href="https://site.example/setupguide">Setup guide</a>\n<a href="https://site.example/userguide">User guide</a>\n<a href="https://site.example/privacy">Privacy policy</a>',
     );
     expect((lastSent() as unknown as { parse_mode: string }).parse_mode).toBe("HTML");
     expect((lastSent() as unknown as { link_preview_options: unknown }).link_preview_options).toEqual({ is_disabled: true });
     await text("/help@streetbuddy_bot");
     expect(lastSent().text).toBe(
-      '<a href="https://site.example/setupguide">Setup guide</a>\n<a href="https://site.example/userguide">User guide</a>',
+      '<a href="https://site.example/setupguide">Setup guide</a>\n<a href="https://site.example/userguide">User guide</a>\n<a href="https://site.example/privacy">Privacy policy</a>',
     );
     expect((lastSent() as unknown as { parse_mode: string }).parse_mode).toBe("HTML");
     expect((lastSent() as unknown as { link_preview_options: unknown }).link_preview_options).toEqual({ is_disabled: true });
@@ -1270,7 +1268,7 @@ describe("bot switched off", () => {
     await text("/start");
     await photo();
     expect(sentTexts()).toHaveLength(1);
-    expect(lastSent().text).toContain("Third, to start a report, send location to the bot.");
+    expect(lastSent().text).toContain("Use /help to see");
     expect(draft()).toBeUndefined();
   });
   it("carries on a report that was already begun", async () => {
